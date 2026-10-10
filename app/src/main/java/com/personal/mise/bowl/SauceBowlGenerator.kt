@@ -62,14 +62,17 @@ object SauceBowlGenerator {
         val appearances = IntArray(ingredients.size)
         finalMembers.forEach { members -> members.forEach { appearances[it]++ } }
 
-        return groups.mapIndexed { g, group ->
-            val items = finalMembers[g].map { idx ->
-                val amount = ingredients[idx].amountText.trim()
-                val text = if (appearances[idx] > 1 && amount !in vagueAmounts) "分次加入，共 $amount" else amount
-                GeneratedItem(idx, text)
+        // 主料挪到后面的碗之后，前面的碗可能空了，空碗不留
+        return groups.indices
+            .filter { finalMembers[it].isNotEmpty() }
+            .mapIndexed { bowlIndex, g ->
+                val items = finalMembers[g].map { idx ->
+                    val amount = ingredients[idx].amountText.trim()
+                    val text = if (appearances[idx] > 1 && amount !in vagueAmounts) "分次加入，共 $amount" else amount
+                    GeneratedItem(idx, text)
+                }
+                GeneratedBowl(label(bowlIndex), groups[g].first(), items)
             }
-            GeneratedBowl(label(g), group.first(), items)
-        }
     }
 
     private fun isSplittable(ingredient: IngredientInput): Boolean =
