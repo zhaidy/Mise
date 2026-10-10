@@ -1,6 +1,8 @@
 package com.personal.mise
 
 import android.app.Application
+import com.personal.mise.ai.AiSettings
+import com.personal.mise.ai.GeminiStepSplitter
 import com.personal.mise.data.MiseDatabase
 import com.personal.mise.data.RecipeRepository
 import com.personal.mise.image.ImageStore
@@ -16,6 +18,8 @@ class MiseApp : Application() {
     lateinit var timers: TimerManager
         private set
     val importer: RecipeImporter by lazy { RecipeImporter(images) }
+    val aiSettings: AiSettings by lazy { AiSettings(this) }
+    val stepSplitter: GeminiStepSplitter by lazy { GeminiStepSplitter(aiSettings) }
 
     override fun onCreate() {
         super.onCreate()

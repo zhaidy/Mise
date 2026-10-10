@@ -61,6 +61,9 @@ class EditorViewModel(
         private set
     var saving by mutableStateOf(false)
         private set
+    var aiBusy by mutableStateOf(false)
+        private set
+    var aiMessage by mutableStateOf<String?>(null)
 
     var title by mutableStateOf("")
     var servings by mutableStateOf("")
@@ -171,6 +174,44 @@ class EditorViewModel(
 
     fun removeStep(index: Int) {
         steps.removeAt(index)
+    }
+
+    val hasGeminiKey: Boolean get() = app.aiSettings.hasKey
+
+    fun saveGeminiKey(key: String) {
+        app.aiSettings.geminiKey = key
+    }
+
+    /** 把现有步骤文字交给 Gemini 重新拆分；原来的步骤图片只在原本只有一步时保留到第一步 */
+    fun aiSplitSteps() {
+        if (aiBusy) return
+        aiBusy = true
+        aiMessage = null
+        viewModelScope.launch {
+            try {
+                val old = steps.toList()
+                val result = app.stepSplitter.split(old.map { it.text })
+                val firstImage = old.singleOrNull()?.image
+                val firstTimer = old.singleOrNull()?.timerMinutes.orEmpty()
+                steps.clear()
+                steps += result.mapIndexed { i, s ->
+                    StepRow(
+                        key = nextKey(),
+                        text = s.text,
+                        image = if (i == 0) firstImage else null,
+                        timerMinutes = s.timerMinutes?.let { formatMinutes((it * 60).toInt()) }
+                            ?: if (i == 0) firstTimer else "",
+                    )
+                }
+                aiMessage = "已拆成 ${result.size} 步，请检查一下"
+            } catch (e: ImportException) {
+                aiMessage = e.message
+            } catch (e: Exception) {
+                aiMessage = "AI 拆分失败：${e.message ?: e.javaClass.simpleName}"
+            } finally {
+                aiBusy = false
+            }
+        }
     }
 
     fun removeStepImage(index: Int) {
