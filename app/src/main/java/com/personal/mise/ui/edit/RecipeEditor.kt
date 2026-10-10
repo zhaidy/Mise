@@ -63,17 +63,18 @@ fun RecipeEditor(
         if (uri != null && key != null) vm.pickStepImage(key, uri)
         pickingStepKey = null
     }
-    var askingKey by rememberSaveable { mutableStateOf(false) }
+    // 填完 Key 后要接着做的 AI 操作：split 拆分步骤、estimate 估算用量
+    var askingKeyFor by rememberSaveable { mutableStateOf<String?>(null) }
     val imageOnly = PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
 
-    if (askingKey) {
+    askingKeyFor?.let { action ->
         GeminiKeyDialog(
-            confirmLabel = "保存并拆分",
-            onDismiss = { askingKey = false },
+            confirmLabel = if (action == "estimate") "保存并估算" else "保存并拆分",
+            onDismiss = { askingKeyFor = null },
             onConfirm = {
                 vm.saveGeminiKey(it)
-                askingKey = false
-                vm.aiSplitSteps()
+                askingKeyFor = null
+                if (action == "estimate") vm.aiEstimateAmounts() else vm.aiSplitSteps()
             },
         )
     }
@@ -116,6 +117,25 @@ fun RecipeEditor(
         }
 
         item { EditorSection("用料", "点「主料／调料」可以切换分类") }
+        item {
+            Column(Modifier.padding(horizontal = 8.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(
+                        enabled = !vm.estimating && vm.canEstimate,
+                        onClick = { if (vm.hasGeminiKey) vm.aiEstimateAmounts() else askingKeyFor = "estimate" },
+                    ) { Text("AI 估算「适量」用量") }
+                    if (vm.estimating) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                }
+                vm.estimateMessage?.let {
+                    Text(
+                        it,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 8.dp),
+                    )
+                }
+            }
+        }
         itemsIndexed(vm.ingredients, key = { _, row -> "ing-${row.key}" }) { index, row ->
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
@@ -160,10 +180,10 @@ fun RecipeEditor(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     TextButton(
                         enabled = !vm.aiBusy && vm.steps.any { it.text.isNotBlank() },
-                        onClick = { if (vm.hasGeminiKey) vm.aiSplitSteps() else askingKey = true },
+                        onClick = { if (vm.hasGeminiKey) vm.aiSplitSteps() else askingKeyFor = "split" },
                     ) { Text("AI 拆分步骤") }
                     if (vm.aiBusy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                    TextButton(onClick = { askingKey = true }) { Text("设置 Key") }
+                    TextButton(onClick = { askingKeyFor = "split" }) { Text("设置 Key") }
                 }
                 vm.aiMessage?.let {
                     Text(

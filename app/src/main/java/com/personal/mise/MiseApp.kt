@@ -3,6 +3,7 @@ package com.personal.mise
 import android.app.Application
 import androidx.compose.runtime.mutableStateMapOf
 import com.personal.mise.ai.AiSettings
+import com.personal.mise.ai.GeminiAmountEstimator
 import com.personal.mise.ai.GeminiBowlOrganizer
 import com.personal.mise.ai.GeminiClient
 import com.personal.mise.ai.GeminiRecipeOrganizer
@@ -29,6 +30,7 @@ class MiseApp : Application() {
     val stepSplitter: GeminiStepSplitter by lazy { GeminiStepSplitter(gemini) }
     val noteOrganizer: GeminiRecipeOrganizer by lazy { GeminiRecipeOrganizer(gemini) }
     val bowlOrganizer: GeminiBowlOrganizer by lazy { GeminiBowlOrganizer(gemini) }
+    val amountEstimator: GeminiAmountEstimator by lazy { GeminiAmountEstimator(gemini) }
 
     /** 每道菜当前的用量倍率，只在本次运行里有效；详情、备料、做菜页共用 */
     val scales = mutableStateMapOf<Long, Double>()
