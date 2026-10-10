@@ -2,6 +2,7 @@ package com.personal.mise
 
 import android.app.Application
 import com.personal.mise.ai.AiSettings
+import com.personal.mise.ai.GeminiAmountEstimator
 import com.personal.mise.ai.GeminiBowlOrganizer
 import com.personal.mise.ai.GeminiClient
 import com.personal.mise.ai.GeminiRecipeOrganizer
@@ -28,6 +29,7 @@ class MiseApp : Application() {
     val stepSplitter: GeminiStepSplitter by lazy { GeminiStepSplitter(gemini) }
     val noteOrganizer: GeminiRecipeOrganizer by lazy { GeminiRecipeOrganizer(gemini) }
     val bowlOrganizer: GeminiBowlOrganizer by lazy { GeminiBowlOrganizer(gemini) }
+    val amountEstimator: GeminiAmountEstimator by lazy { GeminiAmountEstimator(gemini) }
 
     override fun onCreate() {
         super.onCreate()

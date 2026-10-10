@@ -8,6 +8,7 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.personal.mise.MiseApp
+import com.personal.mise.ai.GeminiAmountEstimator
 import com.personal.mise.bowl.SeasoningDictionary
 import com.personal.mise.data.IngredientDraft
 import com.personal.mise.data.IngredientKind
@@ -67,6 +68,9 @@ class EditorViewModel(
     var aiBusy by mutableStateOf(false)
         private set
     var aiMessage by mutableStateOf<String?>(null)
+    var estimating by mutableStateOf(false)
+        private set
+    var estimateMessage by mutableStateOf<String?>(null)
 
     var title by mutableStateOf("")
     var servings by mutableStateOf("")
@@ -104,6 +108,8 @@ class EditorViewModel(
                 }
                 fill(draft)
                 loadState = LoadState.Ready
+                // 导入的菜谱里有「适量」或没写用量的，有 Key 就顺手让 AI 估一下
+                if (importText != null && hasGeminiKey && canEstimate) aiEstimateAmounts()
             } catch (e: ImportException) {
                 loadState = LoadState.Failed(e.message ?: "导入失败", needsKey = aiNote && !app.aiSettings.hasKey)
             } catch (e: Exception) {
@@ -183,6 +189,44 @@ class EditorViewModel(
 
     fun saveGeminiKey(key: String) {
         app.aiSettings.geminiKey = key
+    }
+
+    /** 有「适量」、「少许」或没写用量的用料 */
+    val canEstimate: Boolean
+        get() = ingredients.any { GeminiAmountEstimator.needsEstimate(it.name, it.amount) }
+
+    /** 让 Gemini 给「适量」或没写用量的用料估一个具体用量，标上「（估算）」；估算期间改过的用量不覆盖 */
+    fun aiEstimateAmounts() {
+        if (estimating) return
+        estimating = true
+        estimateMessage = null
+        viewModelScope.launch {
+            try {
+                val snapshot = ingredients.toList()
+                val result = app.amountEstimator.estimate(
+                    title,
+                    servings,
+                    snapshot.map { it.name to it.amount },
+                    steps.map { it.text },
+                )
+                var filled = 0
+                result.forEach { (i, amount) ->
+                    val old = snapshot[i]
+                    val index = ingredients.indexOfFirst { it.key == old.key }
+                    if (index >= 0 && ingredients[index].amount == old.amount) {
+                        ingredients[index] = ingredients[index].copy(amount = amount)
+                        filled++
+                    }
+                }
+                estimateMessage = "AI 估算了 $filled 样用料的用量，标了「估算」，可以按口味再改"
+            } catch (e: ImportException) {
+                estimateMessage = e.message
+            } catch (e: Exception) {
+                estimateMessage = "AI 估算失败：${e.message ?: e.javaClass.simpleName}"
+            } finally {
+                estimating = false
+            }
+        }
     }
 
     /** 把现有步骤文字交给 Gemini 重新拆分；原来的步骤图片只在原本只有一步时保留到第一步 */
