@@ -16,6 +16,7 @@ data class ParsedRecipe(
     val ingredients: List<Pair<String, String>>,
     val steps: List<ParsedStep>,
 ) {
+    val isEmpty: Boolean get() = title.isNullOrBlank() && ingredients.isEmpty() && steps.isEmpty()
     val isComplete: Boolean get() = !title.isNullOrBlank() && ingredients.isNotEmpty() && steps.isNotEmpty()
     val score: Int get() = (if (title.isNullOrBlank()) 0 else 1) + ingredients.size + steps.size * 2 +
         steps.count { it.imageUrl != null } + (if (coverUrl != null) 1 else 0)
@@ -68,7 +69,7 @@ object XiachufangParser {
             val img = li.selectFirst("img")?.let { imageUrl(it) }
             if (text.isEmpty() && img == null) null else ParsedStep(text, img)
         }
-        val steps = htmlSteps.ifEmpty { ld?.let { jsonSteps(it) }.orEmpty() }
+        val steps = attachAltStepImages(doc, htmlSteps.ifEmpty { ld?.let { jsonSteps(it) }.orEmpty() })
 
         val servings = ld?.opt("recipeYield")?.let { yield ->
             when (yield) {
@@ -80,9 +81,28 @@ object XiachufangParser {
         return ParsedRecipe(title, cover, servings, ingredients, steps)
     }
 
+    private val altStepRegex = Regex("步骤\\s*(\\d+)")
+
+    /**
+     * 步骤图的 alt 是「xxx的做法 步骤1」。页面结构变了、步骤退回 JSON-LD（不带图）时，
+     * 按 alt 里的步骤号把图片补回对应的步骤上。
+     */
+    private fun attachAltStepImages(doc: Document, steps: List<ParsedStep>): List<ParsedStep> {
+        if (steps.isEmpty() || steps.all { it.imageUrl != null }) return steps
+        val byNumber = mutableMapOf<Int, String>()
+        for (img in doc.select("img[alt*=步骤]")) {
+            val n = altStepRegex.find(img.attr("alt"))?.groupValues?.get(1)?.toIntOrNull() ?: continue
+            if (n in byNumber) continue
+            imageUrl(img)?.let { byNumber[n] = it }
+        }
+        if (byNumber.isEmpty()) return steps
+        return steps.mapIndexed { i, step -> if (step.imageUrl != null) step else step.copy(imageUrl = byNumber[i + 1]) }
+    }
+
     private fun imageUrl(img: Element): String? {
-        val raw = listOf("data-src", "data-original", "src")
+        val raw = listOf("data-src", "data-original", "data-lazy-src", "src")
             .map { img.absUrl(it).ifEmpty { img.attr(it) } }
+            .plus(listOf("data-srcset", "srcset").map { img.attr(it).trim().substringBefore(' ').substringBefore(',') })
             .firstOrNull { it.isNotBlank() && !it.startsWith("data:") }
             ?: return null
         return cleanImageUrl(raw, img.baseUri())

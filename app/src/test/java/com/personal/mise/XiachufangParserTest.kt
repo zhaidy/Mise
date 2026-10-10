@@ -63,6 +63,26 @@ class XiachufangParserTest {
     }
 
     @Test
+    fun `步骤退回 JSON-LD 时按 alt 补回步骤图`() {
+        val html = """
+            <html><head><script type="application/ld+json">
+            {"@type":"Recipe","name":"锅包肉","recipeIngredient":["300克猪里脊"],
+             "recipeInstructions":"1.肉切片腌制 2.调淀粉糊 3.下锅炸"}
+            </script></head><body>
+            <img src="https://i2.chuimg.com/cover.jpg" alt="锅包肉的做法">
+            <img data-src="https://i2.chuimg.com/s1.jpg?imageView2/2/w/300" src="data:image/gif;base64,R0" alt="锅包肉的做法 步骤1">
+            <img srcset="https://i2.chuimg.com/s3.jpg?imageView2/2/w/300 1x, https://i2.chuimg.com/s3.jpg 2x" alt="锅包肉的做法 步骤3">
+            </body></html>
+        """.trimIndent()
+        val r = XiachufangParser.parse(html, "https://www.xiachufang.com/recipe/1/")
+
+        assertEquals(
+            listOf("https://i2.chuimg.com/s1.jpg", null, "https://i2.chuimg.com/s3.jpg"),
+            r.steps.map { it.imageUrl },
+        )
+    }
+
+    @Test
     fun `不是菜谱的页面什么都解析不出来`() {
         val r = XiachufangParser.parse("<html><body><p>hello</p></body></html>", "https://example.com/")
         assertNull(r.title)

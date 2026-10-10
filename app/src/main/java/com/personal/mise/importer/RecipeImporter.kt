@@ -10,7 +10,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import okhttp3.Cookie
+import okhttp3.CookieJar
+import okhttp3.HttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.IOException
@@ -23,7 +27,26 @@ data class ImportResult(val draft: RecipeDraft, val warnings: List<String>)
 /** 在手机上直接抓取下厨房网页、解析内容、把图片下载到本地。 */
 class RecipeImporter(private val images: ImageStore) {
 
+    // 下厨房有防爬虫验证：第一次访问只下发 cookie（或返回验证页），带上 cookie 再访问才是正常页面。
+    // 没有 cookie jar 时每次请求都是「第一次」，就会出现要手动重试好几次才成功的情况。
+    private val cookieJar = object : CookieJar {
+        private val store = mutableMapOf<String, Cookie>()
+
+        @Synchronized
+        override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
+            cookies.forEach { store["${it.domain}|${it.path}|${it.name}"] = it }
+        }
+
+        @Synchronized
+        override fun loadForRequest(url: HttpUrl): List<Cookie> {
+            val now = System.currentTimeMillis()
+            store.values.removeAll { it.expiresAt < now }
+            return store.values.filter { it.matches(url) }
+        }
+    }
+
     private val client = OkHttpClient.Builder()
+        .cookieJar(cookieJar)
         .followRedirects(true)
         .followSslRedirects(true)
         .connectTimeout(15, TimeUnit.SECONDS)
@@ -33,19 +56,20 @@ class RecipeImporter(private val images: ImageStore) {
     suspend fun import(sharedText: String): ImportResult = withContext(Dispatchers.IO) {
         val url = UrlExtractor.firstUrl(sharedText) ?: throw ImportException("没有在文字里找到链接")
 
-        val (finalUrl, html) = fetchPage(url, MOBILE_UA)
-        var parsed = XiachufangParser.parse(html, finalUrl)
+        val (finalUrl, firstParsed) = fetchAndParse(url, MOBILE_UA)
+        var parsed = firstParsed
         val recipeId = XiachufangParser.recipeId(finalUrl) ?: XiachufangParser.recipeId(url)
 
-        // 手机版页面解析不全时，用电脑版页面再试一次（电脑版结构已经验证过）
-        if (!parsed.isComplete && recipeId != null) {
+        // 手机版页面解析不全、或者步骤一张图都没有（多半是步骤退回了不带图的 JSON-LD）时，
+        // 用电脑版页面再试一次（电脑版结构已经验证过）
+        val missingStepImages = parsed.steps.isNotEmpty() && parsed.steps.none { it.imageUrl != null }
+        if ((!parsed.isComplete || missingStepImages) && recipeId != null) {
             runCatching {
-                val (desktopUrl, desktopHtml) = fetchPage(XiachufangParser.desktopUrl(recipeId), DESKTOP_UA)
-                XiachufangParser.parse(desktopHtml, desktopUrl)
+                fetchAndParse(XiachufangParser.desktopUrl(recipeId), DESKTOP_UA).second
             }.getOrNull()?.let { if (it.score > parsed.score) parsed = it }
         }
 
-        if (parsed.title.isNullOrBlank() && parsed.ingredients.isEmpty() && parsed.steps.isEmpty()) {
+        if (parsed.isEmpty) {
             throw ImportException("没能从这个页面解析出菜谱，请确认是下厨房的菜谱链接")
         }
 
@@ -83,6 +107,23 @@ class RecipeImporter(private val images: ImageStore) {
         ImportResult(draft, warnings)
     }
 
+    /** 抓页面并解析；解析不出东西（多半是防爬虫验证页）时带着拿到的 cookie 自动重试几次 */
+    private suspend fun fetchAndParse(url: String, userAgent: String): Pair<String, ParsedRecipe> {
+        var result: Pair<String, ParsedRecipe>? = null
+        for (attempt in 0 until PAGE_ATTEMPTS) {
+            if (attempt > 0) delay(RETRY_DELAY_MS * attempt)
+            val (finalUrl, html) = try {
+                fetchPage(url, userAgent)
+            } catch (e: ImportException) {
+                if (attempt == PAGE_ATTEMPTS - 1) throw e else continue
+            }
+            val parsed = XiachufangParser.parse(html, finalUrl)
+            result = finalUrl to parsed
+            if (!parsed.isEmpty) break
+        }
+        return result ?: throw ImportException("打开链接失败")
+    }
+
     private fun fetchPage(url: String, userAgent: String): Pair<String, String> {
         val request = Request.Builder()
             .url(url)
@@ -116,6 +157,8 @@ class RecipeImporter(private val images: ImageStore) {
     }.getOrNull()
 
     companion object {
+        private const val PAGE_ATTEMPTS = 3
+        private const val RETRY_DELAY_MS = 800L
         const val MOBILE_UA =
             "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36"
         const val DESKTOP_UA =
