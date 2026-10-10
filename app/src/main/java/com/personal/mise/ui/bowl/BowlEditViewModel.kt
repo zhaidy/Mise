@@ -12,6 +12,7 @@ import com.personal.mise.data.BowlEdit
 import com.personal.mise.data.Ingredient
 import com.personal.mise.data.IngredientKind
 import com.personal.mise.data.Step
+import com.personal.mise.importer.ImportException
 import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicLong
 
@@ -34,6 +35,12 @@ class BowlEditViewModel(private val app: MiseApp, private val recipeId: Long) : 
     var pool by mutableStateOf<List<Ingredient>>(emptyList())
         private set
     val bowls = mutableStateListOf<EditBowl>()
+    private var ingredients: List<Ingredient> = emptyList()
+
+    var aiBusy by mutableStateOf(false)
+        private set
+    var aiMessage by mutableStateOf<String?>(null)
+        private set
 
     init {
         reload()
@@ -43,6 +50,7 @@ class BowlEditViewModel(private val app: MiseApp, private val recipeId: Long) : 
         viewModelScope.launch {
             val full = app.repository.loadFull(recipeId) ?: return@launch
             steps = full.steps
+            ingredients = full.ingredients
             pool = full.ingredients.sortedBy { if (it.kind == IngredientKind.SEASONING) 0 else 1 }
             bowls.clear()
             bowls += full.bowls.map { b ->
@@ -104,6 +112,43 @@ class BowlEditViewModel(private val app: MiseApp, private val recipeId: Long) : 
         viewModelScope.launch {
             app.repository.regenerateBowls(recipeId)
             reload()
+        }
+    }
+
+    val hasGeminiKey: Boolean get() = app.aiSettings.hasKey
+
+    fun saveGeminiKey(key: String) {
+        app.aiSettings.geminiKey = key
+    }
+
+    /** 让 Gemini 按下锅时机重新分碗；结果先放在编辑界面里，点保存才生效 */
+    fun aiOrganize() {
+        if (aiBusy || !loaded) return
+        aiBusy = true
+        aiMessage = null
+        viewModelScope.launch {
+            try {
+                val result = app.bowlOrganizer.organize(ingredients.map { it.name to it.amountText }, steps.map { it.text })
+                bowls.clear()
+                bowls += result.map { b ->
+                    EditBowl(
+                        nextKey(),
+                        b.stepIndex?.let { steps[it].id },
+                        b.items.map { (index, amount) ->
+                            val ingredient = ingredients[index]
+                            EditItem(nextKey(), ingredient.id, ingredient.name, amount)
+                        },
+                    )
+                }
+                dirty = true
+                aiMessage = "已分成 ${result.size} 个碗，检查一下再保存"
+            } catch (e: ImportException) {
+                aiMessage = e.message
+            } catch (e: Exception) {
+                aiMessage = "AI 分碗失败：${e.message ?: e.javaClass.simpleName}"
+            } finally {
+                aiBusy = false
+            }
         }
     }
 

@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -26,6 +27,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -62,6 +64,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.personal.mise.data.Ingredient
 import com.personal.mise.data.IngredientKind
 import com.personal.mise.ui.common.rememberApp
+import com.personal.mise.ui.edit.GeminiKeyDialog
 import com.personal.mise.util.UnitText
 import kotlin.math.roundToInt
 
@@ -83,6 +86,7 @@ fun BowlEditScreen(recipeId: Long, onBack: () -> Unit) {
     var addingIngredient by remember { mutableStateOf<Ingredient?>(null) }
     var confirmRegenerate by remember { mutableStateOf(false) }
     var confirmLeave by remember { mutableStateOf(false) }
+    var askingKey by remember { mutableStateOf(false) }
 
     fun targetAt(position: Offset): Long? = targets.entries.firstOrNull { (key, rect) ->
         (key == POOL_KEY || vm.bowls.any { it.key == key }) && rect.contains(position)
@@ -152,6 +156,18 @@ fun BowlEditScreen(recipeId: Long, onBack: () -> Unit) {
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedButton(
+                        enabled = vm.loaded && !vm.aiBusy,
+                        onClick = { if (vm.hasGeminiKey) vm.aiOrganize() else askingKey = true },
+                    ) { Text("AI 按下锅时机分碗") }
+                    Spacer(Modifier.weight(1f))
+                    if (vm.aiBusy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                }
+                vm.aiMessage?.let {
+                    Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
 
                 vm.bowls.forEachIndexed { index, bowl ->
                     val highlighted = dragging?.let { targetAt(it.position) == bowl.key } == true
@@ -306,6 +322,18 @@ fun BowlEditScreen(recipeId: Long, onBack: () -> Unit) {
                 }
             },
             confirmButton = { TextButton(onClick = { addingIngredient = null }) { Text("取消") } },
+        )
+    }
+
+    if (askingKey) {
+        GeminiKeyDialog(
+            confirmLabel = "保存并分碗",
+            onDismiss = { askingKey = false },
+            onConfirm = {
+                vm.saveGeminiKey(it)
+                askingKey = false
+                vm.aiOrganize()
+            },
         )
     }
 
