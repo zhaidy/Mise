@@ -36,6 +36,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -51,6 +52,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.personal.mise.data.Recipe
 import com.personal.mise.ui.common.LocalImage
 import com.personal.mise.ui.common.rememberApp
+import com.personal.mise.update.UpdateInfo
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -67,9 +69,27 @@ fun RecipeListScreen(
     val recipes by remember(query) { app.repository.search(query) }.collectAsStateWithLifecycle(emptyList())
     var menuOpen by remember { mutableStateOf(false) }
     var pasteOpen by remember { mutableStateOf(false) }
+    var update by remember { mutableStateOf<UpdateInfo?>(null) }
+    var updating by remember { mutableStateOf(false) }
+
+    // manual=true 时才提示“已是最新 / 检查失败”，启动时的静默检查只在有新版本时弹窗
+    suspend fun checkUpdate(manual: Boolean) {
+        try {
+            val info = app.updater.check()
+            if (info != null) update = info else if (manual) snackbar.showSnackbar("已是最新版本")
+        } catch (e: Exception) {
+            if (manual) snackbar.showSnackbar("检查更新失败：${e.message}")
+        }
+    }
+    LaunchedEffect(Unit) { checkUpdate(manual = false) }
 
     Scaffold(
-        topBar = { TopAppBar(title = { Text("菜谱") }) },
+        topBar = {
+            TopAppBar(
+                title = { Text("菜谱") },
+                actions = { TextButton(onClick = { scope.launch { checkUpdate(manual = true) } }) { Text("检查更新") } },
+            )
+        },
         snackbarHost = { SnackbarHost(snackbar) },
         floatingActionButton = {
             Box {
@@ -126,6 +146,34 @@ fun RecipeListScreen(
                 }
             }
         }
+    }
+
+    update?.let { info ->
+        AlertDialog(
+            onDismissRequest = { if (!updating) update = null },
+            title = { Text("发现新版本 build ${info.build}") },
+            text = { Text(if (updating) "正在下载…" else "下载后会弹出系统安装界面，数据会保留。") },
+            confirmButton = {
+                TextButton(
+                    enabled = !updating,
+                    onClick = {
+                        updating = true
+                        scope.launch {
+                            try {
+                                val installing = app.updater.install(app.updater.download(info))
+                                if (!installing) snackbar.showSnackbar("请先允许安装未知应用，再点一次更新")
+                                update = null
+                            } catch (e: Exception) {
+                                snackbar.showSnackbar("下载失败：${e.message}")
+                            } finally {
+                                updating = false
+                            }
+                        }
+                    },
+                ) { Text("更新") }
+            },
+            dismissButton = { TextButton(enabled = !updating, onClick = { update = null }) { Text("以后再说") } },
+        )
     }
 
     if (pasteOpen) {

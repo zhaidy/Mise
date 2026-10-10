@@ -9,6 +9,7 @@ import com.personal.mise.image.ImageStore
 import com.personal.mise.importer.RecipeImporter
 import com.personal.mise.timer.Notifications
 import com.personal.mise.timer.TimerManager
+import com.personal.mise.update.UpdateChecker
 
 class MiseApp : Application() {
     lateinit var images: ImageStore
@@ -19,6 +20,7 @@ class MiseApp : Application() {
         private set
     val importer: RecipeImporter by lazy { RecipeImporter(images) }
     val aiSettings: AiSettings by lazy { AiSettings(this) }
+    val updater: UpdateChecker by lazy { UpdateChecker(this) }
     val stepSplitter: GeminiStepSplitter by lazy { GeminiStepSplitter(aiSettings) }
 
     override fun onCreate() {

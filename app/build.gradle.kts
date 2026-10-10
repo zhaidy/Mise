@@ -12,13 +12,32 @@ android {
         applicationId = "com.personal.mise"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
+        // CI 每次构建递增，应用内更新靠它判断有没有新版本
+        versionCode = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
         versionName = "0.3.0"
     }
 
+    // 固定签名：每次构建签名一致，新 APK 才能直接覆盖安装（数据保留）。
+    // 密钥来自 CI 的 Secrets；本地没配置时退回 Android 默认调试签名。
+    val keystorePath = System.getenv("MISE_KEYSTORE_FILE")
+    if (keystorePath != null) {
+        signingConfigs {
+            create("mise") {
+                storeFile = file(keystorePath)
+                storePassword = System.getenv("MISE_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("MISE_KEY_ALIAS")
+                keyPassword = System.getenv("MISE_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
+        debug {
+            signingConfigs.findByName("mise")?.let { signingConfig = it }
+        }
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.findByName("mise") ?: signingConfigs.getByName("debug")
         }
     }
 
