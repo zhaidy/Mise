@@ -25,7 +25,9 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -62,7 +64,37 @@ fun RecipeEditor(
         if (uri != null && key != null) vm.pickStepImage(key, uri)
         pickingStepKey = null
     }
+    var askingKey by rememberSaveable { mutableStateOf(false) }
+    var keyInput by rememberSaveable { mutableStateOf("") }
     val imageOnly = PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+
+    if (askingKey) {
+        AlertDialog(
+            onDismissRequest = { askingKey = false },
+            title = { Text("Gemini API Key") },
+            text = {
+                Column {
+                    Text(
+                        "在 aistudio.google.com 免费申请，只保存在这台手机上。",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(value = keyInput, onValueChange = { keyInput = it }, singleLine = true, label = { Text("API Key") })
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = keyInput.isNotBlank(),
+                    onClick = {
+                        vm.saveGeminiKey(keyInput)
+                        askingKey = false
+                        vm.aiSplitSteps()
+                    },
+                ) { Text("保存并拆分") }
+            },
+            dismissButton = { TextButton(onClick = { askingKey = false }) { Text("取消") } },
+        )
+    }
 
     LazyColumn(modifier, contentPadding = PaddingValues(bottom = 32.dp)) {
         item { header() }
@@ -141,6 +173,26 @@ fun RecipeEditor(
         }
 
         item { EditorSection("步骤", "计时填分钟数，做菜时可以一键开始计时") }
+        item {
+            Column(Modifier.padding(horizontal = 8.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(
+                        enabled = !vm.aiBusy && vm.steps.any { it.text.isNotBlank() },
+                        onClick = { if (vm.hasGeminiKey) vm.aiSplitSteps() else askingKey = true },
+                    ) { Text("AI 拆分步骤") }
+                    if (vm.aiBusy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                    TextButton(onClick = { keyInput = ""; askingKey = true }) { Text("设置 Key") }
+                }
+                vm.aiMessage?.let {
+                    Text(
+                        it,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 8.dp),
+                    )
+                }
+            }
+        }
         itemsIndexed(vm.steps, key = { _, row -> "step-${row.key}" }) { index, row ->
             Card(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)) {
                 Column(Modifier.padding(12.dp)) {
