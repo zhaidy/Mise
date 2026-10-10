@@ -2,9 +2,15 @@ name: Build APK
 on:
   push:
   workflow_dispatch:
+permissions:
+  contents: write
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      MISE_KEYSTORE_PASSWORD: ${{ secrets.MISE_KEYSTORE_PASSWORD }}
+      MISE_KEY_ALIAS: ${{ secrets.MISE_KEY_ALIAS }}
+      MISE_KEY_PASSWORD: ${{ secrets.MISE_KEY_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -16,8 +22,29 @@ jobs:
           # 默认还会装已下架的 "tools" 包而失败；SDK 平台由 Gradle 按需下载
           packages: platform-tools
       - uses: gradle/actions/setup-gradle@v4
-      - run: chmod +x gradlew && ./gradlew assembleDebug testDebugUnitTest
+      # 固定签名密钥放在 Secrets 里；没配置时退回调试签名（此时 APK 不能覆盖安装旧版）
+      - name: Restore signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.MISE_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/mise.keystore"
+            echo "MISE_KEYSTORE_FILE=$RUNNER_TEMP/mise.keystore" >> "$GITHUB_ENV"
+          else
+            echo "::warning::MISE_KEYSTORE_BASE64 未配置，使用调试签名"
+          fi
+      - run: chmod +x gradlew && ./gradlew assembleRelease testDebugUnitTest
+      - run: mv app/build/outputs/apk/release/app-release.apk mise.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: app-debug
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: mise-apk
+          path: mise.apk
+      # 只有 main 上的构建才发 Release，应用内“检查更新”读的就是最新的这个
+      - name: Publish release
+        if: github.ref == 'refs/heads/main' && env.MISE_KEYSTORE_FILE != ''
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: Mise build ${{ github.run_number }}
+          files: mise.apk
+          make_latest: true
