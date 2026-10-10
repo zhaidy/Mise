@@ -157,6 +157,7 @@ class RecipeRepository(
         val generated = SauceBowlGenerator.generate(
             ingredients.map { SauceBowlGenerator.IngredientInput(it.name, it.amountText, it.kind) },
             steps.map { it.text },
+            steps.map { it.timerSeconds },
         )
         dao.deleteBowls(recipeId)
         generated.forEachIndexed { index, bowl ->
