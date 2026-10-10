@@ -43,6 +43,7 @@ import com.personal.mise.data.RecipeFull
 import com.personal.mise.data.TodayRow
 import com.personal.mise.data.parseChecked
 import com.personal.mise.ui.common.rememberApp
+import com.personal.mise.util.AmountScaler
 import com.personal.mise.util.UnitText
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOf
@@ -57,17 +58,18 @@ private data class PrepRecipe(val row: TodayRow, val sections: List<PrepSection>
 }
 
 /** 一道菜的备料项：主料、调料碗、没进调料碗的其他调料 */
-private fun buildPrep(row: TodayRow, full: RecipeFull): PrepRecipe {
+private fun buildPrep(row: TodayRow, full: RecipeFull, factor: Double): PrepRecipe {
+    fun amount(text: String) = UnitText.display(AmountScaler.scale(text, factor))
     val inBowls = full.bowls.flatMap { b -> b.items.map { it.ingredientId } }.toSet()
     val mains = full.ingredients.filter { it.kind != IngredientKind.SEASONING && it.id !in inBowls }
-        .map { PrepItem("i${it.id}", it.name, UnitText.display(it.amountText)) }
+        .map { PrepItem("i${it.id}", it.name, amount(it.amountText)) }
     val bowls = full.bowls.map { b ->
         val stepIndex = full.steps.indexOfFirst { it.id == b.bowl.stepId }
-        val detail = b.items.joinToString("、") { "${it.name} ${UnitText.display(it.amountText)}".trim() }
+        val detail = b.items.joinToString("、") { "${it.name} ${amount(it.amountText)}".trim() }
         PrepItem("b${b.bowl.id}", b.bowl.label + if (stepIndex >= 0) "（第 ${stepIndex + 1} 步）" else "", detail)
     }
     val others = full.ingredients.filter { it.kind == IngredientKind.SEASONING && it.id !in inBowls }
-        .map { PrepItem("i${it.id}", it.name, UnitText.display(it.amountText)) }
+        .map { PrepItem("i${it.id}", it.name, amount(it.amountText)) }
     return PrepRecipe(
         row,
         listOf(PrepSection("备菜", mains), PrepSection("调料碗", bowls), PrepSection("其他调料", others))
@@ -89,7 +91,7 @@ fun PrepListScreen(onBack: () -> Unit, onCook: () -> Unit) {
     var showDone by remember { mutableStateOf(false) }
 
     val recipes = rows.mapNotNull { row ->
-        fulls.firstOrNull { it?.recipe?.id == row.recipeId }?.let { buildPrep(row, it) }
+        fulls.firstOrNull { it?.recipe?.id == row.recipeId }?.let { buildPrep(row, it, app.scaleOf(row.recipeId)) }
     }
     val total = recipes.sumOf { it.allKeys.size }
     val done = recipes.sumOf { r -> parseChecked(r.row.bowlsChecked).count { it in r.allKeys } }
@@ -140,7 +142,7 @@ fun PrepListScreen(onBack: () -> Unit, onCook: () -> Unit) {
                 val checked = parseChecked(recipe.row.bowlsChecked)
                 item(key = "title-${recipe.row.recipeId}") {
                     Text(
-                        recipe.row.title,
+                        recipe.row.title + app.scaleOf(recipe.row.recipeId).let { if (it == 1.0) "" else "（${AmountScaler.label(it)}）" },
                         style = MaterialTheme.typography.titleLarge,
                         modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp),
                     )

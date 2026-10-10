@@ -45,3 +45,50 @@ object TimeText {
         }
     }
 }
+
+/** 把用量原文里的数字按倍率换算，如「150克」×2 →「300克」；「适量」「少许」这类不动。 */
+object AmountScaler {
+    private val fractions = mapOf('½' to 0.5, '¼' to 0.25, '¾' to 0.75, '⅓' to 1.0 / 3, '⅔' to 2.0 / 3)
+    private val chineseDigits = mapOf(
+        '半' to 0.5, '一' to 1.0, '两' to 2.0, '二' to 2.0, '三' to 3.0, '四' to 4.0, '五' to 5.0,
+        '六' to 6.0, '七' to 7.0, '八' to 8.0, '九' to 9.0, '十' to 10.0,
+    )
+
+    // 「1 1/2」「1/2」「1½」「½」「1.5」
+    private val number = Regex(
+        "(?:(\\d+)\\s+)?(\\d+)/(\\d+)|(\\d+(?:\\.\\d+)?)?\\s*([½¼¾⅓⅔])|(\\d+(?:\\.\\d+)?)",
+    )
+
+    // 开头的中文数量词：「半个」「两勺」「一小把」；「一点」「一些」是少许，不换算
+    private val chineseLead = Regex("^([半一两二三四五六七八九十])(?![点些一二三四五六七八九十])")
+
+    fun scale(amount: String, factor: Double): String {
+        if (factor == 1.0 || amount.isBlank()) return amount
+        if (!amount.any { it.isDigit() || it in fractions }) {
+            val m = chineseLead.find(amount) ?: return amount
+            return format(chineseDigits.getValue(m.value[0]) * factor) + amount.substring(1)
+        }
+        return number.replace(amount) { m ->
+            val g = m.groupValues
+            val value = when {
+                g[3].isNotEmpty() -> {
+                    val den = g[3].toDouble()
+                    if (den == 0.0) return@replace m.value
+                    (g[1].toDoubleOrNull() ?: 0.0) + g[2].toDouble() / den
+                }
+                g[5].isNotEmpty() -> (g[4].toDoubleOrNull() ?: 0.0) + fractions.getValue(g[5][0])
+                else -> g[6].toDouble()
+            }
+            format(value * factor)
+        }
+    }
+
+    /** 整数就写整数；10 以上取整；小数最多两位 */
+    fun format(value: Double): String {
+        val rounded = Math.round(value)
+        if (kotlin.math.abs(value - rounded) < 0.01 || value >= 10) return rounded.toString()
+        return "%.2f".format(java.util.Locale.ROOT, value).trimEnd('0').trimEnd('.')
+    }
+
+    fun label(factor: Double): String = "×" + format(factor)
+}
