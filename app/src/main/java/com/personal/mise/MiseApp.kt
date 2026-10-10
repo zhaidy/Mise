@@ -2,6 +2,8 @@ package com.personal.mise
 
 import android.app.Application
 import com.personal.mise.ai.AiSettings
+import com.personal.mise.ai.GeminiClient
+import com.personal.mise.ai.GeminiRecipeOrganizer
 import com.personal.mise.ai.GeminiStepSplitter
 import com.personal.mise.data.MiseDatabase
 import com.personal.mise.data.RecipeRepository
@@ -21,7 +23,9 @@ class MiseApp : Application() {
     val importer: RecipeImporter by lazy { RecipeImporter(images) }
     val aiSettings: AiSettings by lazy { AiSettings(this) }
     val updater: UpdateChecker by lazy { UpdateChecker(this) }
-    val stepSplitter: GeminiStepSplitter by lazy { GeminiStepSplitter(aiSettings) }
+    private val gemini: GeminiClient by lazy { GeminiClient(aiSettings) }
+    val stepSplitter: GeminiStepSplitter by lazy { GeminiStepSplitter(gemini) }
+    val noteOrganizer: GeminiRecipeOrganizer by lazy { GeminiRecipeOrganizer(gemini) }
 
     override fun onCreate() {
         super.onCreate()

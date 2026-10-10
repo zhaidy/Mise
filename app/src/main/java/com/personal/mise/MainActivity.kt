@@ -5,6 +5,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import com.personal.mise.importer.UrlExtractor
 import com.personal.mise.ui.MiseRoot
 import com.personal.mise.ui.NavRequest
 import com.personal.mise.ui.theme.MiseTheme
@@ -35,7 +36,7 @@ class MainActivity : ComponentActivity() {
         when (intent?.action) {
             Intent.ACTION_SEND -> {
                 val text = intent.getStringExtra(Intent.EXTRA_TEXT).orEmpty()
-                navRequests.value = NavRequest.Import(text)
+                navRequests.value = NavRequest.Import(text, aiNote = !UrlExtractor.isLinkShare(text))
             }
             ACTION_OPEN_COOKING -> {
                 val recipeId = intent.getLongExtra(EXTRA_RECIPE_ID, -1L)

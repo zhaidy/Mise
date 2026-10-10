@@ -39,17 +39,20 @@ data class StepRow(
 sealed interface LoadState {
     data object Loading : LoadState
     data object Ready : LoadState
-    data class Failed(val message: String) : LoadState
+    /** needsKey：AI 整理时还没填 Gemini API Key */
+    data class Failed(val message: String, val needsKey: Boolean = false) : LoadState
 }
 
 /**
  * 菜谱编辑页和导入预览页共用的状态。
- * recipeId = 0 且 importText 不为空时是导入预览。
+ * recipeId = 0 且 importText 不为空时是导入预览：aiNote = true 时 importText 是笔记文字，交给 AI 整理，
+ * 否则是下厨房链接。
  */
 class EditorViewModel(
     private val app: MiseApp,
     private val recipeId: Long,
     private val importText: String?,
+    val aiNote: Boolean = false,
 ) : ViewModel() {
 
     private val keys = AtomicLong(1)
@@ -88,7 +91,7 @@ class EditorViewModel(
             try {
                 val draft = when {
                     importText != null -> {
-                        val result = app.importer.import(importText)
+                        val result = if (aiNote) app.noteOrganizer.organize(importText) else app.importer.import(importText)
                         warnings = result.warnings
                         addedImages += listOfNotNull(result.draft.coverImage) + result.draft.steps.mapNotNull { it.image }
                         result.draft
@@ -102,7 +105,7 @@ class EditorViewModel(
                 fill(draft)
                 loadState = LoadState.Ready
             } catch (e: ImportException) {
-                loadState = LoadState.Failed(e.message ?: "导入失败")
+                loadState = LoadState.Failed(e.message ?: "导入失败", needsKey = aiNote && !app.aiSettings.hasKey)
             } catch (e: Exception) {
                 loadState = LoadState.Failed("出错了：${e.message ?: e.javaClass.simpleName}")
             }
