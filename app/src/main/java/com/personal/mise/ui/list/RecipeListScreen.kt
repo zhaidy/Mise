@@ -8,13 +8,17 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Clear
@@ -50,6 +54,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.personal.mise.data.Recipe
+import com.personal.mise.importer.UrlExtractor
 import com.personal.mise.ui.common.LocalImage
 import com.personal.mise.ui.common.rememberApp
 import com.personal.mise.update.UpdateInfo
@@ -60,7 +65,7 @@ import kotlinx.coroutines.launch
 fun RecipeListScreen(
     onOpen: (Long) -> Unit,
     onCreate: () -> Unit,
-    onImport: (String) -> Unit,
+    onImport: (text: String, aiNote: Boolean) -> Unit,
 ) {
     val app = rememberApp()
     val scope = rememberCoroutineScope()
@@ -69,6 +74,7 @@ fun RecipeListScreen(
     val recipes by remember(query) { app.repository.search(query) }.collectAsStateWithLifecycle(emptyList())
     var menuOpen by remember { mutableStateOf(false) }
     var pasteOpen by remember { mutableStateOf(false) }
+    var noteOpen by remember { mutableStateOf(false) }
     var update by remember { mutableStateOf<UpdateInfo?>(null) }
     var updating by remember { mutableStateOf(false) }
 
@@ -99,6 +105,7 @@ fun RecipeListScreen(
                 DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                     DropdownMenuItem(text = { Text("手动新建") }, onClick = { menuOpen = false; onCreate() })
                     DropdownMenuItem(text = { Text("粘贴链接导入") }, onClick = { menuOpen = false; pasteOpen = true })
+                    DropdownMenuItem(text = { Text("AI 整理笔记") }, onClick = { menuOpen = false; noteOpen = true })
                 }
             }
         },
@@ -120,7 +127,7 @@ fun RecipeListScreen(
             if (recipes.isEmpty()) {
                 Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
                     Text(
-                        if (query.isEmpty()) "还没有菜谱。点右下角的加号，手动新建或者粘贴下厨房链接导入。" else "没有找到「$query」",
+                        if (query.isEmpty()) "还没有菜谱。点右下角的加号，手动新建、粘贴下厨房链接，或者让 AI 整理笔记里的菜谱。" else "没有找到「$query」",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
@@ -179,7 +186,19 @@ fun RecipeListScreen(
     if (pasteOpen) {
         PasteLinkDialog(
             onDismiss = { pasteOpen = false },
-            onConfirm = { pasteOpen = false; onImport(it) },
+            onConfirm = { pasteOpen = false; onImport(it, false) },
+        )
+    }
+
+    if (noteOpen) {
+        AiNoteDialog(
+            needsKey = !app.aiSettings.hasKey,
+            onDismiss = { noteOpen = false },
+            onConfirm = { note, key ->
+                if (key.isNotBlank()) app.aiSettings.geminiKey = key
+                noteOpen = false
+                onImport(note, true)
+            },
         )
     }
 }
@@ -220,6 +239,61 @@ private fun PasteLinkDialog(onDismiss: () -> Unit, onConfirm: (String) -> Unit) 
         },
         confirmButton = {
             TextButton(onClick = { onConfirm(text) }, enabled = text.isNotBlank()) { Text("导入") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
+    )
+}
+
+/** 粘贴手机笔记里的菜谱文字，交给 AI 整理；还没填 Gemini Key 时一起填 */
+@Composable
+private fun AiNoteDialog(needsKey: Boolean, onDismiss: () -> Unit, onConfirm: (note: String, key: String) -> Unit) {
+    val context = LocalContext.current
+    var text by remember {
+        val clip = (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).primaryClip
+        val pasted = clip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(context)?.toString().orEmpty()
+        mutableStateOf(if (UrlExtractor.isLinkShare(pasted)) "" else pasted)
+    }
+    var key by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("AI 整理笔记") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                Text(
+                    "把笔记里的菜谱整段粘贴进来，格式乱也没关系，AI 会整理出菜名、用料和步骤。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    placeholder = { Text("例如：红烧肉 五花肉一斤切块，冷水下锅焯水，冰糖炒糖色…") },
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 6,
+                    maxLines = 12,
+                )
+                if (needsKey) {
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        "需要 Gemini API Key：在 aistudio.google.com 免费申请，只保存在这台手机上。",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    OutlinedTextField(
+                        value = key,
+                        onValueChange = { key = it },
+                        label = { Text("API Key") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onConfirm(text, key) },
+                enabled = text.isNotBlank() && (!needsKey || key.isNotBlank()),
+            ) { Text("整理") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
     )

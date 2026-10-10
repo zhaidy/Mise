@@ -56,14 +56,14 @@ fun RecipeEditScreen(recipeId: Long, onDone: (savedId: Long?) -> Unit) {
     )
 }
 
-/** 导入预览：解析下厨房链接，确认或修改后再保存 */
+/** 导入预览：解析下厨房链接，或让 AI 整理笔记文字，确认或修改后再保存 */
 @Composable
-fun ImportScreen(sharedText: String, onDone: (savedId: Long?) -> Unit) {
+fun ImportScreen(sharedText: String, aiNote: Boolean, onDone: (savedId: Long?) -> Unit) {
     val app = rememberApp()
-    val vm: EditorViewModel = viewModel(key = "import-$sharedText") { EditorViewModel(app, 0L, sharedText) }
+    val vm: EditorViewModel = viewModel(key = "import-$aiNote-$sharedText") { EditorViewModel(app, 0L, sharedText, aiNote) }
     EditorScaffold(
         vm = vm,
-        title = "导入预览",
+        title = if (aiNote) "AI 整理预览" else "导入预览",
         saveLabel = "保存",
         discardMessage = "放弃导入吗？已下载的图片会被删除。",
         onDone = onDone,
@@ -76,14 +76,14 @@ fun ImportScreen(sharedText: String, onDone: (savedId: Long?) -> Unit) {
                     Column(Modifier.padding(16.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Filled.Warning, contentDescription = null)
-                            Text("  有些内容没解析出来", style = MaterialTheme.typography.titleSmall)
+                            Text(if (aiNote) "  有些内容没整理出来" else "  有些内容没解析出来", style = MaterialTheme.typography.titleSmall)
                         }
                         vm.warnings.forEach { Text("· $it", style = MaterialTheme.typography.bodyMedium) }
                     }
                 }
             } else {
                 Text(
-                    "已解析完成，检查一下再保存",
+                    if (aiNote) "AI 已整理完成，请对照原文检查用料和步骤再保存" else "已解析完成，检查一下再保存",
                     Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -105,6 +105,7 @@ private fun EditorScaffold(
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
     var confirmDiscard by remember { mutableStateOf(false) }
+    var askingKey by remember { mutableStateOf(false) }
 
     fun discard() {
         vm.discard()
@@ -144,7 +145,13 @@ private fun EditorScaffold(
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     CircularProgressIndicator()
                     Spacer(Modifier.height(16.dp))
-                    Text(if (vm.isImport) "正在读取网页和下载图片…" else "加载中…")
+                    Text(
+                        when {
+                            vm.aiNote -> "AI 正在整理菜谱，大约需要十几秒…"
+                            vm.isImport -> "正在读取网页和下载图片…"
+                            else -> "加载中…"
+                        },
+                    )
                 }
             }
             is LoadState.Failed -> Box(Modifier.padding(padding).fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
@@ -153,12 +160,25 @@ private fun EditorScaffold(
                     Spacer(Modifier.height(24.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         OutlinedButton(onClick = { discard() }) { Text("返回") }
-                        Button(onClick = vm::load) { Text("重试") }
+                        if (state.needsKey) Button(onClick = { askingKey = true }) { Text("填写 Key") }
+                        else Button(onClick = vm::load) { Text("重试") }
                     }
                 }
             }
             LoadState.Ready -> RecipeEditor(vm, Modifier.padding(padding).fillMaxSize(), header)
         }
+    }
+
+    if (askingKey) {
+        GeminiKeyDialog(
+            confirmLabel = "保存并整理",
+            onDismiss = { askingKey = false },
+            onConfirm = {
+                vm.saveGeminiKey(it)
+                askingKey = false
+                vm.load()
+            },
+        )
     }
 
     if (confirmDiscard) {

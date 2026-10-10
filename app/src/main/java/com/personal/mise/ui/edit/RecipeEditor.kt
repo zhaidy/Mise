@@ -25,7 +25,6 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
@@ -65,34 +64,17 @@ fun RecipeEditor(
         pickingStepKey = null
     }
     var askingKey by rememberSaveable { mutableStateOf(false) }
-    var keyInput by rememberSaveable { mutableStateOf("") }
     val imageOnly = PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
 
     if (askingKey) {
-        AlertDialog(
-            onDismissRequest = { askingKey = false },
-            title = { Text("Gemini API Key") },
-            text = {
-                Column {
-                    Text(
-                        "在 aistudio.google.com 免费申请，只保存在这台手机上。",
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    OutlinedTextField(value = keyInput, onValueChange = { keyInput = it }, singleLine = true, label = { Text("API Key") })
-                }
+        GeminiKeyDialog(
+            confirmLabel = "保存并拆分",
+            onDismiss = { askingKey = false },
+            onConfirm = {
+                vm.saveGeminiKey(it)
+                askingKey = false
+                vm.aiSplitSteps()
             },
-            confirmButton = {
-                TextButton(
-                    enabled = keyInput.isNotBlank(),
-                    onClick = {
-                        vm.saveGeminiKey(keyInput)
-                        askingKey = false
-                        vm.aiSplitSteps()
-                    },
-                ) { Text("保存并拆分") }
-            },
-            dismissButton = { TextButton(onClick = { askingKey = false }) { Text("取消") } },
         )
     }
 
@@ -181,7 +163,7 @@ fun RecipeEditor(
                         onClick = { if (vm.hasGeminiKey) vm.aiSplitSteps() else askingKey = true },
                     ) { Text("AI 拆分步骤") }
                     if (vm.aiBusy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                    TextButton(onClick = { keyInput = ""; askingKey = true }) { Text("设置 Key") }
+                    TextButton(onClick = { askingKey = true }) { Text("设置 Key") }
                 }
                 vm.aiMessage?.let {
                     Text(

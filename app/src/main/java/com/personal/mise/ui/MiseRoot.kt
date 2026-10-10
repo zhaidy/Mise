@@ -47,7 +47,8 @@ import com.personal.mise.ui.today.TodayScreen
 import kotlinx.coroutines.flow.MutableStateFlow
 
 sealed interface NavRequest {
-    data class Import(val text: String) : NavRequest
+    /** aiNote = true 时交给 AI 整理笔记文字，否则按下厨房链接导入 */
+    data class Import(val text: String, val aiNote: Boolean = false) : NavRequest
     data class Cooking(val recipeId: Long) : NavRequest
 }
 
@@ -58,7 +59,7 @@ object Routes {
     fun detail(id: Long) = "detail/$id"
     fun edit(id: Long) = "edit/$id"
     fun bowls(id: Long) = "bowls/$id"
-    fun import(text: String) = "import?text=${Uri.encode(text)}"
+    fun import(text: String, aiNote: Boolean = false) = "import?text=${Uri.encode(text)}&ai=$aiNote"
     fun cooking(recipeId: Long = -1L) = "cooking?recipeId=$recipeId"
 }
 
@@ -77,7 +78,7 @@ fun MiseRoot(navRequests: MutableStateFlow<NavRequest?>) {
     val request by navRequests.collectAsStateWithLifecycle()
     LaunchedEffect(request) {
         when (val r = request) {
-            is NavRequest.Import -> nav.navigate(Routes.import(r.text))
+            is NavRequest.Import -> nav.navigate(Routes.import(r.text, r.aiNote))
             is NavRequest.Cooking -> nav.navigate(Routes.cooking(r.recipeId)) { launchSingleTop = true }
             null -> Unit
         }
@@ -133,7 +134,7 @@ fun MiseRoot(navRequests: MutableStateFlow<NavRequest?>) {
                 RecipeListScreen(
                     onOpen = { nav.navigate(Routes.detail(it)) },
                     onCreate = { nav.navigate(Routes.edit(0)) },
-                    onImport = { nav.navigate(Routes.import(it)) },
+                    onImport = { text, aiNote -> nav.navigate(Routes.import(text, aiNote)) },
                 )
             }
             composable(Routes.TODAY) {
@@ -170,11 +171,15 @@ fun MiseRoot(navRequests: MutableStateFlow<NavRequest?>) {
                 )
             }
             composable(
-                "import?text={text}",
-                arguments = listOf(navArgument("text") { type = NavType.StringType; defaultValue = "" }),
+                "import?text={text}&ai={ai}",
+                arguments = listOf(
+                    navArgument("text") { type = NavType.StringType; defaultValue = "" },
+                    navArgument("ai") { type = NavType.BoolType; defaultValue = false },
+                ),
             ) { entry ->
                 ImportScreen(
                     sharedText = entry.arguments?.getString("text").orEmpty(),
+                    aiNote = entry.arguments?.getBoolean("ai") ?: false,
                     onDone = { savedId ->
                         nav.popBackStack()
                         if (savedId != null) nav.navigate(Routes.detail(savedId))
