@@ -47,7 +47,7 @@ class GeminiStepSplitter(private val settings: AiSettings) {
 
     companion object {
         private const val ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models"
-        private const val MODEL = "gemini-2.5-flash"
+        private const val MODEL = "gemini-3.8-flash"
 
         private const val PROMPT = "下面是一份中文菜谱的做法，可能所有操作都挤在一两段里。" +
             "请把它拆成清晰的、按先后顺序的步骤：每一步只做一件主要的事（例如切配、腌制、焯水、炒制、调味、收汁、装盘分开）。" +
