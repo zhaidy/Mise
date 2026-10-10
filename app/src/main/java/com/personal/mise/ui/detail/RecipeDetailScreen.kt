@@ -2,6 +2,8 @@ package com.personal.mise.ui.detail
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
@@ -23,11 +25,13 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -41,9 +45,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -52,6 +59,7 @@ import com.personal.mise.data.Ingredient
 import com.personal.mise.data.IngredientKind
 import com.personal.mise.ui.common.LocalImage
 import com.personal.mise.ui.common.rememberApp
+import com.personal.mise.util.AmountScaler
 import com.personal.mise.util.TimeText
 import com.personal.mise.util.UnitText
 import kotlinx.coroutines.launch
@@ -70,6 +78,8 @@ fun RecipeDetailScreen(
     val snackbar = remember { SnackbarHostState() }
     val full by remember(recipeId) { app.repository.observeFull(recipeId) }.collectAsStateWithLifecycle(null)
     var confirmDelete by remember { mutableStateOf(false) }
+    var scaleOpen by remember { mutableStateOf(false) }
+    val factor = app.scaleOf(recipeId)
 
     Scaffold(
         topBar = {
@@ -127,10 +137,23 @@ fun RecipeDetailScreen(
                     Text("份量：$it", Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
                 }
             }
-            item { SectionTitle("主料") }
-            item { IngredientTable(mains) }
+            item {
+                Row(
+                    Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 20.dp, bottom = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("主料", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+                    if (factor != 1.0) {
+                        TextButton(onClick = { app.scales.remove(recipeId) }) { Text("恢复原量") }
+                    }
+                    OutlinedButton(onClick = { scaleOpen = true }) {
+                        Text(if (factor == 1.0) "换算" else "换算 ${AmountScaler.label(factor)}")
+                    }
+                }
+            }
+            item { IngredientTable(mains, factor) }
             item { SectionTitle("调料") }
-            item { IngredientTable(seasonings) }
+            item { IngredientTable(seasonings, factor) }
 
             item {
                 Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 20.dp)) {
@@ -150,7 +173,7 @@ fun RecipeDetailScreen(
                 data.bowls.forEach { bowl ->
                     item(key = "bowl-${bowl.bowl.id}") {
                         val stepIndex = data.steps.indexOfFirst { it.id == bowl.bowl.stepId }
-                        BowlCard(bowl, if (stepIndex >= 0) "第 ${stepIndex + 1} 步下锅" else null)
+                        BowlCard(bowl, if (stepIndex >= 0) "第 ${stepIndex + 1} 步下锅" else null, factor)
                     }
                 }
             }
@@ -184,6 +207,17 @@ fun RecipeDetailScreen(
         }
     }
 
+    if (scaleOpen) {
+        ScaleDialog(
+            current = factor,
+            onDismiss = { scaleOpen = false },
+            onPick = {
+                if (it == 1.0) app.scales.remove(recipeId) else app.scales[recipeId] = it
+                scaleOpen = false
+            },
+        )
+    }
+
     if (confirmDelete) {
         AlertDialog(
             onDismissRequest = { confirmDelete = false },
@@ -213,7 +247,7 @@ private fun SectionTitle(text: String) {
 }
 
 @Composable
-private fun IngredientTable(items: List<Ingredient>) {
+private fun IngredientTable(items: List<Ingredient>, factor: Double) {
     if (items.isEmpty()) {
         Text("无", Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
         return
@@ -223,7 +257,7 @@ private fun IngredientTable(items: List<Ingredient>) {
             Row(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
                 Text(ing.name, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
                 Spacer(Modifier.width(12.dp))
-                Text(UnitText.display(ing.amountText), style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(UnitText.display(AmountScaler.scale(ing.amountText, factor)), style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             HorizontalDivider()
         }
@@ -231,7 +265,7 @@ private fun IngredientTable(items: List<Ingredient>) {
 }
 
 @Composable
-fun BowlCard(bowl: BowlFull, subtitle: String?, modifier: Modifier = Modifier) {
+fun BowlCard(bowl: BowlFull, subtitle: String?, factor: Double = 1.0, modifier: Modifier = Modifier) {
     Card(
         modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer),
@@ -245,9 +279,49 @@ fun BowlCard(bowl: BowlFull, subtitle: String?, modifier: Modifier = Modifier) {
             bowl.items.forEach { item ->
                 Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
                     Text(item.name, Modifier.weight(1f))
-                    Text(UnitText.display(item.amountText))
+                    Text(UnitText.display(AmountScaler.scale(item.amountText, factor)))
                 }
             }
         }
     }
+}
+
+private val presetFactors = listOf(0.5, 1.0, 1.5, 2.0, 3.0, 4.0)
+
+/** 选倍率：常用倍数直接点，也能自己输，如 1.25 */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ScaleDialog(current: Double, onDismiss: () -> Unit, onPick: (Double) -> Unit) {
+    var custom by remember { mutableStateOf(if (current in presetFactors) "" else AmountScaler.format(current)) }
+    val customValue = custom.trim().toDoubleOrNull()?.takeIf { it > 0 && it <= 100 }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("换算用量") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("所有主料、调料和调料碗的用量都按倍率显示，「适量」「少许」不变。")
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    presetFactors.forEach { f ->
+                        FilterChip(
+                            selected = f == current,
+                            onClick = { onPick(f) },
+                            label = { Text(AmountScaler.label(f)) },
+                        )
+                    }
+                }
+                OutlinedTextField(
+                    value = custom,
+                    onValueChange = { custom = it },
+                    label = { Text("自定义倍率") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    isError = custom.isNotBlank() && customValue == null,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { customValue?.let(onPick) }, enabled = customValue != null) { Text("确定") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
+    )
 }

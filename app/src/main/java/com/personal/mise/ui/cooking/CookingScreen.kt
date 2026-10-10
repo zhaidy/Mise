@@ -69,6 +69,7 @@ import com.personal.mise.timer.CookingTimer
 import com.personal.mise.ui.common.LocalImage
 import com.personal.mise.ui.common.rememberApp
 import com.personal.mise.util.TimeText
+import com.personal.mise.util.AmountScaler
 import com.personal.mise.util.UnitText
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -197,6 +198,7 @@ private fun RecipePager(
                 index = page,
                 total = steps.size,
                 bowls = data.bowlsForStep(step.id),
+                factor = app.scaleOf(row.recipeId),
                 timers = timers.filter { it.stepIndex == page },
                 now = now,
                 onStartTimer = { seconds -> app.timers.start(row.recipeId, row.title, page, seconds) },
@@ -227,6 +229,7 @@ private fun StepPage(
     index: Int,
     total: Int,
     bowls: List<BowlFull>,
+    factor: Double,
     timers: List<CookingTimer>,
     now: Long,
     onStartTimer: (Int) -> Unit,
@@ -251,7 +254,7 @@ private fun StepPage(
                 Column(Modifier.padding(16.dp)) {
                     Text("倒入${bowl.bowl.label}", fontSize = BodySize, fontWeight = FontWeight.Bold)
                     bowl.items.forEach { item ->
-                        Text("${item.name}  ${UnitText.display(item.amountText)}", fontSize = 20.sp)
+                        Text("${item.name}  ${UnitText.display(AmountScaler.scale(item.amountText, factor))}", fontSize = 20.sp)
                     }
                 }
             }
