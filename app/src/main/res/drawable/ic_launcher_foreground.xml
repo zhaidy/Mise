@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 一只调料碗 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#B5532E"
+        android:pathData="M30,52 L78,52 C78,66 67,76 54,76 C41,76 30,66 30,52 Z" />
+    <path
+        android:fillColor="#7A3420"
+        android:pathData="M28,48 L80,48 L80,53 L28,53 Z" />
+    <path
+        android:fillColor="#E0A23B"
+        android:pathData="M42,44 C44,38 50,36 54,40 C58,35 64,37 66,44 Z" />
+    <path
+        android:fillColor="#7A3420"
+        android:pathData="M46,76 L62,76 L60,80 L48,80 Z" />
+</vector>
