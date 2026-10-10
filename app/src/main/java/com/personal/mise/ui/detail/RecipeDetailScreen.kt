@@ -119,7 +119,10 @@ fun RecipeDetailScreen(
 
         LazyColumn(Modifier.padding(padding).fillMaxSize()) {
             item {
-                LocalImage(data.recipe.coverImage, Modifier.fillMaxWidth().aspectRatio(4f / 3f), placeholder = "没有封面")
+                // 大多数菜谱没有封面：没图就不占位，有图也只用一条矮横幅
+                if (!data.recipe.coverImage.isNullOrBlank()) {
+                    LocalImage(data.recipe.coverImage, Modifier.fillMaxWidth().aspectRatio(16f / 9f))
+                }
                 data.recipe.servings?.let {
                     Text("份量：$it", Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
                 }
