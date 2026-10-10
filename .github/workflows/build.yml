@@ -12,6 +12,9 @@ jobs:
           distribution: temurin
           java-version: 17
       - uses: android-actions/setup-android@v3
+        with:
+          # 默认还会装已下架的 "tools" 包而失败；SDK 平台由 Gradle 按需下载
+          packages: platform-tools
       - uses: gradle/actions/setup-gradle@v4
       - run: chmod +x gradlew && ./gradlew assembleDebug testDebugUnitTest
       - uses: actions/upload-artifact@v4
