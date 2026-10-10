@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 12+。云备份上限 25MB，超了会整个停掉，所以只备数据库（图片走手动导出）；换机直传没上限，全带上 -->
+<data-extraction-rules>
+    <cloud-backup>
+        <include domain="database" path="." />
+        <include domain="sharedpref" path="ai.xml" />
+    </cloud-backup>
+    <device-transfer>
+        <include domain="database" path="." />
+        <include domain="file" path="images/" />
+        <include domain="sharedpref" path="." />
+    </device-transfer>
+</data-extraction-rules>

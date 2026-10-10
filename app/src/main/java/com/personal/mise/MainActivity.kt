@@ -1,5 +1,6 @@
 package com.personal.mise
 
+import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -48,5 +49,13 @@ class MainActivity : ComponentActivity() {
     companion object {
         const val ACTION_OPEN_COOKING = "com.personal.mise.OPEN_COOKING"
         const val EXTRA_RECIPE_ID = "recipe_id"
+
+        /** 从备份恢复后数据库已关闭，整个进程重来一遍 */
+        fun restartApp(context: Context) {
+            val intent = context.packageManager.getLaunchIntentForPackage(context.packageName) ?: return
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+            context.startActivity(intent)
+            Runtime.getRuntime().exit(0)
+        }
     }
 }

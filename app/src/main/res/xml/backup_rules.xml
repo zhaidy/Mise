@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 11 及以下的自动备份，规则同 data_extraction_rules 的 cloud-backup -->
+<full-backup-content>
+    <include domain="database" path="." />
+    <include domain="sharedpref" path="ai.xml" />
+</full-backup-content>
