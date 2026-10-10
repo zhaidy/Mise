@@ -14,7 +14,7 @@ import androidx.room.RoomDatabase
         SauceBowlItem::class,
         TodayMenu::class,
     ],
-    version = 1,
+    version = MiseDatabase.VERSION,
     exportSchema = false,
 )
 abstract class MiseDatabase : RoomDatabase() {
@@ -22,7 +22,10 @@ abstract class MiseDatabase : RoomDatabase() {
     abstract fun todayDao(): TodayDao
 
     companion object {
+        const val VERSION = 1
+        const val NAME = "mise.db"
+
         fun create(context: Context): MiseDatabase =
-            Room.databaseBuilder(context, MiseDatabase::class.java, "mise.db").build()
+            Room.databaseBuilder(context, MiseDatabase::class.java, NAME).build()
     }
 }

@@ -2,6 +2,9 @@ package com.personal.mise.ui.list
 
 import android.content.ClipboardManager
 import android.content.Context
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -24,6 +27,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
@@ -56,12 +60,15 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.personal.mise.MainActivity
 import com.personal.mise.data.Recipe
 import com.personal.mise.importer.UrlExtractor
 import com.personal.mise.ui.common.LocalImage
 import com.personal.mise.ui.common.rememberApp
 import com.personal.mise.update.UpdateInfo
 import kotlinx.coroutines.launch
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -80,6 +87,24 @@ fun RecipeListScreen(
     var noteOpen by remember { mutableStateOf(false) }
     var update by remember { mutableStateOf<UpdateInfo?>(null) }
     var updating by remember { mutableStateOf(false) }
+    var moreOpen by remember { mutableStateOf(false) }
+    var restoreUri by remember { mutableStateOf<Uri?>(null) }
+    var restoring by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+
+    val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
+        if (uri != null) scope.launch {
+            try {
+                val count = app.backup.export(uri)
+                snackbar.showSnackbar("已导出 $count 个菜谱")
+            } catch (e: Exception) {
+                snackbar.showSnackbar("导出失败：${e.message}")
+            }
+        }
+    }
+    val restoreLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) restoreUri = uri
+    }
 
     // manual=true 时才提示“已是最新 / 检查失败”，启动时的静默检查只在有新版本时弹窗
     suspend fun checkUpdate(manual: Boolean) {
@@ -96,7 +121,29 @@ fun RecipeListScreen(
         topBar = {
             TopAppBar(
                 title = { Text("菜谱") },
-                actions = { TextButton(onClick = { scope.launch { checkUpdate(manual = true) } }) { Text("检查更新") } },
+                actions = {
+                    Box {
+                        IconButton(onClick = { moreOpen = true }) { Icon(Icons.Filled.MoreVert, contentDescription = "更多") }
+                        DropdownMenu(expanded = moreOpen, onDismissRequest = { moreOpen = false }) {
+                            DropdownMenuItem(
+                                text = { Text("检查更新") },
+                                onClick = { moreOpen = false; scope.launch { checkUpdate(manual = true) } },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("导出备份") },
+                                onClick = {
+                                    moreOpen = false
+                                    val date = LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE)
+                                    exportLauncher.launch("mise-backup-$date.zip")
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("从备份恢复") },
+                                onClick = { moreOpen = false; restoreLauncher.launch(arrayOf("application/zip", "application/octet-stream")) },
+                            )
+                        }
+                    }
+                },
             )
         },
         snackbarHost = { SnackbarHost(snackbar) },
@@ -181,6 +228,36 @@ fun RecipeListScreen(
                 ) { Text("更新") }
             },
             dismissButton = { TextButton(enabled = !updating, onClick = { update = null }) { Text("以后再说") } },
+        )
+    }
+
+    restoreUri?.let { uri ->
+        AlertDialog(
+            onDismissRequest = { if (!restoring) restoreUri = null },
+            title = { Text("从备份恢复") },
+            text = { Text(if (restoring) "正在恢复…" else "会用备份替换现在所有的菜谱和图片，无法撤销。恢复完 App 会自动重启。") },
+            confirmButton = {
+                TextButton(
+                    enabled = !restoring,
+                    onClick = {
+                        restoring = true
+                        scope.launch {
+                            try {
+                                app.backup.restore(uri)
+                                MainActivity.restartApp(context)
+                            } catch (e: Exception) {
+                                // 已经关库的话 App 用不了了，也得重启
+                                if (!app.database.isOpen) MainActivity.restartApp(context)
+                                restoreUri = null
+                                snackbar.showSnackbar("恢复失败：${e.message}")
+                            } finally {
+                                restoring = false
+                            }
+                        }
+                    },
+                ) { Text("恢复") }
+            },
+            dismissButton = { TextButton(enabled = !restoring, onClick = { restoreUri = null }) { Text("取消") } },
         )
     }
 
