@@ -5,8 +5,11 @@ import com.personal.mise.data.IngredientKind
 /**
  * 调料碗自动整合（本地规则版）。
  *
- * 规则：同一步出现两种或以上调料就合成一个调料碗；只有一种的不配碗。
- * 炒菜用的油不进碗；葱姜蒜等爆香料不单独配碗，但和调料同一步下锅时一起放进这一步的碗。
+ * 规则：每一种用料（调料、配料、主料都算）都要进某个碗。
+ * 一起下锅、或者短时间内依次下锅的用料合成一个碗：连续几步都用到用料、中间没有别的步骤隔开的，算同一个碗；
+ * 没有提到用料的步骤，以及带计时的步骤（腌制、等待），会把前后分开。
+ * 炒菜用的油不进碗。同一种调料分几个碗时标「分次加入」；
+ * 主料、配料只进最后一个用到它的碗（备料时切好、下锅时才放的那一次）。
  */
 object SauceBowlGenerator {
 
@@ -21,34 +24,59 @@ object SauceBowlGenerator {
     fun label(index: Int): String =
         if (index < 26) "调料碗 ${'A' + index}" else "调料碗 ${index + 1}"
 
-    fun generate(ingredients: List<IngredientInput>, steps: List<String>): List<GeneratedBowl> {
-        val matchesPerStep = steps.map { findIngredients(it, ingredients) }
-
-        // 每个用料出现在几个步骤里
-        val appearances = IntArray(ingredients.size)
-        matchesPerStep.forEach { found -> found.forEach { appearances[it]++ } }
-
-        val bowls = mutableListOf<GeneratedBowl>()
-        matchesPerStep.forEachIndexed { stepIndex, found ->
-            val seasonings = found.filter { isBowlSeasoning(ingredients[it]) }
-            if (seasonings.size < 2) return@forEachIndexed
-            val members = found.filter { idx ->
-                isBowlSeasoning(ingredients[idx]) || SeasoningDictionary.isAromatic(ingredients[idx].name)
-            }
-            val items = members.map { idx ->
-                val amount = ingredients[idx].amountText.trim()
-                val text = if (appearances[idx] > 1 && amount !in vagueAmounts) "分次加入，共 $amount" else amount
-                GeneratedItem(idx, text)
-            }
-            bowls += GeneratedBowl(label(bowls.size), stepIndex, items)
+    /** [timers] 与 [steps] 一一对应，带计时的步骤会结束当前这一碗 */
+    fun generate(
+        ingredients: List<IngredientInput>,
+        steps: List<String>,
+        timers: List<Int?> = emptyList(),
+    ): List<GeneratedBowl> {
+        val matchesPerStep = steps.map { text ->
+            findIngredients(text, ingredients).filterNot { SeasoningDictionary.isCookingOil(ingredients[it].name) }
         }
-        return bowls
+
+        // 连续有用料的步骤归为一组，没有用料的步骤隔断，带计时的步骤收尾
+        val groups = mutableListOf<List<Int>>()
+        var run = mutableListOf<Int>()
+        fun flush() {
+            if (run.isNotEmpty()) groups += run.toList()
+            run = mutableListOf()
+        }
+        matchesPerStep.forEachIndexed { stepIndex, found ->
+            if (found.isEmpty()) {
+                flush()
+                return@forEachIndexed
+            }
+            run += stepIndex
+            if (timers.getOrNull(stepIndex) != null) flush()
+        }
+        flush()
+
+        val membersPerGroup = groups.map { group -> group.flatMap { matchesPerStep[it] }.distinct() }
+        val lastGroupOf = IntArray(ingredients.size) { -1 }
+        membersPerGroup.forEachIndexed { g, members -> members.forEach { lastGroupOf[it] = g } }
+
+        // 主料、配料只进最后一个碗；调料、爆香料每个出现过的碗都进
+        val finalMembers = membersPerGroup.mapIndexed { g, members ->
+            members.filter { isSplittable(ingredients[it]) || lastGroupOf[it] == g }
+        }
+        val appearances = IntArray(ingredients.size)
+        finalMembers.forEach { members -> members.forEach { appearances[it]++ } }
+
+        // 主料挪到后面的碗之后，前面的碗可能空了，空碗不留
+        return groups.indices
+            .filter { finalMembers[it].isNotEmpty() }
+            .mapIndexed { bowlIndex, g ->
+                val items = finalMembers[g].map { idx ->
+                    val amount = ingredients[idx].amountText.trim()
+                    val text = if (appearances[idx] > 1 && amount !in vagueAmounts) "分次加入，共 $amount" else amount
+                    GeneratedItem(idx, text)
+                }
+                GeneratedBowl(label(bowlIndex), groups[g].first(), items)
+            }
     }
 
-    private fun isBowlSeasoning(ingredient: IngredientInput): Boolean =
-        ingredient.kind == IngredientKind.SEASONING &&
-            !SeasoningDictionary.isCookingOil(ingredient.name) &&
-            !SeasoningDictionary.isAromatic(ingredient.name)
+    private fun isSplittable(ingredient: IngredientInput): Boolean =
+        ingredient.kind == IngredientKind.SEASONING || SeasoningDictionary.isAromatic(ingredient.name)
 
     /**
      * 找出步骤文字里提到的用料，按第一次出现的位置排序。
@@ -59,8 +87,6 @@ object SauceBowlGenerator {
 
         val candidates = mutableListOf<Hit>()
         ingredients.forEachIndexed { idx, ing ->
-            val relevant = ing.kind == IngredientKind.SEASONING || SeasoningDictionary.isAromatic(ing.name)
-            if (!relevant) return@forEachIndexed
             for (term in SeasoningDictionary.matchTerms(ing.name)) {
                 var from = 0
                 while (true) {
