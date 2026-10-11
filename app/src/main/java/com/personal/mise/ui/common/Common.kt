@@ -19,6 +19,9 @@ fun rememberApp(): MiseApp {
     return remember(context) { context.applicationContext as MiseApp }
 }
 
+/** 图片文件在本机吗？别的手机同步来的菜谱可能只有路径，还没有文件 */
+fun MiseApp.hasImage(path: String?): Boolean = !path.isNullOrBlank() && images.file(path).exists()
+
 /** 显示存在 files/ 下的图片；没有图片时显示占位 */
 @Composable
 fun LocalImage(
@@ -28,7 +31,7 @@ fun LocalImage(
     placeholder: String = "暂无图片",
 ) {
     val app = rememberApp()
-    if (path.isNullOrBlank()) {
+    if (!app.hasImage(path)) {
         Box(
             modifier.background(MaterialTheme.colorScheme.surfaceVariant),
             contentAlignment = Alignment.Center,
@@ -36,7 +39,7 @@ fun LocalImage(
             Text(placeholder, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
         }
     } else {
-        val file = remember(path) { app.images.file(path) }
+        val file = remember(path) { app.images.file(path!!) }
         AsyncImage(
             model = file,
             contentDescription = null,

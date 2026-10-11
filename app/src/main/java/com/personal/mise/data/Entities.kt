@@ -149,6 +149,8 @@ data class TodayRow(
     val stepCount: Int,
 )
 
+data class RecipeStamp(val uid: String, val updatedAt: Long)
+
 data class BowlFull(val bowl: SauceBowl, val items: List<BowlItemRow>)
 
 data class RecipeFull(

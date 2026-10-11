@@ -33,6 +33,16 @@ jobs:
           else
             echo "::warning::MISE_KEYSTORE_BASE64 未配置，使用调试签名"
           fi
+      # Firebase 配置放在 Secrets 里，不进仓库
+      - name: Restore google-services.json
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: |
+          if [ -z "$GOOGLE_SERVICES_JSON" ]; then
+            echo "::error::GOOGLE_SERVICES_JSON 未配置"
+            exit 1
+          fi
+          printf '%s' "$GOOGLE_SERVICES_JSON" > app/google-services.json
       - run: chmod +x gradlew && ./gradlew assembleRelease testDebugUnitTest
       - run: mv app/build/outputs/apk/release/app-release.apk mise.apk
       - uses: actions/upload-artifact@v4

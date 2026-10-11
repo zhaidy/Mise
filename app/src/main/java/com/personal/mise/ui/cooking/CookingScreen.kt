@@ -67,6 +67,7 @@ import com.personal.mise.data.Step
 import com.personal.mise.data.TodayRow
 import com.personal.mise.timer.CookingTimer
 import com.personal.mise.ui.common.LocalImage
+import com.personal.mise.ui.common.hasImage
 import com.personal.mise.ui.common.rememberApp
 import com.personal.mise.util.TimeText
 import com.personal.mise.util.AmountScaler
@@ -235,6 +236,7 @@ private fun StepPage(
     onStartTimer: (Int) -> Unit,
     onCancelTimer: (Int) -> Unit,
 ) {
+    val app = rememberApp()
     var customOpen by remember { mutableStateOf(false) }
     val suggested = step.timerSeconds ?: TimeText.guessSeconds(step.text)
 
@@ -262,7 +264,7 @@ private fun StepPage(
 
         Text(step.text, fontSize = BodySize, lineHeight = 36.sp)
 
-        if (step.image != null) {
+        if (app.hasImage(step.image)) {
             LocalImage(step.image, Modifier.fillMaxWidth().aspectRatio(4f / 3f).clip(RoundedCornerShape(12.dp)))
         }
 

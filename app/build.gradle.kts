@@ -2,6 +2,8 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
+    // 读取 app/google-services.json（CI 从 Secrets 写入，不进仓库）
+    alias(libs.plugins.google.services)
 }
 
 android {
@@ -13,8 +15,10 @@ android {
         minSdk = 26
         targetSdk = 36
         // CI 每次构建递增，应用内更新靠它判断有没有新版本
-        versionCode = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
-        versionName = "0.3.0"
+        val buildNumber = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
+        versionCode = buildNumber
+        // 显示用的版本号带上 build 号，和 Release 的「Mise build N」对得上
+        versionName = "0.3.$buildNumber"
     }
 
     // 固定签名：每次构建签名一致，新 APK 才能直接覆盖安装（数据保留）。
@@ -78,6 +82,10 @@ dependencies {
     ksp(libs.room.compiler)
 
     implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.kotlinx.coroutines.play.services)
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.auth)
+    implementation(libs.firebase.firestore)
     implementation(libs.okhttp)
     implementation(libs.jsoup)
     compileOnly(libs.jspecify)

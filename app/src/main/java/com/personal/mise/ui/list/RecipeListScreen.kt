@@ -65,6 +65,7 @@ import com.personal.mise.ai.AiProvider
 import com.personal.mise.data.Recipe
 import com.personal.mise.importer.UrlExtractor
 import com.personal.mise.ui.common.LocalImage
+import com.personal.mise.ui.common.hasImage
 import com.personal.mise.ui.common.rememberApp
 import com.personal.mise.ui.edit.AiKeyDialog
 import com.personal.mise.ui.edit.AiKeyFields
@@ -94,6 +95,7 @@ fun RecipeListScreen(
     var moreOpen by remember { mutableStateOf(false) }
     var restoreUri by remember { mutableStateOf<Uri?>(null) }
     var restoring by remember { mutableStateOf(false) }
+    var kitchenOpen by remember { mutableStateOf(false) }
     val context = LocalContext.current
 
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
@@ -129,6 +131,10 @@ fun RecipeListScreen(
                     Box {
                         IconButton(onClick = { moreOpen = true }) { Icon(Icons.Filled.MoreVert, contentDescription = "更多") }
                         DropdownMenu(expanded = moreOpen, onDismissRequest = { moreOpen = false }) {
+                            DropdownMenuItem(
+                                text = { Text("共享厨房") },
+                                onClick = { moreOpen = false; kitchenOpen = true },
+                            )
                             DropdownMenuItem(
                                 text = { Text("AI 设置") },
                                 onClick = { moreOpen = false; aiSettingsOpen = true },
@@ -269,6 +275,10 @@ fun RecipeListScreen(
         )
     }
 
+    if (kitchenOpen) {
+        KitchenDialog(onDismiss = { kitchenOpen = false })
+    }
+
     if (pasteOpen) {
         PasteLinkDialog(
             onDismiss = { pasteOpen = false },
@@ -308,12 +318,13 @@ fun RecipeListScreen(
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun RecipeCard(recipe: Recipe, onClick: () -> Unit, onLongClick: () -> Unit) {
+    val app = rememberApp()
     Card(Modifier.fillMaxWidth().combinedClickable(onClick = onClick, onLongClick = onLongClick)) {
         Row(
             Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = 12.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            if (!recipe.coverImage.isNullOrBlank()) {
+            if (app.hasImage(recipe.coverImage)) {
                 LocalImage(recipe.coverImage, Modifier.size(48.dp).clip(MaterialTheme.shapes.small))
                 Spacer(Modifier.width(12.dp))
             }
