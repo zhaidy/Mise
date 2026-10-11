@@ -181,7 +181,7 @@ fun RecipeEditor(
                     TextButton(
                         enabled = !vm.aiBusy && vm.steps.any { it.text.isNotBlank() },
                         onClick = { if (vm.hasGeminiKey) vm.aiSplitSteps() else askingKeyFor = "split" },
-                    ) { Text("AI 拆分步骤") }
+                    ) { Text(if (vm.stepsAiSplit) "AI 重新拆分" else "AI 拆分步骤") }
                     if (vm.aiBusy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                     TextButton(onClick = { askingKeyFor = "split" }) { Text("设置 Key") }
                 }
@@ -189,7 +189,7 @@ fun RecipeEditor(
                     Text(
                         it,
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = if (vm.stepsAiSplit) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(horizontal = 8.dp),
                     )
                 }

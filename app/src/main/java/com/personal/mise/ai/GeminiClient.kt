@@ -75,6 +75,7 @@ class GeminiClient(private val settings: AiSettings) {
 
         fun array(items: JSONObject): JSONObject = JSONObject().put("type", "ARRAY").put("items", items)
         fun string(nullable: Boolean = false): JSONObject = JSONObject().put("type", "STRING").apply { if (nullable) put("nullable", true) }
+        fun integer(nullable: Boolean = false): JSONObject = JSONObject().put("type", "INTEGER").apply { if (nullable) put("nullable", true) }
         fun number(nullable: Boolean = false): JSONObject = JSONObject().put("type", "NUMBER").apply { if (nullable) put("nullable", true) }
 
         /** 做法里每一步的 schema，拆分步骤和整理笔记共用 */
@@ -87,7 +88,11 @@ class GeminiClient(private val settings: AiSettings) {
                 val item = steps.optJSONObject(i) ?: return@mapNotNull null
                 val text = item.optString("text").trim()
                 if (text.isEmpty()) null
-                else AiStep(text, item.optDouble("timerMinutes", Double.NaN).takeIf { !it.isNaN() && it > 0 })
+                else AiStep(
+                    text,
+                    item.optDouble("timerMinutes", Double.NaN).takeIf { !it.isNaN() && it > 0 },
+                    item.optInt("source", 0).takeIf { it > 0 },
+                )
             }
         }
 
