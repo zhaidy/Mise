@@ -6,14 +6,12 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -384,27 +382,35 @@ fun RecipeDetailScreen(
                         if (cookStart != null && (index == 0 || index == cookStart)) {
                             PhaseLabel(if (index == 0) "备料 · 开火前" else "开火", prep = index == 0)
                         }
-                        Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min).padding(horizontal = 20.dp)) {
-                            Column(Modifier.fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally) {
-                                Box(
-                                    Modifier.size(32.dp).background(MaterialTheme.colorScheme.onSurface, CircleShape),
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    Text(
-                                        "${index + 1}",
-                                        color = MaterialTheme.colorScheme.background,
-                                        fontFamily = SerifFamily,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 15.sp,
-                                    )
+                        // 备料最后一步和开火第一步之间断开；竖线画在背景上，不用 IntrinsicSize 量高度（FlowRow 量出来偏矮，会把下面的内容截掉）
+                        val connector = index < data.steps.lastIndex && index + 1 != cookStart
+                        val lineColor = MaterialTheme.colorScheme.outlineVariant
+                        Row(
+                            Modifier.fillMaxWidth()
+                                .drawBehind {
+                                    if (connector) {
+                                        val x = 20.dp.toPx() + 16.dp.toPx()
+                                        drawLine(
+                                            color = lineColor,
+                                            start = Offset(x, 36.dp.toPx()),
+                                            end = Offset(x, size.height - 4.dp.toPx()),
+                                            strokeWidth = 2.dp.toPx(),
+                                        )
+                                    }
                                 }
-                                // 备料最后一步和开火第一步之间断开
-                                if (index < data.steps.lastIndex && index + 1 != cookStart) {
-                                    Box(
-                                        Modifier.padding(vertical = 4.dp).width(2.dp).weight(1f)
-                                            .background(MaterialTheme.colorScheme.outlineVariant),
-                                    )
-                                }
+                                .padding(horizontal = 20.dp),
+                        ) {
+                            Box(
+                                Modifier.size(32.dp).background(MaterialTheme.colorScheme.onSurface, CircleShape),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(
+                                    "${index + 1}",
+                                    color = MaterialTheme.colorScheme.background,
+                                    fontFamily = SerifFamily,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 15.sp,
+                                )
                             }
                             Spacer(Modifier.width(14.dp))
                             Column(Modifier.weight(1f).padding(top = 4.dp, bottom = 20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
