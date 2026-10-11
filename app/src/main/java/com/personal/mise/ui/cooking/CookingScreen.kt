@@ -35,6 +35,8 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.PrimaryScrollableTabRow
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -101,6 +103,7 @@ fun CookingScreen(initialRecipeId: Long, onBack: () -> Unit) {
             delay(500)
         }
     }
+    val snackbar = remember { SnackbarHostState() }
     var selectedId by rememberSaveable { mutableLongStateOf(initialRecipeId) }
     LaunchedEffect(initialRecipeId) { if (initialRecipeId > 0) selectedId = initialRecipeId }
 
@@ -113,6 +116,7 @@ fun CookingScreen(initialRecipeId: Long, onBack: () -> Unit) {
                 },
             )
         },
+        snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
         val list = rows
         if (list == null) {
@@ -144,6 +148,7 @@ fun CookingScreen(initialRecipeId: Long, onBack: () -> Unit) {
                     row = selected,
                     timers = timers.filter { it.recipeId == selected.recipeId },
                     now = now,
+                    snackbar = snackbar,
                     modifier = Modifier.weight(1f),
                 )
             }
@@ -171,6 +176,7 @@ private fun RecipePager(
     row: TodayRow,
     timers: List<CookingTimer>,
     now: Long,
+    snackbar: SnackbarHostState,
     modifier: Modifier,
 ) {
     val app = rememberApp()
@@ -224,11 +230,21 @@ private fun RecipePager(
                 enabled = pagerState.currentPage > 0,
                 modifier = Modifier.weight(1f).height(ButtonHeight),
             ) { Text("上一步", fontSize = 20.sp) }
+            val last = pagerState.currentPage >= steps.lastIndex
             Button(
-                onClick = { scope.launch { pagerState.animateScrollToPage(pagerState.currentPage + 1) } },
-                enabled = pagerState.currentPage < steps.lastIndex,
+                onClick = {
+                    scope.launch {
+                        if (!last) {
+                            pagerState.animateScrollToPage(pagerState.currentPage + 1)
+                        } else {
+                            // 最后一步点「做好了」记一笔，记录页能看到哪天做过
+                            val logged = app.repository.logCooked(row.recipeId)
+                            snackbar.showSnackbar(if (logged) "已记下：今天做了${row.title}" else "今天已经记过了")
+                        }
+                    }
+                },
                 modifier = Modifier.weight(1f).height(ButtonHeight),
-            ) { Text(if (pagerState.currentPage < steps.lastIndex) "下一步" else "最后一步", fontSize = 20.sp) }
+            ) { Text(if (last) "做好了" else "下一步", fontSize = 20.sp) }
         }
     }
 }

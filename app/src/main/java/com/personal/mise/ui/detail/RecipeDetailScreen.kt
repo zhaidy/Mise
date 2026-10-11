@@ -26,6 +26,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
@@ -35,12 +37,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SelectableDates
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -66,9 +70,11 @@ import com.personal.mise.ui.common.rememberApp
 import com.personal.mise.ui.edit.AiKeyDialog
 import com.personal.mise.util.AmountScaler
 import com.personal.mise.util.CalorieText
+import com.personal.mise.util.DayText
 import com.personal.mise.util.TimeText
 import com.personal.mise.util.UnitText
 import kotlinx.coroutines.launch
+import java.time.LocalDate
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -87,6 +93,8 @@ fun RecipeDetailScreen(
     var scaleOpen by remember { mutableStateOf(false) }
     var estimatingCalories by remember { mutableStateOf(false) }
     var askingKey by remember { mutableStateOf(false) }
+    var logOpen by remember { mutableStateOf(false) }
+    val cookDates by remember(recipeId) { app.repository.observeCookDates(recipeId) }.collectAsStateWithLifecycle(emptyList())
     val factor = app.scaleOf(recipeId)
 
     fun estimateCalories() {
@@ -184,6 +192,20 @@ fun RecipeDetailScreen(
             }
             item {
                 Row(
+                    Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        if (cookDates.isEmpty()) "还没做过" else "做过 ${cookDates.size} 次 · 上次${DayText.ago(cookDates.first())}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f),
+                    )
+                    TextButton(onClick = { logOpen = true }) { Text("记一笔") }
+                }
+            }
+            item {
+                Row(
                     Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 20.dp, bottom = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -270,6 +292,19 @@ fun RecipeDetailScreen(
             onPick = {
                 if (it == 1.0) app.scales.remove(recipeId) else app.scales[recipeId] = it
                 scaleOpen = false
+            },
+        )
+    }
+
+    if (logOpen) {
+        LogDateDialog(
+            onDismiss = { logOpen = false },
+            onPick = { date ->
+                logOpen = false
+                scope.launch {
+                    val logged = app.repository.logCooked(recipeId, date)
+                    snackbar.showSnackbar(if (logged) "已记下：${DayText.label(date)}做了这道菜" else "${DayText.label(date)}已经记过了")
+                }
             },
         )
     }
@@ -380,4 +415,32 @@ private fun ScaleDialog(current: Double, onDismiss: () -> Unit, onPick: (Double)
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
     )
+}
+
+private const val DAY_MS = 24 * 60 * 60 * 1000L
+
+/** 选哪天做的，默认今天，不能选以后的日子。DatePicker 用的是 UTC 零点的毫秒数 */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun LogDateDialog(onDismiss: () -> Unit, onPick: (String) -> Unit) {
+    val todayMs = LocalDate.now().toEpochDay() * DAY_MS
+    val state = rememberDatePickerState(
+        initialSelectedDateMillis = todayMs,
+        selectableDates = object : SelectableDates {
+            override fun isSelectableDate(utcTimeMillis: Long) = utcTimeMillis <= todayMs
+            override fun isSelectableYear(year: Int) = year <= LocalDate.now().year
+        },
+    )
+    DatePickerDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(
+                onClick = { state.selectedDateMillis?.let { onPick(LocalDate.ofEpochDay(it / DAY_MS).toString()) } },
+                enabled = state.selectedDateMillis != null,
+            ) { Text("记下") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
+    ) {
+        DatePicker(state = state, title = { Text("哪天做的", Modifier.padding(start = 24.dp, top = 16.dp)) })
+    }
 }

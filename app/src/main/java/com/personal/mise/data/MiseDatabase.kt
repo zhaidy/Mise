@@ -16,6 +16,7 @@ import java.util.UUID
         SauceBowl::class,
         SauceBowlItem::class,
         TodayMenu::class,
+        CookLog::class,
     ],
     version = MiseDatabase.VERSION,
     exportSchema = false,
@@ -23,14 +24,15 @@ import java.util.UUID
 abstract class MiseDatabase : RoomDatabase() {
     abstract fun recipeDao(): RecipeDao
     abstract fun todayDao(): TodayDao
+    abstract fun cookLogDao(): CookLogDao
 
     companion object {
-        const val VERSION = 4
+        const val VERSION = 5
         const val NAME = "mise.db"
 
         fun create(context: Context): MiseDatabase =
             Room.databaseBuilder(context, MiseDatabase::class.java, NAME)
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                 .build()
     }
 }
@@ -60,8 +62,20 @@ val MIGRATION_2_3 = object : Migration(2, 3) {
     }
 }
 
-/** v4：菜谱加 calories，整道菜的热量 */
+/** v4：做菜记录 */
 val MIGRATION_3_4 = object : Migration(3, 4) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS cook_log (uid TEXT NOT NULL, recipeUid TEXT NOT NULL, title TEXT NOT NULL, " +
+                "date TEXT NOT NULL, updatedAt INTEGER NOT NULL, deleted INTEGER NOT NULL, PRIMARY KEY(uid))"
+        )
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_cook_log_recipeUid ON cook_log (recipeUid)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_cook_log_date ON cook_log (date)")
+    }
+}
+
+/** v5：菜谱加 calories，整道菜的热量 */
+val MIGRATION_4_5 = object : Migration(4, 5) {
     override fun migrate(db: SupportSQLiteDatabase) {
         db.execSQL("ALTER TABLE recipe ADD COLUMN calories INTEGER")
     }
