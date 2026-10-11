@@ -73,6 +73,7 @@ import com.personal.mise.ui.common.rememberApp
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import com.personal.mise.ui.edit.AiKeyDialog
+import com.personal.mise.util.StepPhase
 import com.personal.mise.util.UnitText
 import kotlin.math.roundToInt
 
@@ -95,6 +96,7 @@ fun BowlEditScreen(recipeId: Long, onBack: () -> Unit) {
     var confirmRegenerate by remember { mutableStateOf(false) }
     var confirmLeave by remember { mutableStateOf(false) }
     var askingKey by remember { mutableStateOf(false) }
+    val cookStart = remember(vm.steps) { StepPhase.cookStart(vm.steps.map { it.text }) }
 
     fun targetAt(position: Offset): Long? = targets.entries.firstOrNull { (key, rect) ->
         (key == POOL_KEY || vm.bowls.any { it.key == key }) && rect.contains(position)
@@ -187,7 +189,7 @@ fun BowlEditScreen(recipeId: Long, onBack: () -> Unit) {
                                 Spacer(Modifier.weight(1f))
                                 StepPicker(
                                     stepLabel = vm.steps.indexOfFirst { it.id == bowl.stepId }.takeIf { it >= 0 }
-                                        ?.let { "第 ${it + 1} 步下锅" } ?: "选择下锅步骤",
+                                        ?.let { StepPhase.bowlStepLabel(it, cookStart) } ?: "选择下锅步骤",
                                     stepCount = vm.steps.size,
                                     onPick = { i -> vm.setStep(bowl.key, i?.let { vm.steps[it].id }) },
                                 )
