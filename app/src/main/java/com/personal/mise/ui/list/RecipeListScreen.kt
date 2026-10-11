@@ -28,16 +28,19 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExtendedFloatingActionButton
-import androidx.compose.material3.FilterChip
 import com.personal.mise.ui.common.ClassifyManageDialog
 import com.personal.mise.ui.common.ClassifyDialog
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material3.AssistChip
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.LazyListScope
 import com.personal.mise.data.Categories
 import com.personal.mise.data.RecipeFilter
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.material3.HorizontalDivider
+import com.personal.mise.data.CategoryNode
+import com.personal.mise.data.tagList
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.ui.graphics.Color
@@ -139,7 +142,6 @@ fun RecipeListScreen(
         applyFilter(filter.prune(loadedCategories ?: return@LaunchedEffect, loadedTags ?: return@LaunchedEffect))
     }
     val hits = found.filter { filter.matches(it.recipe) }
-    val subcategories = categories.find { it.name == category }?.subcategories.orEmpty()
     var menuOpen by remember { mutableStateOf(false) }
     var pasteOpen by remember { mutableStateOf(false) }
     var noteOpen by remember { mutableStateOf(false) }
@@ -214,157 +216,148 @@ fun RecipeListScreen(
             }
         },
     ) { padding ->
-        LazyVerticalGrid(
-            columns = GridCells.Fixed(2),
-            modifier = Modifier.padding(padding).fillMaxSize(),
-            contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 96.dp),
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
-        ) {
-            item(key = "header", span = { full }) {
-                Column(verticalArrangement = Arrangement.spacedBy(18.dp)) {
-                    Row(verticalAlignment = Alignment.Top) {
-                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Eyebrow(today)
-                            Text("今天做点什么？", style = MaterialTheme.typography.headlineLarge)
-                        }
-                        Box {
-                            CircleIconButton(
-                                Icons.Filled.MoreVert,
-                                "更多",
-                                onClick = { moreOpen = true },
-                                container = MaterialTheme.colorScheme.surfaceContainerLowest,
-                            )
-                            DropdownMenu(expanded = moreOpen, onDismissRequest = { moreOpen = false }) {
-                                DropdownMenuItem(
-                                    text = { Text("共享厨房") },
-                                    onClick = { moreOpen = false; kitchenOpen = true },
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("管理分类和标签") },
-                                    onClick = { moreOpen = false; manageOpen = true },
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("AI 设置") },
-                                    onClick = { moreOpen = false; aiSettingsOpen = true },
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("检查更新") },
-                                    onClick = { moreOpen = false; scope.launch { checkUpdate(manual = true) } },
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("导出备份") },
-                                    onClick = {
-                                        moreOpen = false
-                                        val date = LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE)
-                                        exportLauncher.launch("mise-backup-$date.zip")
-                                    },
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("从备份恢复") },
-                                    onClick = { moreOpen = false; restoreLauncher.launch(arrayOf("application/zip", "application/octet-stream")) },
-                                )
-                            }
-                        }
+        Column(Modifier.padding(padding).fillMaxSize()) {
+            Column(
+                Modifier.padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 14.dp),
+                verticalArrangement = Arrangement.spacedBy(18.dp),
+            ) {
+                Row(verticalAlignment = Alignment.Top) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Eyebrow(today)
+                        Text("今天做点什么？", style = MaterialTheme.typography.headlineLarge)
                     }
-                    SearchField(query, { query = it })
-                    if (categories.isNotEmpty() || allTags.isNotEmpty()) {
-                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            if (categories.isNotEmpty()) {
-                                ChipRow {
-                                    item(key = "all") { CategoryChip("全部", category == null) { applyFilter(filter.copy(category = null, subcategory = null)) } }
-                                    items(categories, key = { "c:${it.name}" }) { node ->
-                                        CategoryChip(node.name, category == node.name) { applyFilter(filter.copy(category = node.name, subcategory = null)) }
-                                    }
-                                    item(key = "none") {
-                                        CategoryChip("未分类", category == Categories.NONE) { applyFilter(filter.copy(category = Categories.NONE, subcategory = null)) }
-                                    }
-                                    item(key = "manage") { ManageChip { manageOpen = true } }
-                                }
-                            }
-                            if (subcategories.isNotEmpty()) {
-                                ChipRow {
-                                    item(key = "all") { CategoryChip("全部${category}", subcategory == null) { applyFilter(filter.copy(subcategory = null)) } }
-                                    items(subcategories, key = { "s:$it" }) { name ->
-                                        CategoryChip(name, subcategory == name) { applyFilter(filter.copy(subcategory = name)) }
-                                    }
-                                }
-                            }
-                            if (allTags.isNotEmpty()) {
-                                // 标签可以多选，要全都带上才显示
-                                ChipRow {
-                                    items(allTags, key = { "t:$it" }) { tag ->
-                                        val on = tag in filter.tags
-                                        CategoryChip("#$tag", on) {
-                                            applyFilter(filter.copy(tags = if (on) filter.tags - tag else filter.tags + tag))
-                                        }
-                                    }
-                                    // 没有大类那一排时，管理入口放在这里
-                                    if (categories.isEmpty()) item(key = "manage") { ManageChip { manageOpen = true } }
-                                }
-                            }
-                        }
-                    }
-                    if (hits.isNotEmpty()) {
-                        val heading = when {
-                            query.isNotEmpty() -> "搜索结果"
-                            category == Categories.NONE -> "未分类"
-                            category != null -> listOfNotNull(category, subcategory).joinToString(" › ")
-                            filter.tags.isNotEmpty() -> filter.tags.joinToString(" ") { "#$it" }
-                            else -> "我的菜谱"
-                        }
-                        Row(verticalAlignment = Alignment.Bottom) {
-                            Text(heading, style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
-                            Text(
-                                "共 ${hits.size} 道 · 长按加入今日、设分类",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
-                }
-            }
-            if (hits.isEmpty()) {
-                item(key = "empty", span = { full }) {
-                    if (found.isNotEmpty()) {
-                        EmptyState("类", "没有符合条件的菜谱", "换个分类或者少选几个标签看看", Modifier.padding(top = 24.dp))
-                    } else if (query.isEmpty()) {
-                        EmptyState(
-                            "谱",
-                            "还没有菜谱",
-                            "点右下角的「新菜谱」，手动新建、粘贴下厨房或小红书链接，或者让 AI 整理笔记里的菜谱。",
-                            Modifier.padding(top = 24.dp),
-                        )
-                    } else {
-                        EmptyState("寻", "没有找到", "没有和「$query」相关的菜谱", Modifier.padding(top = 24.dp))
-                    }
-                }
-            } else {
-                items(hits, key = { it.recipe.id }) { hit ->
-                    val recipe = hit.recipe
-                    var cardMenu by remember { mutableStateOf(false) }
                     Box {
-                        RecipeCard(
-                            recipe = recipe,
-                            matchedIngredients = hit.matchedIngredients,
-                            onClick = { onOpen(recipe.id) },
-                            onLongClick = { cardMenu = true },
+                        CircleIconButton(
+                            Icons.Filled.MoreVert,
+                            "更多",
+                            onClick = { moreOpen = true },
+                            container = MaterialTheme.colorScheme.surfaceContainerLowest,
                         )
-                        DropdownMenu(expanded = cardMenu, onDismissRequest = { cardMenu = false }) {
+                        DropdownMenu(expanded = moreOpen, onDismissRequest = { moreOpen = false }) {
                             DropdownMenuItem(
-                                text = { Text("加入今日菜单") },
+                                text = { Text("共享厨房") },
+                                onClick = { moreOpen = false; kitchenOpen = true },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("管理分类和标签") },
+                                onClick = { moreOpen = false; manageOpen = true },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("AI 设置") },
+                                onClick = { moreOpen = false; aiSettingsOpen = true },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("检查更新") },
+                                onClick = { moreOpen = false; scope.launch { checkUpdate(manual = true) } },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("导出备份") },
                                 onClick = {
-                                    cardMenu = false
-                                    scope.launch {
-                                        val added = app.repository.addToToday(recipe.id)
-                                        snackbar.showSnackbar(if (added) "已加入今日菜单：${recipe.title}" else "「${recipe.title}」已经在今日菜单里")
-                                    }
+                                    moreOpen = false
+                                    val date = LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE)
+                                    exportLauncher.launch("mise-backup-$date.zip")
                                 },
                             )
                             DropdownMenuItem(
-                                text = { Text("分类和标签") },
-                                onClick = { cardMenu = false; classifying = recipe },
+                                text = { Text("从备份恢复") },
+                                onClick = { moreOpen = false; restoreLauncher.launch(arrayOf("application/zip", "application/octet-stream")) },
                             )
+                        }
+                    }
+                }
+                SearchField(query, { query = it })
+            }
+            // 没有分类和标签时不要左栏，卡片占满整宽
+            val showRail = categories.isNotEmpty() || allTags.isNotEmpty()
+            Row(Modifier.fillMaxSize()) {
+                if (showRail) {
+                    CategoryRail(
+                        categories = categories,
+                        tags = allTags,
+                        filter = filter,
+                        found = found.map { it.recipe },
+                        onFilter = ::applyFilter,
+                        onManage = { manageOpen = true },
+                    )
+                }
+                val side = if (showRail) 12.dp else 20.dp
+                val gap = if (showRail) 10.dp else 14.dp
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(2),
+                    modifier = Modifier.weight(1f).fillMaxHeight(),
+                    contentPadding = PaddingValues(start = side, end = if (showRail) 16.dp else 20.dp, bottom = 96.dp),
+                    horizontalArrangement = Arrangement.spacedBy(gap),
+                    verticalArrangement = Arrangement.spacedBy(gap),
+                ) {
+                    if (hits.isNotEmpty()) {
+                        item(key = "heading", span = { full }) {
+                            val heading = when {
+                                query.isNotEmpty() -> "搜索结果"
+                                category == Categories.NONE -> "未分类"
+                                category != null -> listOfNotNull(category, subcategory).joinToString(" › ")
+                                filter.tags.isNotEmpty() -> filter.tags.joinToString(" ") { "#$it" }
+                                else -> "我的菜谱"
+                            }
+                            Row(verticalAlignment = Alignment.Bottom) {
+                                Text(
+                                    heading,
+                                    style = MaterialTheme.typography.titleLarge,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f),
+                                )
+                                Text(
+                                    if (showRail) "共 ${hits.size} 道" else "共 ${hits.size} 道 · 长按加入今日、设分类",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
+                    if (hits.isEmpty()) {
+                        item(key = "empty", span = { full }) {
+                            if (found.isNotEmpty()) {
+                                EmptyState("类", "没有符合条件的菜谱", "换个分类或者少选几个标签看看", Modifier.padding(top = 24.dp))
+                            } else if (query.isEmpty()) {
+                                EmptyState(
+                                    "谱",
+                                    "还没有菜谱",
+                                    "点右下角的「新菜谱」，手动新建、粘贴下厨房或小红书链接，或者让 AI 整理笔记里的菜谱。",
+                                    Modifier.padding(top = 24.dp),
+                                )
+                            } else {
+                                EmptyState("寻", "没有找到", "没有和「$query」相关的菜谱", Modifier.padding(top = 24.dp))
+                            }
+                        }
+                    } else {
+                        items(hits, key = { it.recipe.id }) { hit ->
+                            val recipe = hit.recipe
+                            var cardMenu by remember { mutableStateOf(false) }
+                            Box {
+                                RecipeCard(
+                                    recipe = recipe,
+                                    matchedIngredients = hit.matchedIngredients,
+                                    compact = showRail,
+                                    onClick = { onOpen(recipe.id) },
+                                    onLongClick = { cardMenu = true },
+                                )
+                                DropdownMenu(expanded = cardMenu, onDismissRequest = { cardMenu = false }) {
+                                    DropdownMenuItem(
+                                        text = { Text("加入今日菜单") },
+                                        onClick = {
+                                            cardMenu = false
+                                            scope.launch {
+                                                val added = app.repository.addToToday(recipe.id)
+                                                snackbar.showSnackbar(if (added) "已加入今日菜单：${recipe.title}" else "「${recipe.title}」已经在今日菜单里")
+                                            }
+                                        },
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("分类和标签") },
+                                        onClick = { cardMenu = false; classifying = recipe },
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -497,14 +490,26 @@ fun RecipeListScreen(
 /** 网格卡片：上面是封面（没图就用首字色块），下面是菜名和份量 */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun RecipeCard(recipe: Recipe, matchedIngredients: List<String>, onClick: () -> Unit, onLongClick: () -> Unit) {
+private fun RecipeCard(
+    recipe: Recipe,
+    matchedIngredients: List<String>,
+    compact: Boolean,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
+) {
     val shape = RoundedCornerShape(22.dp)
     SoftCard(
         Modifier.fillMaxWidth().clip(shape).combinedClickable(onClick = onClick, onLongClick = onLongClick),
         shape = shape,
     ) {
         Column {
-            RecipeCover(recipe.title, recipe.coverImage, Modifier.fillMaxWidth().height(118.dp), initialSize = 52.sp)
+            // 有左栏时卡片窄，封面也矮一点
+            RecipeCover(
+                recipe.title,
+                recipe.coverImage,
+                Modifier.fillMaxWidth().height(if (compact) 96.dp else 118.dp),
+                initialSize = if (compact) 40.sp else 52.sp,
+            )
             Column(Modifier.padding(start = 12.dp, end = 12.dp, top = 10.dp, bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(
                     recipe.title,
@@ -533,35 +538,142 @@ private fun RecipeCard(recipe: Recipe, matchedIngredients: List<String>, onClick
     }
 }
 
-/** 筛选标签那排最后的「管理」，点开改名、删除分类和标签 */
+/** 左侧常驻的分类栏：全部、各大类（选中的展开小类）、未分类，下面是可多选的标签和管理入口 */
 @Composable
-private fun ManageChip(onClick: () -> Unit) {
-    AssistChip(
-        onClick = onClick,
-        label = { Text("管理") },
-        leadingIcon = { Icon(Icons.Filled.Edit, contentDescription = null, Modifier.size(16.dp)) },
-        shape = CircleShape,
-    )
+private fun CategoryRail(
+    categories: List<CategoryNode>,
+    tags: List<String>,
+    filter: RecipeFilter,
+    found: List<Recipe>,
+    onFilter: (RecipeFilter) -> Unit,
+    onManage: () -> Unit,
+) {
+    // 数字跟着搜索结果走
+    val byCategory = remember(found) { found.groupingBy { it.category?.takeIf { c -> c.isNotBlank() } ?: Categories.NONE }.eachCount() }
+    val bySub = remember(found) { found.groupingBy { it.category to it.subcategory }.eachCount() }
+    val byTag = remember(found) { found.flatMap { it.tagList }.groupingBy { it }.eachCount() }
+    LazyColumn(
+        modifier = Modifier
+            .width(96.dp)
+            .fillMaxHeight()
+            .clip(RoundedCornerShape(topEnd = 22.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerLow),
+        contentPadding = PaddingValues(top = 8.dp, bottom = 96.dp),
+    ) {
+        item(key = "all") {
+            RailItem("全部", found.size, filter.category == null) { onFilter(filter.copy(category = null, subcategory = null)) }
+        }
+        categories.forEach { node ->
+            val selected = filter.category == node.name
+            item(key = "c:${node.name}") {
+                RailItem(node.name, byCategory[node.name] ?: 0, selected) {
+                    onFilter(filter.copy(category = node.name, subcategory = null))
+                }
+            }
+            if (selected && node.subcategories.isNotEmpty()) {
+                item(key = "s-all:${node.name}") {
+                    RailSubItem("全部", filter.subcategory == null) { onFilter(filter.copy(subcategory = null)) }
+                }
+                items(node.subcategories, key = { "s:${node.name}:$it" }) { sub ->
+                    RailSubItem(sub, filter.subcategory == sub, bySub[node.name to sub] ?: 0) {
+                        onFilter(filter.copy(subcategory = sub))
+                    }
+                }
+            }
+        }
+        if (categories.isNotEmpty()) {
+            item(key = "none") {
+                RailItem("未分类", byCategory[Categories.NONE] ?: 0, filter.category == Categories.NONE) {
+                    onFilter(filter.copy(category = Categories.NONE, subcategory = null))
+                }
+            }
+        }
+        if (tags.isNotEmpty()) {
+            item(key = "tags-divider") {
+                HorizontalDivider(Modifier.padding(horizontal = 14.dp, vertical = 8.dp))
+            }
+            // 标签可以多选，要全都带上才显示
+            items(tags, key = { "t:$it" }) { tag ->
+                val on = tag in filter.tags
+                RailItem("#$tag", byTag[tag] ?: 0, on) {
+                    onFilter(filter.copy(tags = if (on) filter.tags - tag else filter.tags + tag))
+                }
+            }
+        }
+        item(key = "manage") {
+            Row(
+                Modifier.fillMaxWidth().clickable(onClick = onManage).padding(horizontal = 14.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Icon(Icons.Filled.Edit, contentDescription = null, Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("管理", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
 }
 
-/** 一排横着滑的筛选标签 */
+/** 左栏的一项：选中时左边一道竖条、底色变深 */
 @Composable
-private fun ChipRow(content: LazyListScope.() -> Unit) {
-    LazyRow(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        content = content,
-    )
+private fun RailItem(text: String, count: Int, selected: Boolean, onClick: () -> Unit) {
+    val colors = MaterialTheme.colorScheme
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .heightIn(min = 44.dp)
+            .background(if (selected) colors.surfaceContainerLowest else Color.Transparent)
+            .clickable(onClick = onClick),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            Modifier
+                .width(4.dp)
+                .height(20.dp)
+                .clip(RoundedCornerShape(topEnd = 2.dp, bottomEnd = 2.dp))
+                .background(if (selected) colors.primary else Color.Transparent),
+        )
+        Text(
+            text,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+            color = if (selected) colors.primary else colors.onSurface,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f).padding(start = 10.dp, top = 8.dp, bottom = 8.dp),
+        )
+        Text(
+            if (count > 0) "$count" else "",
+            style = MaterialTheme.typography.labelSmall,
+            color = colors.onSurfaceVariant,
+            modifier = Modifier.padding(start = 2.dp, end = 10.dp),
+        )
+    }
 }
 
+/** 选中大类下面缩进的小类 */
 @Composable
-private fun CategoryChip(text: String, selected: Boolean, onClick: () -> Unit) {
-    FilterChip(
-        selected = selected,
-        onClick = onClick,
-        label = { Text(text) },
-        shape = CircleShape,
-    )
+private fun RailSubItem(text: String, selected: Boolean, count: Int = 0, onClick: () -> Unit) {
+    val colors = MaterialTheme.colorScheme
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .heightIn(min = 36.dp)
+            .background(colors.surfaceContainerLowest)
+            .clickable(onClick = onClick)
+            .padding(start = 24.dp, end = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text,
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+            color = if (selected) colors.primary else colors.onSurfaceVariant,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f).padding(vertical = 6.dp),
+        )
+        if (count > 0) Text("$count", style = MaterialTheme.typography.labelSmall, color = colors.onSurfaceVariant)
+    }
 }
 
 /** 胶囊形搜索框 */
