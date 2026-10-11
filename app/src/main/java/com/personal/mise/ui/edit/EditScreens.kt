@@ -114,6 +114,7 @@ private fun EditorScaffold(
     val snackbar = remember { SnackbarHostState() }
     var confirmDiscard by remember { mutableStateOf(false) }
     var askingKey by remember { mutableStateOf(false) }
+    var verifyUrl by remember { mutableStateOf<String?>(null) }
 
     fun discard() {
         vm.discard()
@@ -169,13 +170,30 @@ private fun EditorScaffold(
                     Spacer(Modifier.height(24.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         OutlinePillButton("返回", onClick = { discard() }, height = 48.dp)
-                        if (state.needsKey) PillButton("填写 Key", onClick = { askingKey = true }, height = 48.dp)
-                        else PillButton("重试", onClick = vm::load, height = 48.dp)
+                        when {
+                            state.needsKey -> PillButton("填写 Key", onClick = { askingKey = true }, height = 48.dp)
+                            state.verifyUrl != null -> {
+                                OutlinePillButton("重试", onClick = vm::load, height = 48.dp)
+                                PillButton("网页验证", onClick = { verifyUrl = state.verifyUrl }, height = 48.dp)
+                            }
+                            else -> PillButton("重试", onClick = vm::load, height = 48.dp)
+                        }
                     }
                 }
             }
             LoadState.Ready -> RecipeEditor(vm, Modifier.padding(padding).fillMaxSize(), header)
         }
+    }
+
+    verifyUrl?.let { url ->
+        VerifyPageDialog(
+            url = url,
+            onDismiss = { verifyUrl = null },
+            onLoaded = { pageUrl, html ->
+                verifyUrl = null
+                vm.importVerifiedPage(pageUrl, html)
+            },
+        )
     }
 
     if (askingKey) {

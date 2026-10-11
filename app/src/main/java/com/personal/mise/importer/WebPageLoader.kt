@@ -22,7 +22,6 @@ import kotlin.coroutines.resume
 class WebPageLoader(private val context: Context) {
 
     /** 返回 (最终网址, HTML)；超时还没拿到认可的页面时返回 null */
-    @SuppressLint("SetJavaScriptEnabled")
     suspend fun load(
         url: String,
         timeoutMs: Long = TIMEOUT_MS,
@@ -31,19 +30,16 @@ class WebPageLoader(private val context: Context) {
     ): Pair<String, String>? =
         withContext(Dispatchers.Main) {
             val webView = WebView(context.applicationContext).apply {
-                userAgent?.let { settings.userAgentString = it }
-                settings.javaScriptEnabled = true
-                settings.domStorageEnabled = true
+                setUpForImport(userAgent)
                 settings.loadsImagesAutomatically = false
-                webViewClient = WebViewClient()
             }
             try {
-                webView.loadUrl(url, mapOf("Accept-Language" to "zh-CN,zh;q=0.9"))
+                webView.loadImportUrl(url)
                 withTimeoutOrNull(timeoutMs) {
                     var page: Pair<String, String>? = null
                     while (page == null) {
                         delay(POLL_MS)
-                        val html = webView.html() ?: continue
+                        val html = webView.outerHtml() ?: continue
                         val pageUrl = webView.url ?: url
                         if (accept(pageUrl, html)) page = pageUrl to html
                     }
@@ -55,16 +51,28 @@ class WebPageLoader(private val context: Context) {
             }
         }
 
-    private suspend fun WebView.html(): String? = suspendCancellableCoroutine { cont ->
-        evaluateJavascript("document.documentElement ? document.documentElement.outerHTML : ''") { result ->
-            // 结果是 JSON 编码过的字符串
-            val html = runCatching { JSONArray("[$result]").getString(0) }.getOrNull()
-            if (cont.isActive) cont.resume(html?.takeIf { it.isNotBlank() })
-        }
-    }
-
     companion object {
         private const val TIMEOUT_MS = 25_000L
         private const val POLL_MS = 1_000L
+    }
+}
+
+/** 导入用的 WebView 设置；userAgent 和直接请求用同一个，验证拿到的 cookie 才对得上 */
+@SuppressLint("SetJavaScriptEnabled")
+fun WebView.setUpForImport(userAgent: String?) {
+    userAgent?.let { settings.userAgentString = it }
+    settings.javaScriptEnabled = true
+    settings.domStorageEnabled = true
+    webViewClient = WebViewClient()
+}
+
+fun WebView.loadImportUrl(url: String) = loadUrl(url, mapOf("Accept-Language" to "zh-CN,zh;q=0.9"))
+
+/** 当前渲染出来的 HTML */
+suspend fun WebView.outerHtml(): String? = suspendCancellableCoroutine { cont ->
+    evaluateJavascript("document.documentElement ? document.documentElement.outerHTML : ''") { result ->
+        // 结果是 JSON 编码过的字符串
+        val html = runCatching { JSONArray("[$result]").getString(0) }.getOrNull()
+        if (cont.isActive) cont.resume(html?.takeIf { it.isNotBlank() })
     }
 }
