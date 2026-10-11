@@ -439,27 +439,12 @@ private fun TodayCard(
             }
             RecipeCover(row.title, row.coverImage, Modifier.size(64.dp).clip(RoundedCornerShape(18.dp)), initialSize = 30.sp)
             Column(Modifier.weight(1f).padding(start = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(verticalAlignment = Alignment.Bottom) {
-                    Text(
-                        row.title,
-                        style = MaterialTheme.typography.titleMedium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f),
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    val step = (row.currentStep + 1).coerceAtMost(row.stepCount)
-                    Text(
-                        when {
-                            row.stepCount == 0 -> "没有步骤"
-                            row.currentStep == 0 -> "共 ${row.stepCount} 步"
-                            else -> "第 $step / ${row.stepCount} 步"
-                        },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                    )
-                }
+                Text(
+                    row.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
                 LinearProgressIndicator(
                     progress = { if (row.stepCount == 0) 0f else (row.currentStep.coerceAtMost(row.stepCount) / row.stepCount.toFloat()) },
                     modifier = Modifier.fillMaxWidth().height(6.dp),
@@ -469,23 +454,30 @@ private fun TodayCard(
                     gapSize = 0.dp,
                     drawStopIndicator = {},
                 )
-                if (hasTimer || row.calories != null) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        if (hasTimer) {
-                            InfoPill(
-                                "计时中",
-                                container = MaterialTheme.colorScheme.tertiaryContainer,
-                                content = MaterialTheme.colorScheme.onTertiaryContainer,
-                            )
-                        }
-                        row.calories?.let {
-                            Text(
-                                CalorieText.describe(it, null, factor),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
+                // 步数放在下面一行，菜名独占一行不被挤掉
+                val step = (row.currentStep + 1).coerceAtMost(row.stepCount)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (hasTimer) {
+                        InfoPill(
+                            "计时中",
+                            container = MaterialTheme.colorScheme.tertiaryContainer,
+                            content = MaterialTheme.colorScheme.onTertiaryContainer,
+                        )
                     }
+                    Text(
+                        listOfNotNull(
+                            row.calories?.let { CalorieText.describe(it, null, factor) },
+                            when {
+                                row.stepCount == 0 -> "没有步骤"
+                                row.currentStep == 0 -> "共 ${row.stepCount} 步"
+                                else -> "第 $step / ${row.stepCount} 步"
+                            },
+                        ).joinToString(" · "),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                 }
             }
             IconButton(onClick = onRemove) {
