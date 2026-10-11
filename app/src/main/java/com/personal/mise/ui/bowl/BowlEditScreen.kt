@@ -1,5 +1,7 @@
 package com.personal.mise.ui.bowl
 
+import com.personal.mise.ui.common.FieldShape
+import com.personal.mise.ui.common.miseFieldColors
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -63,7 +65,13 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.personal.mise.data.Ingredient
 import com.personal.mise.data.IngredientKind
+import com.personal.mise.ui.common.CircleIconButton
+import com.personal.mise.ui.common.MiseHeader
+import com.personal.mise.ui.common.MiseIcons
+import com.personal.mise.ui.common.PillButton
 import com.personal.mise.ui.common.rememberApp
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import com.personal.mise.ui.edit.AiKeyDialog
 import com.personal.mise.util.UnitText
 import kotlin.math.roundToInt
@@ -125,20 +133,10 @@ fun BowlEditScreen(recipeId: Long, onBack: () -> Unit) {
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("调料碗") },
-                navigationIcon = {
-                    IconButton(onClick = { if (vm.dirty) confirmLeave = true else onBack() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                    }
-                },
-                actions = {
-                    IconButton(onClick = { confirmRegenerate = true }) {
-                        Icon(Icons.Filled.Refresh, contentDescription = "重新自动生成")
-                    }
-                    TextButton(onClick = { vm.save(onBack) }, enabled = vm.loaded) { Text("保存") }
-                },
-            )
+            MiseHeader("调料碗", onBack = { if (vm.dirty) confirmLeave = true else onBack() }) {
+                CircleIconButton(Icons.Filled.Refresh, "重新自动生成", { confirmRegenerate = true })
+                PillButton("保存", onClick = { vm.save(onBack) }, enabled = vm.loaded, height = 44.dp)
+            }
         },
     ) { padding ->
         Box(
@@ -148,7 +146,7 @@ fun BowlEditScreen(recipeId: Long, onBack: () -> Unit) {
                 .onGloballyPositioned { rootOrigin = it.positionInRoot() },
         ) {
             Column(
-                Modifier.fillMaxSize().verticalScroll(rememberScrollState(), enabled = dragging == null).padding(16.dp),
+                Modifier.fillMaxSize().verticalScroll(rememberScrollState(), enabled = dragging == null).padding(horizontal = 20.dp, vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Text(
@@ -161,6 +159,7 @@ fun BowlEditScreen(recipeId: Long, onBack: () -> Unit) {
                     OutlinedButton(
                         enabled = vm.loaded && !vm.aiBusy,
                         onClick = { if (vm.hasAiKey) vm.aiOrganize() else askingKey = true },
+                        shape = CircleShape,
                     ) { Text("AI 按下锅时机分碗") }
                     Spacer(Modifier.weight(1f))
                     if (vm.aiBusy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
@@ -173,11 +172,17 @@ fun BowlEditScreen(recipeId: Long, onBack: () -> Unit) {
                     val highlighted = dragging?.let { targetAt(it.position) == bowl.key } == true
                     Card(
                         Modifier.fillMaxWidth().onGloballyPositioned { targets[bowl.key] = it.boundsInRoot() },
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer),
+                        shape = MaterialTheme.shapes.large,
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                        ),
                         border = if (highlighted) BorderStroke(3.dp, MaterialTheme.colorScheme.primary) else null,
                     ) {
-                        Column(Modifier.padding(12.dp)) {
+                        Column(Modifier.padding(start = 16.dp, end = 4.dp, top = 6.dp, bottom = 12.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(MiseIcons.Bowl, contentDescription = null, modifier = Modifier.size(20.dp))
+                                Spacer(Modifier.width(8.dp))
                                 Text(vm.label(index), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                                 Spacer(Modifier.weight(1f))
                                 StepPicker(
@@ -211,7 +216,7 @@ fun BowlEditScreen(recipeId: Long, onBack: () -> Unit) {
                     }
                 }
 
-                OutlinedButton(onClick = vm::addBowl, modifier = Modifier.fillMaxWidth().height(52.dp)) {
+                OutlinedButton(onClick = vm::addBowl, modifier = Modifier.fillMaxWidth().height(52.dp), shape = CircleShape) {
                     Icon(Icons.Filled.Add, contentDescription = null)
                     Text(" 新建碗")
                 }
@@ -219,10 +224,15 @@ fun BowlEditScreen(recipeId: Long, onBack: () -> Unit) {
                 val poolHighlighted = dragging?.itemKey != null && dragging?.let { targetAt(it.position) } == POOL_KEY
                 Card(
                     Modifier.fillMaxWidth().onGloballyPositioned { targets[POOL_KEY] = it.boundsInRoot() },
-                    border = if (poolHighlighted) BorderStroke(3.dp, MaterialTheme.colorScheme.primary) else null,
+                    shape = MaterialTheme.shapes.large,
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest),
+                    border = BorderStroke(
+                        if (poolHighlighted) 3.dp else 1.dp,
+                        if (poolHighlighted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
+                    ),
                 ) {
-                    Column(Modifier.padding(12.dp)) {
-                        Text("用料", style = MaterialTheme.typography.titleMedium)
+                    Column(Modifier.padding(16.dp)) {
+                        Text("用料", style = MaterialTheme.typography.titleLarge)
                         Text(
                             "拖进碗里或点一下选择放进哪个碗；把碗里的调料拖回这里就是拿出来",
                             style = MaterialTheme.typography.bodySmall,
@@ -259,11 +269,11 @@ fun BowlEditScreen(recipeId: Long, onBack: () -> Unit) {
                             (d.position.y - rootOrigin.y - 48.dp.toPx()).roundToInt(),
                         )
                     },
-                    shape = MaterialTheme.shapes.small,
+                    shape = CircleShape,
                     color = MaterialTheme.colorScheme.primary,
                     shadowElevation = 8.dp,
                 ) {
-                    Text(d.label, Modifier.padding(horizontal = 12.dp, vertical = 8.dp), color = MaterialTheme.colorScheme.onPrimary)
+                    Text(d.label, Modifier.padding(horizontal = 16.dp, vertical = 10.dp), color = MaterialTheme.colorScheme.onPrimary)
                 }
             }
         }
@@ -276,7 +286,7 @@ fun BowlEditScreen(recipeId: Long, onBack: () -> Unit) {
             title = { Text(item.name) },
             text = {
                 Column {
-                    OutlinedTextField(value = amount, onValueChange = { amount = it }, label = { Text("这碗的用量") }, singleLine = true)
+                    OutlinedTextField(shape = FieldShape, colors = miseFieldColors(), value = amount, onValueChange = { amount = it }, label = { Text("这碗的用量") }, singleLine = true)
                     Spacer(Modifier.height(12.dp))
                     Text("移到：", style = MaterialTheme.typography.labelLarge)
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

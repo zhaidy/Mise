@@ -20,8 +20,26 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
+import com.personal.mise.ui.common.CircleIconButton
+import com.personal.mise.ui.common.EmptyState
+import com.personal.mise.ui.common.Eyebrow
+import com.personal.mise.ui.common.FieldShape
+import com.personal.mise.ui.common.RecipeCover
+import com.personal.mise.ui.common.SoftCard
+import com.personal.mise.ui.common.miseFieldColors
+import java.util.Locale
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -123,49 +141,21 @@ fun RecipeListScreen(
     }
     LaunchedEffect(Unit) { checkUpdate(manual = false) }
 
+    val today = remember { LocalDate.now().format(DateTimeFormatter.ofPattern("M月d日 · EEEE", Locale.CHINA)) }
+    val full = GridItemSpan(2)
+
     Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("菜谱") },
-                actions = {
-                    Box {
-                        IconButton(onClick = { moreOpen = true }) { Icon(Icons.Filled.MoreVert, contentDescription = "更多") }
-                        DropdownMenu(expanded = moreOpen, onDismissRequest = { moreOpen = false }) {
-                            DropdownMenuItem(
-                                text = { Text("共享厨房") },
-                                onClick = { moreOpen = false; kitchenOpen = true },
-                            )
-                            DropdownMenuItem(
-                                text = { Text("AI 设置") },
-                                onClick = { moreOpen = false; aiSettingsOpen = true },
-                            )
-                            DropdownMenuItem(
-                                text = { Text("检查更新") },
-                                onClick = { moreOpen = false; scope.launch { checkUpdate(manual = true) } },
-                            )
-                            DropdownMenuItem(
-                                text = { Text("导出备份") },
-                                onClick = {
-                                    moreOpen = false
-                                    val date = LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE)
-                                    exportLauncher.launch("mise-backup-$date.zip")
-                                },
-                            )
-                            DropdownMenuItem(
-                                text = { Text("从备份恢复") },
-                                onClick = { moreOpen = false; restoreLauncher.launch(arrayOf("application/zip", "application/octet-stream")) },
-                            )
-                        }
-                    }
-                },
-            )
-        },
         snackbarHost = { SnackbarHost(snackbar) },
         floatingActionButton = {
             Box {
-                FloatingActionButton(onClick = { menuOpen = true }) {
-                    Icon(Icons.Filled.Add, contentDescription = "新建")
-                }
+                ExtendedFloatingActionButton(
+                    onClick = { menuOpen = true },
+                    shape = CircleShape,
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                    icon = { Icon(Icons.Filled.Add, contentDescription = null) },
+                    text = { Text("新菜谱", fontWeight = FontWeight.Bold, fontSize = 16.sp) },
+                )
                 DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                     DropdownMenuItem(text = { Text("手动新建") }, onClick = { menuOpen = false; onCreate() })
                     DropdownMenuItem(text = { Text("粘贴链接导入") }, onClick = { menuOpen = false; pasteOpen = true })
@@ -174,44 +164,93 @@ fun RecipeListScreen(
             }
         },
     ) { padding ->
-        Column(Modifier.padding(padding).fillMaxSize()) {
-            OutlinedTextField(
-                value = query,
-                onValueChange = { query = it },
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-                placeholder = { Text("搜索菜谱") },
-                leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
-                trailingIcon = {
-                    if (query.isNotEmpty()) {
-                        IconButton(onClick = { query = "" }) { Icon(Icons.Filled.Clear, contentDescription = "清空") }
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(2),
+            modifier = Modifier.padding(padding).fillMaxSize(),
+            contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 96.dp),
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            item(key = "header", span = { full }) {
+                Column(verticalArrangement = Arrangement.spacedBy(18.dp)) {
+                    Row(verticalAlignment = Alignment.Top) {
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Eyebrow(today)
+                            Text("今天做点什么？", style = MaterialTheme.typography.headlineLarge)
+                        }
+                        Box {
+                            CircleIconButton(
+                                Icons.Filled.MoreVert,
+                                "更多",
+                                onClick = { moreOpen = true },
+                                container = MaterialTheme.colorScheme.surfaceContainerLowest,
+                            )
+                            DropdownMenu(expanded = moreOpen, onDismissRequest = { moreOpen = false }) {
+                                DropdownMenuItem(
+                                    text = { Text("共享厨房") },
+                                    onClick = { moreOpen = false; kitchenOpen = true },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("AI 设置") },
+                                    onClick = { moreOpen = false; aiSettingsOpen = true },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("检查更新") },
+                                    onClick = { moreOpen = false; scope.launch { checkUpdate(manual = true) } },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("导出备份") },
+                                    onClick = {
+                                        moreOpen = false
+                                        val date = LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE)
+                                        exportLauncher.launch("mise-backup-$date.zip")
+                                    },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("从备份恢复") },
+                                    onClick = { moreOpen = false; restoreLauncher.launch(arrayOf("application/zip", "application/octet-stream")) },
+                                )
+                            }
+                        }
                     }
-                },
-                singleLine = true,
-            )
+                    SearchField(query, { query = it })
+                    if (recipes.isNotEmpty()) {
+                        Row(verticalAlignment = Alignment.Bottom) {
+                            Text(if (query.isEmpty()) "我的菜谱" else "搜索结果", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+                            Text(
+                                "共 ${recipes.size} 道 · 长按加入今日",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+            }
             if (recipes.isEmpty()) {
-                Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
-                    Text(
-                        if (query.isEmpty()) "还没有菜谱。点右下角的加号，手动新建、粘贴下厨房或小红书链接，或者让 AI 整理笔记里的菜谱。" else "没有找到「$query」",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                item(key = "empty", span = { full }) {
+                    if (query.isEmpty()) {
+                        EmptyState(
+                            "谱",
+                            "还没有菜谱",
+                            "点右下角的「新菜谱」，手动新建、粘贴下厨房或小红书链接，或者让 AI 整理笔记里的菜谱。",
+                            Modifier.padding(top = 24.dp),
+                        )
+                    } else {
+                        EmptyState("寻", "没有找到", "没有和「$query」相关的菜谱", Modifier.padding(top = 24.dp))
+                    }
                 }
             } else {
-                LazyColumn(
-                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 88.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    items(recipes, key = { it.id }) { recipe ->
-                        RecipeCard(
-                            recipe = recipe,
-                            onClick = { onOpen(recipe.id) },
-                            onLongClick = {
-                                scope.launch {
-                                    val added = app.repository.addToToday(recipe.id)
-                                    snackbar.showSnackbar(if (added) "已加入今日菜单：${recipe.title}" else "「${recipe.title}」已经在今日菜单里")
-                                }
-                            },
-                        )
-                    }
+                items(recipes, key = { it.id }) { recipe ->
+                    RecipeCard(
+                        recipe = recipe,
+                        onClick = { onOpen(recipe.id) },
+                        onLongClick = {
+                            scope.launch {
+                                val added = app.repository.addToToday(recipe.id)
+                                snackbar.showSnackbar(if (added) "已加入今日菜单：${recipe.title}" else "「${recipe.title}」已经在今日菜单里")
+                            }
+                        },
+                    )
                 }
             }
         }
@@ -314,33 +353,61 @@ fun RecipeListScreen(
     }
 }
 
-/** 紧凑的一行：大多数菜谱没有图，只有有图时才在左边放个小缩略图 */
+/** 网格卡片：上面是封面（没图就用首字色块），下面是菜名和份量 */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun RecipeCard(recipe: Recipe, onClick: () -> Unit, onLongClick: () -> Unit) {
-    val app = rememberApp()
-    Card(Modifier.fillMaxWidth().combinedClickable(onClick = onClick, onLongClick = onLongClick)) {
-        Row(
-            Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            if (app.hasImage(recipe.coverImage)) {
-                LocalImage(recipe.coverImage, Modifier.size(48.dp).clip(MaterialTheme.shapes.small))
-                Spacer(Modifier.width(12.dp))
-            }
-            Column(Modifier.weight(1f)) {
+    val shape = RoundedCornerShape(22.dp)
+    SoftCard(
+        Modifier.fillMaxWidth().clip(shape).combinedClickable(onClick = onClick, onLongClick = onLongClick),
+        shape = shape,
+    ) {
+        Column {
+            RecipeCover(recipe.title, recipe.coverImage, Modifier.fillMaxWidth().height(118.dp), initialSize = 52.sp)
+            Column(Modifier.padding(start = 12.dp, end = 12.dp, top = 10.dp, bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(
                     recipe.title,
                     style = MaterialTheme.typography.titleMedium,
-                    maxLines = 2,
+                    maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                recipe.servings?.takeIf { it.isNotBlank() }?.let {
-                    Text("份量：$it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
+                Text(
+                    recipe.servings?.takeIf { it.isNotBlank() } ?: "　",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
         }
     }
+}
+
+/** 胶囊形搜索框 */
+@Composable
+private fun SearchField(query: String, onChange: (String) -> Unit) {
+    TextField(
+        value = query,
+        onValueChange = onChange,
+        modifier = Modifier.fillMaxWidth(),
+        placeholder = { Text("搜索菜谱") },
+        leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+        trailingIcon = {
+            if (query.isNotEmpty()) {
+                IconButton(onClick = { onChange("") }) { Icon(Icons.Filled.Clear, contentDescription = "清空") }
+            }
+        },
+        singleLine = true,
+        shape = CircleShape,
+        colors = TextFieldDefaults.colors(
+            focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            focusedIndicatorColor = Color.Transparent,
+            unfocusedIndicatorColor = Color.Transparent,
+            focusedLeadingIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            unfocusedLeadingIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+        ),
+    )
 }
 
 @Composable
@@ -360,6 +427,8 @@ private fun PasteLinkDialog(onDismiss: () -> Unit, onConfirm: (String) -> Unit) 
                 onValueChange = { text = it },
                 placeholder = { Text("https://www.xiachufang.com/recipe/…") },
                 minLines = 2,
+                shape = FieldShape,
+                colors = miseFieldColors(),
             )
         },
         confirmButton = {
@@ -403,6 +472,8 @@ private fun AiNoteDialog(
                     modifier = Modifier.fillMaxWidth(),
                     minLines = 6,
                     maxLines = 12,
+                    shape = FieldShape,
+                    colors = miseFieldColors(),
                 )
                 if (needsKey) {
                     Spacer(Modifier.height(12.dp))

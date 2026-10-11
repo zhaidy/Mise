@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="ic_launcher_background">#F2E6D8</color>
+    <color name="ic_launcher_background">#FBF0E2</color>
+    <!-- 和 Compose 主题的底色一致，启动时不闪白 -->
+    <color name="mise_background">#FBF6EE</color>
 </resources>

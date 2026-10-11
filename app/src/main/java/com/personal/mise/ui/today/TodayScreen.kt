@@ -1,6 +1,25 @@
 package com.personal.mise.ui.today
 
-import androidx.compose.foundation.clickable
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.sp
+import com.personal.mise.ui.common.BottomActionBar
+import com.personal.mise.ui.common.EmptyState
+import com.personal.mise.ui.common.InfoPill
+import com.personal.mise.ui.common.MiseHeader
+import com.personal.mise.ui.common.MiseIcons
+import com.personal.mise.ui.common.OutlinePillButton
+import com.personal.mise.ui.common.PillButton
+import com.personal.mise.ui.common.RecipeCover
+import com.personal.mise.ui.common.SoftCard
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -78,40 +97,51 @@ fun TodayScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("今日菜单") },
-                actions = {
-                    if (items.isNotEmpty()) TextButton(onClick = { confirmClear = true }) { Text("清空") }
-                },
-            )
+            MiseHeader(
+                "今日菜单",
+                eyebrow = if (items.isEmpty()) "还没选菜" else "共 ${items.size} 道菜",
+            ) {
+                if (items.isNotEmpty()) {
+                    OutlinedButton(
+                        onClick = { confirmClear = true },
+                        shape = CircleShape,
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
+                            contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        ),
+                    ) { Text("清空") }
+                }
+            }
         },
         bottomBar = {
             if (items.isNotEmpty()) {
-                Surface(tonalElevation = 3.dp) {
-                    Row(
-                        Modifier.fillMaxWidth().padding(16.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        OutlinedButton(onClick = onPrep, modifier = Modifier.weight(1f).height(56.dp)) { Text("备料清单") }
-                        Button(onClick = onCook, modifier = Modifier.weight(1f).height(56.dp)) { Text("开始做菜") }
-                    }
+                // 外层已经有底部导航，这里不用再让出系统导航栏
+                BottomActionBar(navigationBars = false) {
+                    OutlinePillButton("备料清单", onPrep, Modifier.weight(1f))
+                    PillButton("开始做菜", onCook, Modifier.weight(1f))
                 }
             }
         },
     ) { padding ->
         if (items.isEmpty()) {
-            Box(Modifier.padding(padding).fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
-                Text(
-                    "今天还没选菜。在菜谱列表里长按一道菜，或者在菜谱详情里点「加入今日菜单」。",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+            EmptyState(
+                "菜",
+                "今天还没选菜",
+                "在菜谱列表里长按一道菜，或者在菜谱详情里点「加入今日菜单」。",
+                Modifier.padding(padding),
+            )
         } else {
             LazyColumn(
                 state = listState,
-                modifier = Modifier.padding(padding).fillMaxSize(),
-                contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(
+                    start = 20.dp,
+                    end = 20.dp,
+                    top = padding.calculateTopPadding() + 12.dp,
+                    bottom = padding.calculateBottomPadding() + 16.dp,
+                ),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 items(items, key = { it.recipeId }) { row ->
                     ReorderableItem(reorderState, key = row.recipeId) { isDragging ->
@@ -123,6 +153,15 @@ fun TodayScreen(
                             handle = Modifier.draggableHandle(),
                         )
                     }
+                }
+                item(key = "hint") {
+                    Text(
+                        "按住左侧把手拖动，调整做菜顺序",
+                        Modifier.fillMaxWidth().padding(top = 4.dp),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                    )
                 }
             }
         }
@@ -152,21 +191,63 @@ private fun TodayCard(
     onRemove: () -> Unit,
     handle: Modifier,
 ) {
-    Card(
-        Modifier.fillMaxWidth().clickable(onClick = onClick),
-        elevation = CardDefaults.cardElevation(defaultElevation = if (dragging) 8.dp else 1.dp),
+    val app = rememberApp()
+    val timers by app.timers.timers.collectAsStateWithLifecycle()
+    val hasTimer = timers.any { it.recipeId == row.recipeId }
+    val scale by animateFloatAsState(if (dragging) 1.03f else 1f, label = "drag")
+    SoftCard(
+        Modifier.fillMaxWidth().graphicsLayer { scaleX = scale; scaleY = scale },
+        shape = RoundedCornerShape(24.dp),
+        shadow = if (dragging) 12.dp else 0.dp,
+        onClick = onClick,
     ) {
-        Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = {}, modifier = handle) {
-                Icon(Icons.Filled.Menu, contentDescription = "拖动排序")
+        Row(Modifier.padding(start = 4.dp, end = 4.dp, top = 12.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = {}, modifier = handle.size(width = 32.dp, height = 48.dp)) {
+                Icon(MiseIcons.DragDots, contentDescription = "拖动排序", tint = MaterialTheme.colorScheme.outline)
             }
-            LocalImage(row.coverImage, Modifier.size(64.dp).clip(RoundedCornerShape(8.dp)), placeholder = "")
-            Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                Text(row.title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                val progress = if (row.stepCount == 0) "没有步骤" else "进度 ${(row.currentStep + 1).coerceAtMost(row.stepCount)}/${row.stepCount}"
-                Text(progress, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            RecipeCover(row.title, row.coverImage, Modifier.size(64.dp).clip(RoundedCornerShape(18.dp)), initialSize = 30.sp)
+            Column(Modifier.weight(1f).padding(start = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(verticalAlignment = Alignment.Bottom) {
+                    Text(
+                        row.title,
+                        style = MaterialTheme.typography.titleMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    val step = (row.currentStep + 1).coerceAtMost(row.stepCount)
+                    Text(
+                        when {
+                            row.stepCount == 0 -> "没有步骤"
+                            row.currentStep == 0 -> "共 ${row.stepCount} 步"
+                            else -> "第 $step / ${row.stepCount} 步"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                    )
+                }
+                LinearProgressIndicator(
+                    progress = { if (row.stepCount == 0) 0f else (row.currentStep.coerceAtMost(row.stepCount) / row.stepCount.toFloat()) },
+                    modifier = Modifier.fillMaxWidth().height(6.dp),
+                    color = MaterialTheme.colorScheme.primary,
+                    trackColor = MaterialTheme.colorScheme.outlineVariant,
+                    strokeCap = StrokeCap.Round,
+                    gapSize = 0.dp,
+                    drawStopIndicator = {},
+                )
+                if (hasTimer) {
+                    InfoPill(
+                        "计时中",
+                        container = MaterialTheme.colorScheme.tertiaryContainer,
+                        content = MaterialTheme.colorScheme.onTertiaryContainer,
+                    )
+                }
             }
-            IconButton(onClick = onRemove) { Icon(Icons.Filled.Close, contentDescription = "移出今日菜单") }
+            IconButton(onClick = onRemove) {
+                Icon(Icons.Filled.Close, contentDescription = "移出今日菜单", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
     }
 }

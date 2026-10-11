@@ -1,5 +1,7 @@
 package com.personal.mise.ui.edit
 
+import com.personal.mise.ui.common.FieldShape
+import com.personal.mise.ui.common.miseFieldColors
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -74,6 +76,8 @@ fun AiKeyFields(
         )
         Spacer(Modifier.height(8.dp))
         OutlinedTextField(
+            shape = FieldShape,
+            colors = miseFieldColors(),
             value = key,
             onValueChange = onKeyChange,
             singleLine = true,

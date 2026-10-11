@@ -1,5 +1,7 @@
 package com.personal.mise.ui.list
 
+import com.personal.mise.ui.common.FieldShape
+import com.personal.mise.ui.common.miseFieldColors
 import android.content.ClipData
 import android.content.ClipboardManager
 import androidx.compose.foundation.layout.Arrangement
@@ -64,6 +66,8 @@ fun KitchenDialog(onDismiss: () -> Unit) {
                 if (current == null) {
                     Text("加入同一个厨房的手机共用菜谱，一边改了另一边自动更新。本机已有的菜谱也会合并进去。")
                     OutlinedTextField(
+                        shape = FieldShape,
+                        colors = miseFieldColors(),
                         value = input,
                         onValueChange = { input = it },
                         modifier = Modifier.fillMaxWidth(),

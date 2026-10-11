@@ -1,6 +1,32 @@
 package com.personal.mise.ui.prep
 
-import androidx.compose.foundation.clickable
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.unit.sp
+import com.personal.mise.ui.common.BottomActionBar
+import com.personal.mise.ui.common.EmptyState
+import com.personal.mise.ui.common.MiseHeader
+import com.personal.mise.ui.common.PillButton
+import com.personal.mise.ui.common.SoftCard
+import com.personal.mise.ui.theme.LocalMiseColors
+import com.personal.mise.ui.theme.SerifFamily
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -105,78 +131,70 @@ fun PrepListScreen(onBack: () -> Unit, onCook: () -> Unit) {
     }
 
     Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("备料清单") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回") }
-                },
-            )
-        },
+        topBar = { MiseHeader("备料清单", onBack = onBack) },
         bottomBar = {
-            Surface(tonalElevation = 3.dp) {
-                Button(
-                    onClick = onCook,
-                    modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(16.dp).height(56.dp),
-                ) { Text("开始做菜") }
-            }
+            BottomActionBar { PillButton("开始做菜", onCook, Modifier.weight(1f)) }
         },
     ) { padding ->
         if (recipes.isEmpty()) {
-            Box(Modifier.padding(padding).fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("今日菜单是空的", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
+            EmptyState("备", "今日菜单是空的", "先在菜谱里挑几道菜加入今日菜单。", Modifier.padding(padding))
             return@Scaffold
         }
-        LazyColumn(Modifier.padding(padding).fillMaxSize()) {
-            item {
-                Column(Modifier.padding(16.dp)) {
-                    Text("已备好 $done / $total", style = MaterialTheme.typography.titleMedium)
-                    LinearProgressIndicator(
-                        progress = { if (total == 0) 0f else done.toFloat() / total },
-                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                    )
-                }
-            }
+        LazyColumn(
+            Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(
+                start = 20.dp,
+                end = 20.dp,
+                top = padding.calculateTopPadding() + 8.dp,
+                bottom = padding.calculateBottomPadding() + 16.dp,
+            ),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            item(key = "progress") { ProgressCard(done, total) }
             recipes.forEach { recipe ->
                 val checked = parseChecked(recipe.row.bowlsChecked)
-                item(key = "title-${recipe.row.recipeId}") {
-                    Text(
-                        recipe.row.title + app.scaleOf(recipe.row.recipeId).let { if (it == 1.0) "" else "（${AmountScaler.label(it)}）" },
-                        style = MaterialTheme.typography.titleLarge,
-                        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp),
-                    )
-                }
-                recipe.sections.forEach { section ->
-                    item(key = "section-${recipe.row.recipeId}-${section.name}") {
-                        Text(
-                            section.name,
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.padding(start = 16.dp, top = 8.dp),
-                        )
-                    }
-                    section.items.forEach { prep ->
-                        item(key = "item-${recipe.row.recipeId}-${prep.key}") {
-                            val isChecked = prep.key in checked
-                            Row(
-                                Modifier.fillMaxWidth().clickable { toggle(recipe, prep.key) }.padding(horizontal = 8.dp, vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Checkbox(checked = isChecked, onCheckedChange = { toggle(recipe, prep.key) })
-                                Column(Modifier.weight(1f)) {
+                item(key = "recipe-${recipe.row.recipeId}") {
+                    SoftCard(Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 8.dp)) {
+                            Row(verticalAlignment = Alignment.Bottom) {
+                                Text(recipe.row.title, style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f, fill = false))
+                                app.scaleOf(recipe.row.recipeId).takeIf { it != 1.0 }?.let {
                                     Text(
-                                        prep.title,
-                                        style = MaterialTheme.typography.bodyLarge,
-                                        fontWeight = if (section.name == "调料碗") FontWeight.Bold else FontWeight.Normal,
-                                        textDecoration = if (isChecked) TextDecoration.LineThrough else null,
+                                        " ${AmountScaler.label(it)}",
+                                        style = MaterialTheme.typography.labelLarge,
+                                        color = MaterialTheme.colorScheme.primary,
                                     )
-                                    if (prep.detail.isNotBlank()) {
-                                        Text(prep.detail, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    }
+                                }
+                                Spacer(Modifier.weight(1f))
+                                Text(
+                                    "${checked.count { it in recipe.allKeys }} / ${recipe.allKeys.size}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            recipe.sections.forEach { section ->
+                                val accent = when (section.name) {
+                                    "调料碗" -> MaterialTheme.colorScheme.tertiary
+                                    "备菜" -> MaterialTheme.colorScheme.secondary
+                                    else -> MaterialTheme.colorScheme.primary
+                                }
+                                Text(
+                                    section.name,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = accent,
+                                    modifier = Modifier.padding(top = 12.dp, bottom = 2.dp),
+                                )
+                                section.items.forEach { prep ->
+                                    PrepRow(
+                                        prep = prep,
+                                        checked = prep.key in checked,
+                                        accent = accent,
+                                        bold = section.name == "调料碗",
+                                        onToggle = { toggle(recipe, prep.key) },
+                                    )
                                 }
                             }
-                            HorizontalDivider(Modifier.padding(start = 56.dp))
                         }
                     }
                 }
@@ -192,5 +210,86 @@ fun PrepListScreen(onBack: () -> Unit, onCook: () -> Unit) {
             confirmButton = { TextButton(onClick = { showDone = false; onCook() }) { Text("开始做菜") } },
             dismissButton = { TextButton(onClick = { showDone = false }) { Text("再看看") } },
         )
+    }
+}
+
+/** 顶部的深色进度卡：圆环 + 已备好 / 总数 */
+@Composable
+private fun ProgressCard(done: Int, total: Int) {
+    val colors = LocalMiseColors.current
+    val progress by animateFloatAsState(if (total == 0) 0f else done.toFloat() / total, label = "prep")
+    Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(28.dp), color = colors.ink, contentColor = colors.onInk) {
+        Row(Modifier.padding(horizontal = 20.dp, vertical = 18.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(104.dp), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(
+                    progress = { progress },
+                    modifier = Modifier.fillMaxSize(),
+                    color = LocalMiseColors.current.covers[2].background,
+                    trackColor = colors.onInkMuted.copy(alpha = 0.3f),
+                    strokeWidth = 10.dp,
+                    strokeCap = StrokeCap.Round,
+                    gapSize = 0.dp,
+                )
+                Row(verticalAlignment = Alignment.Bottom) {
+                    Text("$done", fontFamily = SerifFamily, fontWeight = FontWeight.Black, fontSize = 26.sp)
+                    Text("/$total", fontFamily = SerifFamily, fontSize = 15.sp, color = colors.onInkMuted, modifier = Modifier.padding(bottom = 3.dp))
+                }
+            }
+            Spacer(Modifier.width(20.dp))
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    if (done >= total) "都备好了" else "还差 ${total - done} 样",
+                    style = MaterialTheme.typography.titleLarge,
+                )
+                Text(
+                    "切好的菜、配好的调料碗，都勾上就可以开火了。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.onInkMuted,
+                )
+            }
+        }
+    }
+}
+
+/** 一项备料：圆形勾选框，勾上后文字变淡加删除线 */
+@Composable
+private fun PrepRow(prep: PrepItem, checked: Boolean, accent: Color, bold: Boolean, onToggle: () -> Unit) {
+    val fill by animateColorAsState(if (checked) accent else Color.Transparent, label = "check")
+    val textColor by animateColorAsState(
+        if (checked) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.onSurface,
+        label = "text",
+    )
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .heightIn(min = 52.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .toggleable(value = checked, role = Role.Checkbox, onValueChange = { onToggle() })
+            .padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            Modifier
+                .size(26.dp)
+                .clip(CircleShape)
+                .background(fill)
+                .border(2.dp, if (checked) accent else MaterialTheme.colorScheme.outline, CircleShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (checked) Icon(Icons.Filled.Check, contentDescription = null, tint = MaterialTheme.colorScheme.background, modifier = Modifier.size(16.dp))
+        }
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                prep.title,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = if (bold) FontWeight.Bold else FontWeight.Medium,
+                color = textColor,
+                textDecoration = if (checked) TextDecoration.LineThrough else null,
+            )
+            if (prep.detail.isNotBlank()) {
+                Text(prep.detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
     }
 }
