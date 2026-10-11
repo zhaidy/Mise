@@ -4,7 +4,7 @@ import com.personal.mise.importer.ImportException
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** 让大模型按 JSON Schema 返回 JSON；Gemini、DeepSeek 各有一个实现 */
+/** 让大模型按 JSON Schema 返回 JSON；按设置里的模型顺序转给 Gemini、Agnes、DeepSeek */
 interface AiClient {
     /** 返回模型回复里的 JSON 对象，出错时抛 ImportException；images 是一起发给模型看的 JPEG 图片 */
     suspend fun generate(prompt: String, schema: JSONObject, images: List<ByteArray> = emptyList()): JSONObject
@@ -15,8 +15,12 @@ class AiReply(val json: JSONObject, val model: String)
 
 /** 某一家服务商的客户端，回复里带上实际用的是哪个模型 */
 interface AiProviderClient {
-    suspend fun generate(prompt: String, schema: JSONObject, images: List<ByteArray> = emptyList()): AiReply
+    /** [model] 是 API 名；额度用完、余额不足这类换个模型能解决的问题抛 [AiUnavailableException] */
+    suspend fun generate(model: String, prompt: String, schema: JSONObject, images: List<ByteArray> = emptyList()): AiReply
 }
+
+/** 这个模型这次用不了（额度用完、余额不足、模型下线、服务器忙），可以换下一个模型；消息是简短的原因，比如「今天免费额度用完了」 */
+class AiUnavailableException(reason: String) : ImportException(reason)
 
 /** 把 API 返回的模型名变成好读的名字，比如 deepseek-flash → DeepSeek Flash */
 fun modelDisplayName(id: String): String {
@@ -34,38 +38,46 @@ fun modelDisplayName(id: String): String {
 }
 
 /**
- * 按设置里选的服务商转给对应的客户端，每次调用时才读设置，切换后立即生效。
- * 选的是 Gemini 且勾选的模型都用完、或者连不上 Gemini 时，按设置改用 DeepSeek。
+ * 按设置里勾选的模型从上往下试，每次调用时才读设置，改了立即生效。
+ * 没填 Key 的跳过；额度用完、余额不足、服务器忙就换下一个；连不上某一家时，这家剩下的模型也跳过。
+ * Key 不对、回复格式不对这类问题直接报错，不换模型，免得把问题悄悄盖过去。
  * 每次成功后用 [onModelUsed] 告诉界面这次用的是哪个模型。
  */
 class SwitchableAiClient(
     private val settings: AiSettings,
-    private val gemini: AiProviderClient,
-    private val deepseek: AiProviderClient,
+    private val clients: Map<AiProvider, AiProviderClient>,
     /** 每次调用成功后调用，参数是给用户看的提示，比如「AI 模型：Gemini 3.8 Flash」 */
     private val onModelUsed: (String) -> Unit = {},
 ) : AiClient {
     override suspend fun generate(prompt: String, schema: JSONObject, images: List<ByteArray>): JSONObject {
-        val reply = when (settings.provider) {
-            AiProvider.GEMINI -> try {
-                gemini.generate(prompt, schema, images)
-            } catch (e: ImportException) {
-                // 额度用完，或者连不上 Google（比如所在网络到 Google 不通）
-                val reason = when (e) {
-                    is GeminiQuotaException -> "Gemini 免费额度用完了"
-                    is AiNetworkException -> "连不上 Gemini"
-                    else -> throw e
-                }
-                if (!settings.deepSeekFallback) throw e
-                if (settings.key(AiProvider.DEEPSEEK).isBlank()) throw ImportException("${e.message}。在 AI 设置里填好 DeepSeek Key 后会自动改用 DeepSeek")
-                val fallback = deepseek.generate(prompt, schema, images)
-                onModelUsed("$reason，这次用的是 ${fallback.model}")
-                return fallback.json
+        val candidates = settings.models.filter { settings.key(it.provider).isNotBlank() }
+        if (candidates.isEmpty()) throw ImportException(NO_KEY)
+        // 换掉的模型：给提示用的简短原因，和报错用的详细原因
+        val skipped = mutableListOf<String>()
+        val details = mutableListOf<String>()
+        val unreachable = mutableSetOf<AiProvider>()
+        for (model in candidates) {
+            if (model.provider in unreachable) continue
+            val reply = try {
+                clients.getValue(model.provider).generate(model.id, prompt, schema, images)
+            } catch (e: AiUnavailableException) {
+                skipped += "${model.label} ${e.message}"
+                details += "${model.label}：${e.message}"
+                continue
+            } catch (e: AiNetworkException) {
+                unreachable += model.provider
+                skipped += "连不上 ${model.provider.label}"
+                details += e.message.orEmpty()
+                continue
             }
-            AiProvider.DEEPSEEK -> deepseek.generate(prompt, schema, images)
+            onModelUsed(if (skipped.isEmpty()) "AI 模型：${reply.model}" else "${skipped.first()}，这次用的是 ${reply.model}")
+            return reply.json
         }
-        onModelUsed("AI 模型：${reply.model}")
-        return reply.json
+        throw ImportException("勾选的模型都用不了：\n" + details.joinToString("\n"))
+    }
+
+    companion object {
+        const val NO_KEY = "勾选的 AI 模型都还没填 API Key，请在 AI 设置里填写"
     }
 }
 
@@ -86,7 +98,7 @@ fun networkErrorDetail(e: Throwable): String {
     return parts.distinct().joinToString("\n")
 }
 
-/** 标准 JSON Schema 的小工具；DeepSeek 写进提示里，Gemini 由 [GeminiClient.toGeminiSchema] 转成它自己的格式 */
+/** 标准 JSON Schema 的小工具；OpenAI 格式的写进提示里，Gemini 由 [GeminiClient.toGeminiSchema] 转成它自己的格式 */
 object AiSchema {
     fun obj(vararg props: Pair<String, JSONObject>, required: List<String> = emptyList()): JSONObject =
         JSONObject().put("type", "object")

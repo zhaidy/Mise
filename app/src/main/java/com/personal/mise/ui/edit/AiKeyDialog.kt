@@ -33,9 +33,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import com.personal.mise.ai.AiModel
 import com.personal.mise.ai.AiProvider
-import com.personal.mise.ai.GeminiClient
 import com.personal.mise.ui.common.rememberApp
 import java.time.Instant
 import java.time.ZoneId
@@ -44,20 +45,21 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 
 /**
- * 选用哪家的 AI 并填写它的 API Key；已经填过的 Key 会带出来，可以直接切换。
+ * 填各家 AI 的 API Key，选用哪些模型、按什么顺序；已经填过的 Key 会带出来。
  * 确认后保存，再由调用方继续之前的 AI 操作。
  */
 @Composable
 fun AiKeyDialog(confirmLabel: String, onDismiss: () -> Unit, onConfirm: () -> Unit) {
     val settings = rememberApp().aiSettings
-    var provider by rememberSaveable { mutableStateOf(settings.provider) }
+    // 正在填哪家的 Key，先显示会先用的那家
+    var provider by rememberSaveable { mutableStateOf(settings.firstUsable?.provider ?: settings.models.first().provider) }
     var keys by remember { mutableStateOf(AiProvider.entries.associateWith { settings.key(it) }) }
     val key = keys.getValue(provider)
     var cellularFallback by rememberSaveable { mutableStateOf(settings.cellularFallback) }
-    // 勾选的模型按保存的顺序排在前面，没勾的排在后面
-    var geminiEnabled by rememberSaveable { mutableStateOf(settings.geminiModels) }
-    var geminiOrder by rememberSaveable { mutableStateOf(geminiEnabled + GeminiClient.MODELS.map { it.first }.filter { it !in geminiEnabled }) }
-    var deepSeekFallback by rememberSaveable { mutableStateOf(settings.deepSeekFallback) }
+    // 勾选的模型按保存的顺序排在前面，没勾的排在后面；存的是 AiModel.key
+    var enabled by rememberSaveable { mutableStateOf(settings.models.map { it.key }) }
+    var order by rememberSaveable { mutableStateOf(enabled + AiModel.ALL.map { it.key }.filter { it !in enabled }) }
+    val usable = order.any { it in enabled && AiModel.fromKey(it)?.let { m -> keys.getValue(m.provider).isNotBlank() } == true }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("AI 设置") },
@@ -65,18 +67,14 @@ fun AiKeyDialog(confirmLabel: String, onDismiss: () -> Unit, onConfirm: () -> Un
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 AiKeyFields(provider, { provider = it }, key, { keys = keys + (provider to it) })
                 if (provider == AiProvider.DEEPSEEK && key.isNotBlank()) DeepSeekBalance(key.trim())
-                if (provider == AiProvider.GEMINI) {
-                    Spacer(Modifier.height(12.dp))
-                    GeminiFallbackFields(
-                        order = geminiOrder,
-                        enabled = geminiEnabled,
-                        onOrderChange = { geminiOrder = it },
-                        onEnabledChange = { geminiEnabled = it },
-                        deepSeekFallback = deepSeekFallback,
-                        onDeepSeekFallbackChange = { deepSeekFallback = it },
-                        hasDeepSeekKey = keys.getValue(AiProvider.DEEPSEEK).isNotBlank(),
-                    )
-                }
+                Spacer(Modifier.height(12.dp))
+                ModelOrderFields(
+                    order = order,
+                    enabled = enabled,
+                    hasKey = { keys.getValue(it).isNotBlank() },
+                    onOrderChange = { order = it },
+                    onEnabledChange = { enabled = it },
+                )
                 Spacer(Modifier.height(12.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
@@ -89,14 +87,13 @@ fun AiKeyDialog(confirmLabel: String, onDismiss: () -> Unit, onConfirm: () -> Un
         },
         confirmButton = {
             TextButton(
-                enabled = key.isNotBlank(),
+                // 至少有一个勾选的模型填了 Key
+                enabled = usable,
                 onClick = {
                     // 切换服务商时填过的 Key 都保存，比如在 DeepSeek 下填了 Key 再切回 Gemini
                     keys.forEach { (p, k) -> settings.saveKey(p, k) }
-                    settings.provider = provider
                     settings.cellularFallback = cellularFallback
-                    settings.geminiModels = geminiOrder.filter { it in geminiEnabled }
-                    settings.deepSeekFallback = deepSeekFallback
+                    settings.models = order.filter { it in enabled }.mapNotNull(AiModel::fromKey)
                     onConfirm()
                 },
             ) { Text(confirmLabel) }
@@ -105,37 +102,45 @@ fun AiKeyDialog(confirmLabel: String, onDismiss: () -> Unit, onConfirm: () -> Un
     )
 }
 
-/** Gemini 依次尝试哪些模型、什么顺序，都用完后要不要改用 DeepSeek */
+/** 用哪些模型、什么顺序：三家的模型放在一张表里，从上往下试 */
 @Composable
-private fun GeminiFallbackFields(
+private fun ModelOrderFields(
     order: List<String>,
     enabled: List<String>,
+    hasKey: (AiProvider) -> Boolean,
     onOrderChange: (List<String>) -> Unit,
     onEnabledChange: (List<String>) -> Unit,
-    deepSeekFallback: Boolean,
-    onDeepSeekFallbackChange: (Boolean) -> Unit,
-    hasDeepSeekKey: Boolean,
 ) {
-    val labels = GeminiClient.MODELS.toMap()
     val usage = rememberApp().geminiUsage
     val now = remember { System.currentTimeMillis() }
-    Text("免费额度用完时依次换用", style = MaterialTheme.typography.bodyMedium)
+    Text("AI 模型", style = MaterialTheme.typography.bodyMedium)
     Text(
-        "每个模型的免费额度分开算，从上往下试；点箭头调整顺序。Google 查不到剩余额度，次数是这台手机今天用的",
+        "勾选的模型从上往下试，额度用完、余额不足或连不上就换下一个；没填 Key 的会跳过。点箭头调整顺序。" +
+            "Google 查不到 Gemini 的剩余额度，次数是这台手机今天用的",
         style = MaterialTheme.typography.bodySmall,
     )
-    order.forEachIndexed { i, model ->
-        val checked = model in enabled
+    order.forEachIndexed { i, id ->
+        val model = AiModel.fromKey(id) ?: return@forEachIndexed
+        val checked = id in enabled
+        val note = when {
+            !hasKey(model.provider) -> "还没填 ${model.provider.label} Key，会跳过"
+            model.provider == AiProvider.GEMINI -> geminiUsageText(usage.exhaustedUntil(model.id, now), usage.count(model.id, now))
+            else -> null
+        }
         Row(verticalAlignment = Alignment.CenterVertically) {
             Checkbox(
                 checked = checked,
                 // 至少留一个
                 enabled = !checked || enabled.size > 1,
-                onCheckedChange = { onEnabledChange(if (it) enabled + model else enabled - model) },
+                onCheckedChange = { onEnabledChange(if (it) enabled + id else enabled - id) },
             )
             Column(Modifier.weight(1f)) {
-                Text(labels[model] ?: model, style = MaterialTheme.typography.bodyMedium)
-                geminiUsageText(usage.exhaustedUntil(model, now), usage.count(model, now))?.let {
+                Text(
+                    model.label,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (hasKey(model.provider)) Color.Unspecified else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                note?.let {
                     Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
@@ -144,17 +149,6 @@ private fun GeminiFallbackFields(
                 onClick = { onOrderChange(order.toMutableList().apply { add(i - 1, removeAt(i)) }) },
             ) { Icon(Icons.Filled.KeyboardArrowUp, contentDescription = "上移") }
         }
-    }
-    Spacer(Modifier.height(8.dp))
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f)) {
-            Text("都用完或连不上时改用 DeepSeek", style = MaterialTheme.typography.bodyMedium)
-            Text(
-                if (hasDeepSeekKey) "扣 DeepSeek 的预付余额，不会自动扣费" else "还没填 DeepSeek Key，点上面的 DeepSeek 填写",
-                style = MaterialTheme.typography.bodySmall,
-            )
-        }
-        Switch(checked = deepSeekFallback, onCheckedChange = onDeepSeekFallbackChange)
     }
 }
 

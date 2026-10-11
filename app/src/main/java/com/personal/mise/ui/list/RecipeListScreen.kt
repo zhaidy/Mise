@@ -468,12 +468,12 @@ fun RecipeListScreen(
     if (noteOpen) {
         AiNoteDialog(
             needsKey = !app.aiSettings.hasKey,
-            initialProvider = app.aiSettings.provider,
+            initialProvider = app.aiSettings.models.first().provider,
             onDismiss = { noteOpen = false },
             onConfirm = { note, provider, key ->
                 if (key.isNotBlank()) {
                     app.aiSettings.saveKey(provider, key)
-                    app.aiSettings.provider = provider
+                    app.aiSettings.enableProvider(provider)
                 }
                 noteOpen = false
                 onImport(note, true)
@@ -487,7 +487,8 @@ fun RecipeListScreen(
             onDismiss = { aiSettingsOpen = false },
             onConfirm = {
                 aiSettingsOpen = false
-                scope.launch { snackbar.showSnackbar("已改用 ${app.aiSettings.provider.label}") }
+                val first = app.aiSettings.firstUsable?.label
+                scope.launch { snackbar.showSnackbar(if (first != null) "已保存，先用 $first" else "已保存") }
             },
         )
     }
