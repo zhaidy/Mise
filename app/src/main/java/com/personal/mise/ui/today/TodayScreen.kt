@@ -62,6 +62,7 @@ import sh.calvin.reorderable.rememberReorderableLazyListState
 fun TodayScreen(
     onOpenRecipe: (Long) -> Unit,
     onPrep: () -> Unit,
+    onShopping: () -> Unit,
     onCook: () -> Unit,
 ) {
     val app = rememberApp()
@@ -117,7 +118,10 @@ fun TodayScreen(
             TopAppBar(
                 title = { Text("今日菜单") },
                 actions = {
-                    if (items.isNotEmpty()) TextButton(onClick = { confirmClear = true }) { Text("清空") }
+                    if (items.isNotEmpty()) {
+                        TextButton(onClick = onShopping) { Text("购物清单") }
+                        TextButton(onClick = { confirmClear = true }) { Text("清空") }
+                    }
                 },
             )
         },
