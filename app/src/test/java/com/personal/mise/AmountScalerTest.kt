@@ -47,4 +47,18 @@ class AmountScalerTest {
         assertEquals("30毫升 ≈36克", AmountScaler.scale("15毫升 ≈18克", 2.0))
         assertEquals("3个 ≈150克", AmountScaler.scale("2个 ≈100克", 1.5))
     }
+
+    @Test
+    fun `按主料取数量和单位`() {
+        assertEquals(250.0, AmountScaler.quantity("250克")!!, 1e-9)
+        assertEquals(0.5, AmountScaler.quantity("半个")!!, 1e-9)
+        assertEquals(1.5, AmountScaler.quantity("1 1/2 cup")!!, 1e-9)
+        assertEquals(2.0, AmountScaler.quantity("2个 ≈100克")!!, 1e-9)
+        assertEquals(null, AmountScaler.quantity("适量"))
+        assertEquals("克", AmountScaler.unit("250克"))
+        assertEquals("g", AmountScaler.unit("250 g"))
+        assertEquals("个", AmountScaler.unit("2个 ≈100克"))
+        assertEquals("个", AmountScaler.unit("半个"))
+        assertEquals("", AmountScaler.unit("适量"))
+    }
 }
