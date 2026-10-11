@@ -8,6 +8,7 @@ import com.personal.mise.data.StepDraft
 import com.personal.mise.importer.ImportException
 import com.personal.mise.importer.ImportResult
 import com.personal.mise.importer.UrlExtractor
+import com.personal.mise.util.UnitText
 import org.json.JSONObject
 
 data class AiIngredient(val name: String, val amount: String)
@@ -53,7 +54,7 @@ class AiRecipeOrganizer(private val ai: AiClient) {
             "要求：\n" +
             "1. title：菜名。原文没写菜名时，根据内容起一个简短常见的菜名。\n" +
             "2. servings：原文写了几人份或份量就填，没写留空。\n" +
-            "3. ingredients：所有用到的食材和调料，每样一条，name 只写名称，amount 写用量原文（如「300克」「2勺」「适量」），" +
+            "3. ingredients：所有用到的食材和调料，每样一条，name 只写名称，amount 写用量原文（如「300克」「2勺」「适量」），数字在前、单位在后，不要写成「克300」「勺2」，" +
             "没写用量就留空字符串。做法里提到但用料里没列的也要收进来。同一样东西只列一次。\n" +
             "4. steps：按先后顺序的做法，每一步只做一件主要的事，text 用简洁的一两句话，不要带序号。" +
             "原文明确写了某一步要等待或加热的时长（如「焖10分钟」）时，把分钟数填进 timerMinutes，否则留空。" +
@@ -68,7 +69,7 @@ class AiRecipeOrganizer(private val ai: AiClient) {
             "要求：\n" +
             "1. title：规范、简短的菜名（如「可乐鸡翅」），不要照抄标题里的感叹、形容和表情。\n" +
             "2. servings：写了几人份或份量就填，没写留空。\n" +
-            "3. ingredients：所有用到的食材和调料，每样一条，name 只写名称，amount 写用量原文（如「300克」「2勺」「适量」），" +
+            "3. ingredients：所有用到的食材和调料，每样一条，name 只写名称，amount 写用量原文（如「300克」「2勺」「适量」），数字在前、单位在后，不要写成「克300」「勺2」，" +
             "没写用量就留空字符串。做法里提到但用料里没列的也要收进来。同一样东西只列一次。\n" +
             "4. steps：按先后顺序的做法，每一步只做一件主要的事，text 用简洁的一两句话，不要带序号和表情。" +
             "明确写了某一步要等待或加热的时长（如「焖10分钟」）时，把分钟数填进 timerMinutes，否则留空。" +
@@ -88,7 +89,7 @@ class AiRecipeOrganizer(private val ai: AiClient) {
             "要求：\n" +
             "1. title：图片上写的菜名，规范、简短（如「可乐鸡翅」）。没写菜名时根据内容起一个简短常见的菜名。\n" +
             "2. servings：写了几人份或份量就填，没写留空。\n" +
-            "3. ingredients：所有用到的食材和调料，每样一条，name 只写名称，amount 写用量原文（如「300克」「2勺」「适量」），" +
+            "3. ingredients：所有用到的食材和调料，每样一条，name 只写名称，amount 写用量原文（如「300克」「2勺」「适量」），数字在前、单位在后，不要写成「克300」「勺2」，" +
             "没写用量就留空字符串。做法里提到但用料里没列的也要收进来。同一样东西只列一次。\n" +
             "4. steps：按先后顺序的做法，每一步只做一件主要的事，text 用简洁的一两句话，不要带序号和表情。" +
             "明确写了某一步要等待或加热的时长（如「焖10分钟」）时，把分钟数填进 timerMinutes，否则留空。" +
@@ -122,7 +123,7 @@ class AiRecipeOrganizer(private val ai: AiClient) {
                 (0 until arr.length()).mapNotNull { i ->
                     val item = arr.optJSONObject(i) ?: return@mapNotNull null
                     val name = item.optString("name").trim()
-                    if (name.isEmpty()) null else AiIngredient(name, item.optString("amount").trim().nullIfNull())
+                    if (name.isEmpty()) null else AiIngredient(name, UnitText.normalize(item.optString("amount").trim().nullIfNull()))
                 }
             }.orEmpty()
             val steps = AiSchema.parseSteps(json.optJSONArray("steps"))

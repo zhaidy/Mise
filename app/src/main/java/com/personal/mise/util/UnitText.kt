@@ -11,7 +11,18 @@ object UnitText {
     )
 
     fun display(amount: String): String =
-        rules.fold(amount) { text, (regex, replacement) -> regex.replace(text, replacement) }
+        rules.fold(normalize(amount)) { text, (regex, replacement) -> regex.replace(text, replacement) }
+
+    // AI 整理表格式的用料（单位一栏、数量一栏）时偶尔会拼成「克250」「勺1」；
+    // 单位前面已经有数量的（「一勺1」「半斤5」）猜不出原意，不动
+    private val unitFirst = Regex(
+        "(?<![\\d.½¼¾一二两三四五六七八九十百千半几毫公汤茶大小])" +
+            "(千克|公斤|毫升|大勺|小勺|汤匙|茶匙|克|斤|升|个|根|勺|片|瓣|颗|只|块|把|碗|杯|袋|包|条|棵|朵|张|段)" +
+            "(\\d+(?:\\.\\d+)?(?:/\\d+)?)",
+    )
+
+    /** 单位写在数字前面的用量换回正常顺序：「克250」→「250克」、「分次加入，共 勺1」→「分次加入，共 1勺」 */
+    fun normalize(amount: String): String = unitFirst.replace(amount) { it.groupValues[2] + it.groupValues[1] }
 }
 
 /** 从步骤文字里猜计时时长，如「焖 15 分钟」→ 900 秒 */
@@ -72,7 +83,8 @@ object AmountScaler {
     }
 
     /** 用量里的第一个数量，如「250克」→ 250、「半个」→ 0.5；「适量」这类没有数量的返回 null */
-    fun quantity(amount: String): Double? {
+    fun quantity(raw: String): Double? {
+        val amount = UnitText.normalize(raw)
         if (!amount.any { it.isDigit() || it in fractions }) {
             return chineseLead.find(amount)?.let { chineseDigits.getValue(it.value[0]) }
         }
@@ -80,7 +92,8 @@ object AmountScaler {
     }
 
     /** 第一个数量后面的单位，如「250克」→「克」、「2个 ≈100克」→「个」 */
-    fun unit(amount: String): String {
+    fun unit(raw: String): String {
+        val amount = UnitText.normalize(raw)
         val rest = if (!amount.any { it.isDigit() || it in fractions }) {
             if (chineseLead.find(amount) == null) return "" else amount.substring(1)
         } else {
