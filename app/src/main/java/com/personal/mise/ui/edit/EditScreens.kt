@@ -137,7 +137,7 @@ private fun EditorScaffold(
                 if (vm.loadState == LoadState.Ready) {
                     PillButton(
                         saveLabel,
-                        enabled = !vm.saving,
+                        enabled = vm.canSave,
                         height = 44.dp,
                         onClick = {
                             vm.save(
@@ -198,7 +198,7 @@ private fun EditorScaffold(
                         )
                         OutlinePillButton(
                             "保存并调整调料碗",
-                            enabled = !vm.saving,
+                            enabled = vm.canSave,
                             height = 48.dp,
                             modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
                             onClick = {
