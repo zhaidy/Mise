@@ -1,14 +1,19 @@
 package com.personal.mise
 
 import android.app.Application
+import android.os.Handler
+import android.os.Looper
+import android.widget.Toast
 import androidx.compose.runtime.mutableStateMapOf
 import com.personal.mise.ai.AiAmountEstimator
 import com.personal.mise.ai.AiBowlOrganizer
 import com.personal.mise.ai.AiCalorieEstimator
 import com.personal.mise.ai.AiClient
+import com.personal.mise.ai.AiHttp
 import com.personal.mise.ai.AiRecipeOrganizer
 import com.personal.mise.ai.AiSettings
 import com.personal.mise.ai.AiStepSplitter
+import com.personal.mise.ai.CellularNetwork
 import com.personal.mise.ai.ClaudeClient
 import com.personal.mise.ai.GeminiClient
 import com.personal.mise.ai.SwitchableAiClient
@@ -48,7 +53,20 @@ class MiseApp : Application() {
     val backup: BackupManager by lazy { BackupManager(this, database) }
     val pantry: Pantry by lazy { Pantry(this) }
     val calorieBudget: CalorieBudget by lazy { CalorieBudget(this) }
-    private val ai: AiClient by lazy { SwitchableAiClient(aiSettings, GeminiClient(aiSettings), ClaudeClient(aiSettings)) }
+    private val ai: AiClient by lazy {
+        val cellular = CellularNetwork(this)
+        val onCellularUsed = {
+            Handler(Looper.getMainLooper()).post {
+                Toast.makeText(this, "Wi-Fi 连不上，已改用移动数据", Toast.LENGTH_SHORT).show()
+            }
+            Unit
+        }
+        SwitchableAiClient(
+            aiSettings,
+            GeminiClient(aiSettings, AiHttp(aiSettings, cellular, readTimeoutSeconds = 90, onCellularUsed = onCellularUsed)),
+            ClaudeClient(aiSettings, AiHttp(aiSettings, cellular, readTimeoutSeconds = 120, onCellularUsed = onCellularUsed)),
+        )
+    }
     val stepSplitter: AiStepSplitter by lazy { AiStepSplitter(ai) }
     val noteOrganizer: AiRecipeOrganizer by lazy { AiRecipeOrganizer(ai) }
     val bowlOrganizer: AiBowlOrganizer by lazy { AiBowlOrganizer(ai) }

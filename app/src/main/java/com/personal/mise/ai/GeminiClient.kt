@@ -4,22 +4,14 @@ import com.personal.mise.importer.ImportException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
-import java.io.IOException
 import java.util.Base64
-import java.util.concurrent.TimeUnit
 
 /** 调用 Gemini，要求按 responseSchema 返回 JSON。 */
-class GeminiClient(private val settings: AiSettings) : AiClient {
-
-    private val client = OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(90, TimeUnit.SECONDS)
-        .build()
+class GeminiClient(private val settings: AiSettings, private val http: AiHttp) : AiClient {
 
     override suspend fun generate(prompt: String, schema: JSONObject, images: List<ByteArray>): JSONObject = withContext(Dispatchers.IO) {
         val key = settings.key(AiProvider.GEMINI)
@@ -30,16 +22,9 @@ class GeminiClient(private val settings: AiSettings) : AiClient {
             .header("x-goog-api-key", key)
             .post(requestBody(prompt, schema, images).toString().toRequestBody("application/json".toMediaType()))
             .build()
-        val body = try {
-            client.newCall(request).execute().use { response ->
-                val s = response.body.string()
-                if (!response.isSuccessful) throw ImportException(errorMessage(response.code, s))
-                s
-            }
-        } catch (e: IOException) {
-            throw ImportException("连接 Gemini 失败：${networkErrorDetail(e)}")
-        }
-        replyJson(body)
+        val reply = http.execute(request, "Gemini")
+        if (!reply.isSuccessful) throw ImportException(errorMessage(reply.code, reply.body))
+        replyJson(reply.body)
     }
 
     companion object {

@@ -23,11 +23,19 @@ class AiSettings(context: Context) {
         prefs.edit().putString(keyName(provider), key.trim()).apply()
     }
 
+    /** Wi-Fi 连不上 AI 服务器时，是否改用移动数据再试一次 */
+    var cellularFallback: Boolean
+        get() = prefs.getBoolean(CELLULAR_FALLBACK, true)
+        set(value) {
+            prefs.edit().putBoolean(CELLULAR_FALLBACK, value).apply()
+        }
+
     /** 当前选的 AI 有没有填 Key */
     val hasKey: Boolean get() = key(provider).isNotBlank()
 
     private companion object {
         const val PROVIDER = "provider"
+        const val CELLULAR_FALLBACK = "cellular_fallback"
 
         fun keyName(provider: AiProvider) = when (provider) {
             AiProvider.GEMINI -> "gemini_key"
