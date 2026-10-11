@@ -1,6 +1,6 @@
 package com.personal.mise
 
-import com.personal.mise.ai.GeminiRecipeOrganizer
+import com.personal.mise.ai.AiRecipeOrganizer
 import com.personal.mise.data.IngredientKind
 import com.personal.mise.importer.ImportException
 import com.personal.mise.importer.UrlExtractor
@@ -11,14 +11,13 @@ import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-class GeminiRecipeOrganizerTest {
+class AiRecipeOrganizerTest {
 
-    private fun reply(inner: String) =
-        """{"candidates":[{"content":{"parts":[{"text":${org.json.JSONObject.quote(inner)}}]}}]}"""
+    private fun reply(inner: String) = org.json.JSONObject(inner)
 
     @Test
     fun `解析 AI 整理出的菜谱并生成草稿`() {
-        val recipe = GeminiRecipeOrganizer.parseResponse(
+        val recipe = AiRecipeOrganizer.parseResponse(
             reply(
                 """{"title":"红烧肉","servings":null,
                    "ingredients":[{"name":"五花肉","amount":"500克"},{"name":"生抽","amount":""},{"name":" ","amount":"1勺"}],
@@ -29,7 +28,7 @@ class GeminiRecipeOrganizerTest {
         assertNull(recipe.servings)
         assertEquals(2, recipe.ingredients.size)
 
-        val draft = GeminiRecipeOrganizer.toImportResult(recipe, "红烧肉笔记 https://example.com/v/1").draft
+        val draft = AiRecipeOrganizer.toImportResult(recipe, "红烧肉笔记 https://example.com/v/1").draft
         assertEquals("https://example.com/v/1", draft.sourceUrl)
         assertEquals(IngredientKind.SEASONING, draft.ingredients[1].kind)
         assertEquals(IngredientKind.MAIN, draft.ingredients[0].kind)
@@ -39,8 +38,8 @@ class GeminiRecipeOrganizerTest {
 
     @Test
     fun `没有菜名时给出提醒`() {
-        val recipe = GeminiRecipeOrganizer.parseResponse(reply("""{"title":"","ingredients":[],"steps":[{"text":"炒熟"}]}"""))
-        val warnings = GeminiRecipeOrganizer.toImportResult(recipe, "炒熟").warnings
+        val recipe = AiRecipeOrganizer.parseResponse(reply("""{"title":"","ingredients":[],"steps":[{"text":"炒熟"}]}"""))
+        val warnings = AiRecipeOrganizer.toImportResult(recipe, "炒熟").warnings
         assertTrue(warnings.any { it.contains("菜名") })
         assertTrue(warnings.any { it.contains("用料") })
     }
@@ -48,9 +47,9 @@ class GeminiRecipeOrganizerTest {
     @Test
     fun `不是菜谱时报错`() {
         assertThrows(ImportException::class.java) {
-            GeminiRecipeOrganizer.parseResponse(reply("""{"title":"","ingredients":[],"steps":[]}"""))
+            AiRecipeOrganizer.parseResponse(reply("""{"title":"","ingredients":[],"steps":[]}"""))
         }
-        assertThrows(ImportException::class.java) { GeminiRecipeOrganizer.parseResponse("{}") }
+        assertThrows(ImportException::class.java) { AiRecipeOrganizer.parseResponse(reply("{}")) }
     }
 
     @Test

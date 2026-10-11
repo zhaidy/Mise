@@ -1,12 +1,13 @@
 package com.personal.mise.ai
 
 import com.personal.mise.importer.ImportException
+import org.json.JSONObject
 
 /**
- * 原文写「适量」「少许」或没写用量的用料，交给 Gemini 按菜的份量估一个具体用量。
+ * 原文写「适量」「少许」或没写用量的用料，交给 AI 按菜的份量估一个具体用量。
  * 估出来的用量写成「约 3 克（估算）」，一眼能看出不是原文。
  */
-class GeminiAmountEstimator(private val gemini: GeminiClient) {
+class AiAmountEstimator(private val ai: AiClient) {
 
     /** [ingredients] 是 名称 to 用量；返回 用料下标 to 估算后的用量文字，只包含需要估算且估出来的 */
     suspend fun estimate(
@@ -17,8 +18,8 @@ class GeminiAmountEstimator(private val gemini: GeminiClient) {
     ): Map<Int, String> {
         val targets = ingredients.indices.filter { needsEstimate(ingredients[it].first, ingredients[it].second) }
         if (targets.isEmpty()) throw ImportException("没有需要估算的用量")
-        val body = gemini.generate(prompt(title, servings, ingredients, steps, targets), schema)
-        return parseResponse(body, targets)
+        val reply = ai.generate(prompt(title, servings, ingredients, steps, targets), schema)
+        return parseResponse(reply, targets)
     }
 
     companion object {
@@ -76,20 +77,20 @@ class GeminiAmountEstimator(private val gemini: GeminiClient) {
         }
 
         private val schema
-            get() = GeminiClient.obj(
-                "estimates" to GeminiClient.array(
-                    GeminiClient.obj(
-                        "ingredient" to GeminiClient.number(),
-                        "amount" to GeminiClient.string(),
+            get() = AiSchema.obj(
+                "estimates" to AiSchema.array(
+                    AiSchema.obj(
+                        "ingredient" to AiSchema.number(),
+                        "amount" to AiSchema.string(),
                         required = listOf("ingredient", "amount"),
                     ),
                 ),
                 required = listOf("estimates"),
             )
 
-        fun parseResponse(body: String, targets: List<Int>): Map<Int, String> {
-            val arr = GeminiClient.replyJson(body).optJSONArray("estimates")
-                ?: throw ImportException("Gemini 返回的格式不对，请重试")
+        fun parseResponse(reply: JSONObject, targets: List<Int>): Map<Int, String> {
+            val arr = reply.optJSONArray("estimates")
+                ?: throw ImportException("AI 返回的格式不对，请重试")
             val result = linkedMapOf<Int, String>()
             for (i in 0 until arr.length()) {
                 val item = arr.optJSONObject(i) ?: continue
@@ -98,7 +99,7 @@ class GeminiAmountEstimator(private val gemini: GeminiClient) {
                 if (index !in targets || amount.isEmpty() || amount == "null" || vague.matches(amount)) continue
                 result[index] = format(amount)
             }
-            if (result.isEmpty()) throw ImportException("Gemini 没有估出用量，请重试")
+            if (result.isEmpty()) throw ImportException("AI 没有估出用量，请重试")
             return result
         }
     }

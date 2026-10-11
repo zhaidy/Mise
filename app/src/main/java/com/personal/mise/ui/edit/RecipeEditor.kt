@@ -68,11 +68,10 @@ fun RecipeEditor(
     val imageOnly = PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
 
     askingKeyFor?.let { action ->
-        GeminiKeyDialog(
+        AiKeyDialog(
             confirmLabel = if (action == "estimate") "保存并估算" else "保存并拆分",
             onDismiss = { askingKeyFor = null },
             onConfirm = {
-                vm.saveGeminiKey(it)
                 askingKeyFor = null
                 if (action == "estimate") vm.aiEstimateAmounts() else vm.aiSplitSteps()
             },
@@ -122,7 +121,7 @@ fun RecipeEditor(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     TextButton(
                         enabled = !vm.estimating && vm.canEstimate,
-                        onClick = { if (vm.hasGeminiKey) vm.aiEstimateAmounts() else askingKeyFor = "estimate" },
+                        onClick = { if (vm.hasAiKey) vm.aiEstimateAmounts() else askingKeyFor = "estimate" },
                     ) { Text("AI 估算「适量」用量") }
                     if (vm.estimating) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                 }
@@ -180,7 +179,7 @@ fun RecipeEditor(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     TextButton(
                         enabled = !vm.aiBusy && vm.steps.any { it.text.isNotBlank() },
-                        onClick = { if (vm.hasGeminiKey) vm.aiSplitSteps() else askingKeyFor = "split" },
+                        onClick = { if (vm.hasAiKey) vm.aiSplitSteps() else askingKeyFor = "split" },
                     ) { Text(if (vm.stepsAiSplit) "AI 重新拆分" else "AI 拆分步骤") }
                     if (vm.aiBusy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                     TextButton(onClick = { askingKeyFor = "split" }) { Text("设置 Key") }

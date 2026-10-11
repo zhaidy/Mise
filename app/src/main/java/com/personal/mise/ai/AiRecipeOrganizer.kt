@@ -8,6 +8,7 @@ import com.personal.mise.data.StepDraft
 import com.personal.mise.importer.ImportException
 import com.personal.mise.importer.ImportResult
 import com.personal.mise.importer.UrlExtractor
+import org.json.JSONObject
 
 data class AiIngredient(val name: String, val amount: String)
 
@@ -18,14 +19,14 @@ data class AiRecipe(
     val steps: List<AiStep>,
 )
 
-/** 把手机笔记里随手记的菜谱（格式不固定）交给 Gemini，整理成菜名、用料和步骤。 */
-class GeminiRecipeOrganizer(private val gemini: GeminiClient) {
+/** 把手机笔记里随手记的菜谱（格式不固定）交给 AI，整理成菜名、用料和步骤。 */
+class AiRecipeOrganizer(private val ai: AiClient) {
 
     suspend fun organize(note: String): ImportResult {
         val text = note.trim()
         if (text.isEmpty()) throw ImportException("没有可以整理的文字")
         if (text.length > MAX_LENGTH) throw ImportException("文字太长了（超过 $MAX_LENGTH 字），请只粘贴一道菜")
-        return toImportResult(parseResponse(gemini.generate(PROMPT + text, schema)), text)
+        return toImportResult(parseResponse(ai.generate(PROMPT + text, schema)), text)
     }
 
     companion object {
@@ -46,18 +47,17 @@ class GeminiRecipeOrganizer(private val gemini: GeminiClient) {
             "笔记原文：\n"
 
         private val schema
-            get() = GeminiClient.obj(
-                "title" to GeminiClient.string(),
-                "servings" to GeminiClient.string(nullable = true),
-                "ingredients" to GeminiClient.array(
-                    GeminiClient.obj("name" to GeminiClient.string(), "amount" to GeminiClient.string(), required = listOf("name", "amount")),
+            get() = AiSchema.obj(
+                "title" to AiSchema.string(),
+                "servings" to AiSchema.string(nullable = true),
+                "ingredients" to AiSchema.array(
+                    AiSchema.obj("name" to AiSchema.string(), "amount" to AiSchema.string(), required = listOf("name", "amount")),
                 ),
-                "steps" to GeminiClient.array(GeminiClient.stepSchema),
+                "steps" to AiSchema.array(AiSchema.stepSchema),
                 required = listOf("title", "ingredients", "steps"),
             )
 
-        fun parseResponse(body: String): AiRecipe {
-            val json = GeminiClient.replyJson(body)
+        fun parseResponse(json: JSONObject): AiRecipe {
             val ingredients = json.optJSONArray("ingredients")?.let { arr ->
                 (0 until arr.length()).mapNotNull { i ->
                     val item = arr.optJSONObject(i) ?: return@mapNotNull null
@@ -65,7 +65,7 @@ class GeminiRecipeOrganizer(private val gemini: GeminiClient) {
                     if (name.isEmpty()) null else AiIngredient(name, item.optString("amount").trim().nullIfNull())
                 }
             }.orEmpty()
-            val steps = GeminiClient.parseSteps(json.optJSONArray("steps"))
+            val steps = AiSchema.parseSteps(json.optJSONArray("steps"))
             if (ingredients.isEmpty() && steps.isEmpty()) throw ImportException("没能从这段文字里整理出菜谱，请确认内容是一道菜的做法")
             return AiRecipe(
                 title = json.optString("title").trim().nullIfNull(),

@@ -13,16 +13,15 @@ import java.io.IOException
 import java.util.concurrent.TimeUnit
 
 /** 调用 Gemini，要求按 responseSchema 返回 JSON。 */
-class GeminiClient(private val settings: AiSettings) {
+class GeminiClient(private val settings: AiSettings) : AiClient {
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(90, TimeUnit.SECONDS)
         .build()
 
-    /** 返回 Gemini 回复的原始响应体，用 [replyJson] 取出里面的 JSON */
-    suspend fun generate(prompt: String, schema: JSONObject): String = withContext(Dispatchers.IO) {
-        val key = settings.geminiKey
+    override suspend fun generate(prompt: String, schema: JSONObject): JSONObject = withContext(Dispatchers.IO) {
+        val key = settings.key(AiProvider.GEMINI)
         if (key.isBlank()) throw ImportException(NO_KEY)
 
         val request = Request.Builder()
@@ -30,7 +29,7 @@ class GeminiClient(private val settings: AiSettings) {
             .header("x-goog-api-key", key)
             .post(requestBody(prompt, schema).toString().toRequestBody("application/json".toMediaType()))
             .build()
-        try {
+        val body = try {
             client.newCall(request).execute().use { response ->
                 val s = response.body.string()
                 if (!response.isSuccessful) throw ImportException(errorMessage(response.code, s))
@@ -39,6 +38,7 @@ class GeminiClient(private val settings: AiSettings) {
         } catch (e: IOException) {
             throw ImportException("连接 Gemini 失败：${e.message ?: "请检查网络"}")
         }
+        replyJson(body)
     }
 
     companion object {
@@ -54,8 +54,27 @@ class GeminiClient(private val settings: AiSettings) {
                 JSONObject()
                     .put("temperature", 0.2)
                     .put("responseMimeType", "application/json")
-                    .put("responseSchema", schema),
+                    .put("responseSchema", toGeminiSchema(schema)),
             )
+
+        /**
+         * [AiSchema] 写的是标准 JSON Schema，Gemini 的 responseSchema 是另一种写法：
+         * 类型名大写、可空写 nullable、不认 additionalProperties。
+         */
+        fun toGeminiSchema(schema: JSONObject): JSONObject {
+            schema.optJSONArray("anyOf")?.let { anyOf ->
+                val types = (0 until anyOf.length()).map { anyOf.getJSONObject(it) }
+                val nonNull = types.single { it.optString("type") != "null" }
+                return toGeminiSchema(nonNull).put("nullable", true)
+            }
+            val out = JSONObject().put("type", schema.getString("type").uppercase())
+            schema.optJSONObject("properties")?.let { props ->
+                out.put("properties", JSONObject().apply { props.keys().forEach { put(it, toGeminiSchema(props.getJSONObject(it))) } })
+            }
+            schema.optJSONArray("required")?.let { out.put("required", it) }
+            schema.optJSONObject("items")?.let { out.put("items", toGeminiSchema(it)) }
+            return out
+        }
 
         /** 从 generateContent 的响应里取出模型回复的 JSON 对象 */
         fun replyJson(body: String): JSONObject {
@@ -65,35 +84,6 @@ class GeminiClient(private val settings: AiSettings) {
             }.getOrNull() ?: throw ImportException("Gemini 没有返回内容，请重试")
             return runCatching { JSONObject(reply) }.getOrNull()
                 ?: throw ImportException("Gemini 返回的格式不对，请重试")
-        }
-
-        // responseSchema 的小工具
-        fun obj(vararg props: Pair<String, JSONObject>, required: List<String> = emptyList()): JSONObject =
-            JSONObject().put("type", "OBJECT")
-                .put("properties", JSONObject().apply { props.forEach { (k, v) -> put(k, v) } })
-                .put("required", JSONArray(required))
-
-        fun array(items: JSONObject): JSONObject = JSONObject().put("type", "ARRAY").put("items", items)
-        fun string(nullable: Boolean = false): JSONObject = JSONObject().put("type", "STRING").apply { if (nullable) put("nullable", true) }
-        fun integer(nullable: Boolean = false): JSONObject = JSONObject().put("type", "INTEGER").apply { if (nullable) put("nullable", true) }
-        fun number(nullable: Boolean = false): JSONObject = JSONObject().put("type", "NUMBER").apply { if (nullable) put("nullable", true) }
-
-        /** 做法里每一步的 schema，拆分步骤和整理笔记共用 */
-        val stepSchema: JSONObject get() = obj("text" to string(), "timerMinutes" to number(nullable = true), required = listOf("text"))
-
-        /** 解析 [stepSchema] 格式的步骤数组 */
-        fun parseSteps(steps: JSONArray?): List<AiStep> {
-            if (steps == null) return emptyList()
-            return (0 until steps.length()).mapNotNull { i ->
-                val item = steps.optJSONObject(i) ?: return@mapNotNull null
-                val text = item.optString("text").trim()
-                if (text.isEmpty()) null
-                else AiStep(
-                    text,
-                    item.optDouble("timerMinutes", Double.NaN).takeIf { !it.isNaN() && it > 0 },
-                    item.optInt("source", 0).takeIf { it > 0 },
-                )
-            }
         }
 
         private fun errorMessage(code: Int, body: String): String {
