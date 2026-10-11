@@ -68,18 +68,37 @@ object AmountScaler {
             val m = chineseLead.find(amount) ?: return amount
             return format(chineseDigits.getValue(m.value[0]) * factor) + amount.substring(1)
         }
-        return number.replace(amount) { m ->
-            val g = m.groupValues
-            val value = when {
-                g[3].isNotEmpty() -> {
-                    val den = g[3].toDouble()
-                    if (den == 0.0) return@replace m.value
-                    (g[1].toDoubleOrNull() ?: 0.0) + g[2].toDouble() / den
-                }
-                g[5].isNotEmpty() -> (g[4].toDoubleOrNull() ?: 0.0) + fractions.getValue(g[5][0])
-                else -> g[6].toDouble()
+        return number.replace(amount) { m -> valueOf(m)?.let { format(it * factor) } ?: m.value }
+    }
+
+    /** 用量里的第一个数量，如「250克」→ 250、「半个」→ 0.5；「适量」这类没有数量的返回 null */
+    fun quantity(amount: String): Double? {
+        if (!amount.any { it.isDigit() || it in fractions }) {
+            return chineseLead.find(amount)?.let { chineseDigits.getValue(it.value[0]) }
+        }
+        return number.find(amount)?.let(::valueOf)
+    }
+
+    /** 第一个数量后面的单位，如「250克」→「克」、「2个 ≈100克」→「个」 */
+    fun unit(amount: String): String {
+        val rest = if (!amount.any { it.isDigit() || it in fractions }) {
+            if (chineseLead.find(amount) == null) return "" else amount.substring(1)
+        } else {
+            val m = number.find(amount) ?: return ""
+            amount.substring(m.range.last + 1)
+        }
+        return rest.trim().split(Regex("[\\s≈~～(（,，/]")).first()
+    }
+
+    private fun valueOf(m: MatchResult): Double? {
+        val g = m.groupValues
+        return when {
+            g[3].isNotEmpty() -> {
+                val den = g[3].toDouble()
+                if (den == 0.0) null else (g[1].toDoubleOrNull() ?: 0.0) + g[2].toDouble() / den
             }
-            format(value * factor)
+            g[5].isNotEmpty() -> (g[4].toDoubleOrNull() ?: 0.0) + fractions.getValue(g[5][0])
+            else -> g[6].toDouble()
         }
     }
 

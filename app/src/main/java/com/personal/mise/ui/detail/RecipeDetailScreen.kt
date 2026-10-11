@@ -23,6 +23,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
@@ -384,6 +386,7 @@ fun RecipeDetailScreen(
     if (scaleOpen) {
         ScaleDialog(
             current = factor,
+            mains = full?.ingredients.orEmpty().filter { it.kind != IngredientKind.SEASONING },
             onDismiss = { scaleOpen = false },
             onPick = {
                 if (it == 1.0) app.scales.remove(recipeId) else app.scales[recipeId] = it
@@ -492,17 +495,29 @@ fun BowlCard(bowl: BowlFull, subtitle: String?, factor: Double = 1.0, modifier: 
 
 private val presetFactors = listOf(0.5, 1.0, 1.5, 2.0, 3.0, 4.0)
 
-/** 选倍率：常用倍数直接点，也能自己输，如 1.25 */
+/** 选倍率：常用倍数直接点，也能自己输，如 1.25；或者按手上主料的量反推，如菜谱牛肉 250克、我有 500克 → ×2 */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun ScaleDialog(current: Double, onDismiss: () -> Unit, onPick: (Double) -> Unit) {
+private fun ScaleDialog(current: Double, mains: List<Ingredient>, onDismiss: () -> Unit, onPick: (Double) -> Unit) {
     var custom by remember { mutableStateOf(if (current in presetFactors) "" else AmountScaler.format(current)) }
     val customValue = custom.trim().toDoubleOrNull()?.takeIf { it > 0 && it <= 100 }
+
+    val bases = remember(mains) { mains.filter { (AmountScaler.quantity(it.amountText) ?: 0.0) > 0 } }
+    var base by remember(bases) { mutableStateOf(bases.firstOrNull()) }
+    var have by remember { mutableStateOf("") }
+    val baseQuantity = base?.let { AmountScaler.quantity(it.amountText) }
+    val haveFactor = have.trim().toDoubleOrNull()?.takeIf { it > 0 }
+        ?.let { h -> baseQuantity?.let { h / it } }?.takeIf { it <= 100 }
+    val picked = customValue ?: haveFactor
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("换算用量") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(
+                Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
                 Text("所有主料、调料和调料碗的用量都按倍率显示，「适量」「少许」不变。")
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     presetFactors.forEach { f ->
@@ -515,7 +530,7 @@ private fun ScaleDialog(current: Double, onDismiss: () -> Unit, onPick: (Double)
                 }
                 OutlinedTextField(
                     value = custom,
-                    onValueChange = { custom = it },
+                    onValueChange = { custom = it; if (it.isNotBlank()) have = "" },
                     label = { Text("自定义倍率") },
                     singleLine = true,
                     shape = FieldShape,
@@ -523,10 +538,43 @@ private fun ScaleDialog(current: Double, onDismiss: () -> Unit, onPick: (Double)
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     isError = custom.isNotBlank() && customValue == null,
                 )
+                if (base != null) {
+                    Text("按主料换算", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+                    if (bases.size > 1) {
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            bases.forEach { ing ->
+                                FilterChip(
+                                    selected = ing == base,
+                                    onClick = { base = ing },
+                                    label = { Text(ing.name) },
+                                )
+                            }
+                        }
+                    }
+                    val b = base!!
+                    val unit = UnitText.display(AmountScaler.unit(b.amountText))
+                    OutlinedTextField(
+                        value = have,
+                        onValueChange = { have = it; if (it.isNotBlank()) custom = "" },
+                        label = { Text("我有多少${b.name}") },
+                        suffix = if (unit.isNotEmpty()) { { Text(unit) } } else null,
+                        supportingText = {
+                            Text(
+                                "菜谱用 ${UnitText.display(b.amountText)}" +
+                                    (haveFactor?.let { "，其他用料按 ${AmountScaler.label(it)} 换算" } ?: ""),
+                            )
+                        },
+                        singleLine = true,
+                        shape = FieldShape,
+                        colors = miseFieldColors(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        isError = have.isNotBlank() && haveFactor == null,
+                    )
+                }
             }
         },
         confirmButton = {
-            TextButton(onClick = { customValue?.let(onPick) }, enabled = customValue != null) { Text("确定") }
+            TextButton(onClick = { picked?.let(onPick) }, enabled = picked != null) { Text("确定") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
     )
