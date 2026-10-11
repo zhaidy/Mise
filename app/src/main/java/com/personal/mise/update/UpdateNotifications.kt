@@ -18,8 +18,10 @@ import com.personal.mise.R
 object UpdateNotifications {
     private const val CHANNEL = "app_update"
     private const val ID = 20_000
+    /** “已更新”单独一个 id，打开应用时撤掉它，不连带撤掉“更新失败” */
+    const val UPDATED_ID = 20_002
 
-    fun show(context: Context, title: String, text: String) {
+    fun show(context: Context, title: String, text: String, id: Int = ID) {
         val granted = Build.VERSION.SDK_INT < 33 ||
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) ==
             PackageManager.PERMISSION_GRANTED
@@ -30,7 +32,7 @@ object UpdateNotifications {
             }
         )
         val open = PendingIntent.getActivity(
-            context, ID,
+            context, id,
             Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
@@ -41,6 +43,10 @@ object UpdateNotifications {
             .setAutoCancel(true)
             .setContentIntent(open)
             .build()
-        NotificationManagerCompat.from(context).notify(ID, notification)
+        NotificationManagerCompat.from(context).notify(id, notification)
+    }
+
+    fun cancelUpdated(context: Context) {
+        NotificationManagerCompat.from(context).cancel(UPDATED_ID)
     }
 }

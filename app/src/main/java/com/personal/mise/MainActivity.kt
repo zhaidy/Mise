@@ -12,6 +12,7 @@ import com.personal.mise.importer.UrlExtractor
 import com.personal.mise.ui.MiseRoot
 import com.personal.mise.ui.NavRequest
 import com.personal.mise.ui.theme.MiseTheme
+import com.personal.mise.update.UpdateNotifications
 import kotlinx.coroutines.flow.MutableStateFlow
 
 class MainActivity : ComponentActivity() {
@@ -21,6 +22,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        // 更新后已经回到应用了，“已更新，点这里打开”的通知就没用了
+        UpdateNotifications.cancelUpdated(this)
         if (savedInstanceState == null) handleIntent(intent)
         setContent {
             MiseTheme {
