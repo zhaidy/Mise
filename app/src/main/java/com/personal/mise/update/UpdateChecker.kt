@@ -1,10 +1,12 @@
 package com.personal.mise.update
 
+import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageInstaller
 import android.net.Uri
+import android.os.Build
 import android.provider.Settings
-import androidx.core.content.FileProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -57,8 +59,11 @@ class UpdateChecker(private val context: Context) {
         file
     }
 
-    /** 调起系统安装器；还没授权“安装未知应用”时先跳到授权页，返回 false */
-    fun install(file: File): Boolean {
+    /**
+     * 用 PackageInstaller 装新版。Android 12+ 且安装来源是 Mise 自己时直接装好、不弹确认；
+     * 否则系统会经 [InstallResultReceiver] 弹一次确认。还没授权“安装未知应用”时先跳到授权页，返回 false
+     */
+    suspend fun install(file: File): Boolean {
         if (!context.packageManager.canRequestPackageInstalls()) {
             context.startActivity(
                 Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${context.packageName}"))
@@ -66,12 +71,31 @@ class UpdateChecker(private val context: Context) {
             )
             return false
         }
-        val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
-        context.startActivity(
-            Intent(Intent.ACTION_VIEW)
-                .setDataAndType(uri, "application/vnd.android.package-archive")
-                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK),
-        )
+        withContext(Dispatchers.IO) {
+            val installer = context.packageManager.packageInstaller
+            val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL).apply {
+                setAppPackageName(context.packageName)
+                if (Build.VERSION.SDK_INT >= 31) {
+                    setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
+                }
+            }
+            val sessionId = installer.createSession(params)
+            installer.openSession(sessionId).use { session ->
+                file.inputStream().use { input ->
+                    session.openWrite("mise.apk", 0, file.length()).use { output ->
+                        input.copyTo(output)
+                        session.fsync(output)
+                    }
+                }
+                // FLAG_MUTABLE：系统要往里面填安装结果
+                val callback = PendingIntent.getBroadcast(
+                    context, sessionId,
+                    Intent(context, InstallResultReceiver::class.java),
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE,
+                )
+                session.commit(callback.intentSender)
+            }
+        }
         return true
     }
 

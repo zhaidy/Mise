@@ -73,6 +73,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -343,10 +344,19 @@ fun RecipeListScreen(
     }
 
     update?.let { info ->
+        val timersRunning = app.timers.timers.collectAsState().value.isNotEmpty()
         AlertDialog(
             onDismissRequest = { if (!updating) update = null },
             title = { Text("发现新版本 build ${info.build}") },
-            text = { Text(if (updating) "正在下载…" else "下载后会弹出系统安装界面，数据会保留。") },
+            text = {
+                Text(
+                    when {
+                        updating -> "正在下载安装…装好后应用会自动关闭，点通知就能回来。"
+                        timersRunning -> "数据会保留。注意：更新会中断正在进行的计时。"
+                        else -> "装好后应用会自动关闭，数据会保留。"
+                    }
+                )
+            },
             confirmButton = {
                 TextButton(
                     enabled = !updating,
