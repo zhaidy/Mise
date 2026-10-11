@@ -18,12 +18,12 @@ import java.util.concurrent.ConcurrentHashMap
  * 按设置里的顺序一个个模型试：免费额度用完（429）、模型下线（404）或太忙（503）就换下一个，
  * 都不行时抛 [GeminiQuotaException]，由 [SwitchableAiClient] 决定要不要改用 DeepSeek。
  */
-class GeminiClient(private val settings: AiSettings, private val http: AiHttp) : AiClient {
+class GeminiClient(private val settings: AiSettings, private val http: AiHttp) : AiProviderClient {
 
     /** 当天额度已经用完的模型，到太平洋时间零点额度重置前不再去试 */
     private val exhaustedUntil = ConcurrentHashMap<String, Long>()
 
-    override suspend fun generate(prompt: String, schema: JSONObject, images: List<ByteArray>): JSONObject = withContext(Dispatchers.IO) {
+    override suspend fun generate(prompt: String, schema: JSONObject, images: List<ByteArray>): AiReply = withContext(Dispatchers.IO) {
         val key = settings.key(AiProvider.GEMINI)
         if (key.isBlank()) throw ImportException(NO_KEY)
 
@@ -37,7 +37,7 @@ class GeminiClient(private val settings: AiSettings, private val http: AiHttp) :
                 .post(body.toRequestBody("application/json".toMediaType()))
                 .build()
             val reply = http.execute(request, "Gemini")
-            if (reply.isSuccessful) return@withContext replyJson(reply.body)
+            if (reply.isSuccessful) return@withContext AiReply(replyJson(reply.body), displayName(model))
             if (reply.code !in TRY_NEXT) throw ImportException(errorMessage(reply.code, reply.body))
             if (reply.code == 429 && isDailyQuota(reply.body)) exhaustedUntil[model] = nextQuotaReset(now)
         }
@@ -56,6 +56,9 @@ class GeminiClient(private val settings: AiSettings, private val http: AiHttp) :
             "gemini-2.5-flash" to "Gemini 2.5 Flash",
             "gemini-2.5-flash-lite" to "Gemini 2.5 Flash Lite",
         )
+
+        /** 模型的显示名，不在列表里的就用 API 名 */
+        fun displayName(model: String): String = MODELS.firstOrNull { it.first == model }?.second ?: model
 
         /** 这些状态码换下一个模型再试：额度用完、模型不存在、服务器太忙 */
         private val TRY_NEXT = setOf(404, 429, 503)

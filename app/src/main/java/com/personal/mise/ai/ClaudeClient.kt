@@ -11,9 +11,9 @@ import org.json.JSONObject
 import java.util.Base64
 
 /** 调用 Claude Messages API，用 output_config.format 要求按 JSON Schema 返回。 */
-class ClaudeClient(private val settings: AiSettings, private val http: AiHttp) : AiClient {
+class ClaudeClient(private val settings: AiSettings, private val http: AiHttp) : AiProviderClient {
 
-    override suspend fun generate(prompt: String, schema: JSONObject, images: List<ByteArray>): JSONObject = withContext(Dispatchers.IO) {
+    override suspend fun generate(prompt: String, schema: JSONObject, images: List<ByteArray>): AiReply = withContext(Dispatchers.IO) {
         val key = settings.key(AiProvider.CLAUDE)
         if (key.isBlank()) throw ImportException(NO_KEY)
 
@@ -27,7 +27,7 @@ class ClaudeClient(private val settings: AiSettings, private val http: AiHttp) :
             .build()
         val reply = http.execute(request, "Claude")
         if (!reply.isSuccessful) throw ImportException(errorMessage(reply.code, reply.body))
-        replyJson(reply.body)
+        AiReply(replyJson(reply.body), modelDisplayName(replyModel(reply.body)))
     }
 
     companion object {
@@ -64,6 +64,10 @@ class ClaudeClient(private val settings: AiSettings, private val http: AiHttp) :
             }
             return blocks.put(JSONObject().put("type", "text").put("text", prompt))
         }
+
+        /** 响应里写的实际模型（被拒绝时服务端可能换了模型），没有就用请求的模型 */
+        fun replyModel(body: String): String =
+            runCatching { JSONObject(body).optString("model") }.getOrNull()?.takeIf { it.isNotBlank() } ?: MODEL
 
         /** 从 Messages API 的响应里取出模型回复的 JSON 对象 */
         fun replyJson(body: String): JSONObject {

@@ -3,6 +3,7 @@ package com.personal.mise
 import android.app.Application
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.widget.Toast
 import androidx.compose.runtime.mutableStateMapOf
 import com.personal.mise.ai.AiAmountEstimator
@@ -67,12 +68,21 @@ class MiseApp : Application() {
             GeminiClient(aiSettings, AiHttp(aiSettings, cellular, readTimeoutSeconds = 90, onCellularUsed = onCellularUsed)),
             ClaudeClient(aiSettings, AiHttp(aiSettings, cellular, readTimeoutSeconds = 120, onCellularUsed = onCellularUsed)),
             DeepSeekClient(aiSettings, AiHttp(aiSettings, cellular, readTimeoutSeconds = 120, onCellularUsed = onCellularUsed)),
-            onDeepSeekFallback = {
-                Handler(Looper.getMainLooper()).post {
-                    Toast.makeText(this, "Gemini 免费额度用完了，这次用的是 DeepSeek", Toast.LENGTH_SHORT).show()
-                }
-            },
+            onModelUsed = ::showModelUsed,
         )
+    }
+    private var lastModelNotice = ""
+    private var lastModelNoticeAt = 0L
+
+    /** 提示这次 AI 用的是哪个模型；一次估算好几道菜时同样的提示几秒内只弹一次 */
+    private fun showModelUsed(message: String) {
+        Handler(Looper.getMainLooper()).post {
+            val now = SystemClock.elapsedRealtime()
+            if (message == lastModelNotice && now - lastModelNoticeAt < 5_000) return@post
+            lastModelNotice = message
+            lastModelNoticeAt = now
+            Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
+        }
     }
     val stepSplitter: AiStepSplitter by lazy { AiStepSplitter(ai) }
     val noteOrganizer: AiRecipeOrganizer by lazy { AiRecipeOrganizer(ai) }
