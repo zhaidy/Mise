@@ -36,6 +36,12 @@ jobs:
           else
             echo "::warning::MISE_KEYSTORE_BASE64 未配置，使用调试签名"
           fi
+      # 打印签名证书指纹，在 Android Developer Console 登记应用时要用（指纹是公开信息）
+      - name: Print signing certificate fingerprint
+        if: env.MISE_KEYSTORE_FILE != ''
+        run: |
+          keytool -list -v -keystore "$MISE_KEYSTORE_FILE" -storepass "$MISE_KEYSTORE_PASSWORD" -alias "$MISE_KEY_ALIAS" \
+            | grep -E 'SHA1:|SHA256:' | sed 's/^[[:space:]]*/::notice title=签名证书指纹::/'
       # Firebase 配置放在 Secrets 里，不进仓库
       - name: Restore google-services.json
         env:
