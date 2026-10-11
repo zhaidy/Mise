@@ -247,6 +247,10 @@ interface CookLogDao {
     @Query("SELECT date FROM cook_log WHERE recipeUid = :recipeUid AND deleted = 0 ORDER BY date DESC")
     fun observeDates(recipeUid: String): Flow<List<String>>
 
+    /** 每道菜最后一次做的日子 */
+    @Query("SELECT recipeUid, MAX(date) AS date FROM cook_log WHERE deleted = 0 GROUP BY recipeUid")
+    fun observeLastCooked(): Flow<List<LastCooked>>
+
     /** 包括已删除的 */
     @Query("SELECT * FROM cook_log WHERE uid = :uid")
     suspend fun get(uid: String): CookLog?

@@ -174,6 +174,9 @@ data class CookLogRow(
     val coverImage: String?,
 )
 
+/** 一道菜最后一次做的日子，菜单页用 */
+data class LastCooked(val recipeUid: String, val date: String)
+
 /** 调料碗里的一项，连同用料名称 */
 data class BowlItemRow(
     val id: Long,
