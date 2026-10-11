@@ -28,7 +28,16 @@ object StepPhase {
     /** [index] 这一步是不是开火前的备料 */
     fun isPrep(index: Int, cookStart: Int?): Boolean = cookStart != null && index < cookStart
 
-    /** 调料碗用在哪一步：备料时用的说「第 N 步备料时用」，开火后的说「第 N 步下锅」 */
-    fun bowlStepLabel(index: Int, cookStart: Int?): String =
-        if (isPrep(index, cookStart)) "第 ${index + 1} 步备料时用" else "第 ${index + 1} 步下锅"
+    /** 不动火、要腌一会儿的步骤 */
+    fun isMarinateStep(text: String): Boolean = text.contains("腌") && !isHeatStep(text)
+
+    /**
+     * 调料碗用在哪一步：腌制的说「第 N 步腌制」，其他备料时用的说「第 N 步备料时用」，开火后的说「第 N 步下锅」。
+     * [stepText] 是那一步的内容，用来认出腌制。
+     */
+    fun bowlStepLabel(index: Int, cookStart: Int?, stepText: String = ""): String = when {
+        isMarinateStep(stepText) -> "第 ${index + 1} 步腌制"
+        isPrep(index, cookStart) -> "第 ${index + 1} 步备料时用"
+        else -> "第 ${index + 1} 步下锅"
+    }
 }

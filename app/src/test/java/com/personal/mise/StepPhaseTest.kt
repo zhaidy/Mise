@@ -39,4 +39,14 @@ class StepPhaseTest {
         assertFalse(StepPhase.isHeatStep("调入蒸鱼豉油拌匀"))
         assertTrue(StepPhase.isHeatStep("火腿下锅煎香"))
     }
+
+    @Test
+    fun `腌制步骤的调料碗显示腌制`() {
+        val steps = listOf("鸡腿切丁，用生抽、料酒腌 15 分钟", "热锅倒油，下鸡丁翻炒")
+        val cookStart = StepPhase.cookStart(steps)
+        assertEquals("第 1 步腌制", StepPhase.bowlStepLabel(0, cookStart, steps[0]))
+        assertEquals("第 2 步下锅", StepPhase.bowlStepLabel(1, cookStart, steps[1]))
+        // 腌好的肉下锅不算腌制
+        assertFalse(StepPhase.isMarinateStep("腌好的肉下锅炒散"))
+    }
 }

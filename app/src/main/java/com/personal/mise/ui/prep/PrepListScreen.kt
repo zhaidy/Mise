@@ -95,7 +95,7 @@ private fun buildPrep(row: TodayRow, full: RecipeFull, factor: Double): PrepReci
     val bowls = full.bowls.map { b ->
         val stepIndex = full.steps.indexOfFirst { it.id == b.bowl.stepId }
         val detail = b.items.joinToString("、") { "${it.name} ${amount(it.amountText)}".trim() }
-        PrepItem("b${b.bowl.id}", b.bowl.label + if (stepIndex >= 0) "（${StepPhase.bowlStepLabel(stepIndex, cookStart)}）" else "", detail)
+        PrepItem("b${b.bowl.id}", b.bowl.label + if (stepIndex >= 0) "（${StepPhase.bowlStepLabel(stepIndex, cookStart, full.steps[stepIndex].text)}）" else "", detail)
     }
     val others = full.ingredients.filter { it.kind == IngredientKind.SEASONING && it.id !in inBowls }
         .map { PrepItem("i${it.id}", it.name, amount(it.amountText)) }

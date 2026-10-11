@@ -189,7 +189,7 @@ fun BowlEditScreen(recipeId: Long, onBack: () -> Unit) {
                                 Spacer(Modifier.weight(1f))
                                 StepPicker(
                                     stepLabel = vm.steps.indexOfFirst { it.id == bowl.stepId }.takeIf { it >= 0 }
-                                        ?.let { StepPhase.bowlStepLabel(it, cookStart) } ?: "选择下锅步骤",
+                                        ?.let { StepPhase.bowlStepLabel(it, cookStart, vm.steps[it].text) } ?: "选择下锅步骤",
                                     stepCount = vm.steps.size,
                                     onPick = { i -> vm.setStep(bowl.key, i?.let { vm.steps[it].id }) },
                                 )
