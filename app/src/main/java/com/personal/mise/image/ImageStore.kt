@@ -6,8 +6,10 @@ import android.graphics.BitmapFactory
 import android.graphics.ImageDecoder
 import android.net.Uri
 import android.os.Build
+import androidx.compose.runtime.mutableIntStateOf
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.util.UUID
 import kotlin.math.max
@@ -22,6 +24,39 @@ class ImageStore(private val context: Context) {
     private val dir: File get() = File(context.filesDir, DIR).apply { mkdirs() }
 
     fun file(relativePath: String): File = File(context.filesDir, relativePath)
+
+    /** 同步下载了新图片时加一，界面读它，图片到了就重新显示 */
+    val version = mutableIntStateOf(0)
+
+    /** 上传用的字节：太大时缩小重压，保证放得进一个 Firestore 文档 */
+    suspend fun bytesForSync(relativePath: String): ByteArray? = withContext(Dispatchers.IO) {
+        runCatching {
+            val bytes = file(relativePath).takeIf { it.isFile }?.readBytes() ?: return@runCatching null
+            if (bytes.size <= SYNC_MAX_BYTES) return@runCatching bytes
+            val bitmap = decodeBytes(bytes)?.let { scaleDown(it, SYNC_SIDE) } ?: return@runCatching null
+            var quality = 85
+            var out: ByteArray
+            do {
+                out = ByteArrayOutputStream().also { bitmap.compress(Bitmap.CompressFormat.JPEG, quality, it) }.toByteArray()
+                quality -= 10
+            } while (out.size > SYNC_MAX_BYTES && quality >= 35)
+            bitmap.recycle()
+            out.takeIf { it.size <= SYNC_MAX_BYTES }
+        }.getOrNull()
+    }
+
+    /** 保存从别的手机同步来的图片；路径不合规时拒绝 */
+    suspend fun saveSynced(relativePath: String, bytes: ByteArray): Boolean = withContext(Dispatchers.IO) {
+        if (!isSyncPath(relativePath)) return@withContext false
+        val ok = runCatching {
+            val target = File(dir, relativePath.removePrefix("$DIR/"))
+            val part = File(target.path + ".part")
+            part.writeBytes(bytes)
+            part.renameTo(target)
+        }.getOrDefault(false)
+        if (ok) version.intValue++
+        ok
+    }
 
     /** 从相册选的图片 */
     suspend fun importUri(uri: Uri): String? = withContext(Dispatchers.IO) {
@@ -71,10 +106,10 @@ class ImageStore(private val context: Context) {
         return scaleDown(decoded)
     }
 
-    private fun scaleDown(bitmap: Bitmap): Bitmap {
+    private fun scaleDown(bitmap: Bitmap, maxSide: Int = MAX_SIDE): Bitmap {
         val longSide = max(bitmap.width, bitmap.height)
-        if (longSide <= MAX_SIDE) return bitmap
-        val scale = MAX_SIDE.toFloat() / longSide
+        if (longSide <= maxSide) return bitmap
+        val scale = maxSide.toFloat() / longSide
         val scaled = Bitmap.createScaledBitmap(
             bitmap,
             (bitmap.width * scale).roundToInt().coerceAtLeast(1),
@@ -96,5 +131,16 @@ class ImageStore(private val context: Context) {
     companion object {
         const val DIR = "images"
         const val MAX_SIDE = 1600
+
+        /** Firestore 一个文档最多 1 MiB，留点余量 */
+        const val SYNC_MAX_BYTES = 900_000
+        const val SYNC_SIDE = 1200
+        private val NAME = Regex("[A-Za-z0-9_-][A-Za-z0-9._-]*")
+
+        /** 只认 images/ 下一层、名字干净的文件，防止同步来的路径写到别处 */
+        fun isSyncPath(path: String): Boolean {
+            val prefix = "$DIR/"
+            return path.startsWith(prefix) && NAME.matches(path.removePrefix(prefix)) && ".." !in path
+        }
     }
 }

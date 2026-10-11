@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseAuthException
+import com.google.firebase.firestore.Blob
 import com.google.firebase.firestore.CollectionReference
 import com.google.firebase.firestore.DocumentReference
 import com.google.firebase.firestore.FieldValue
@@ -13,6 +14,7 @@ import com.google.firebase.firestore.MetadataChanges
 import com.google.firebase.firestore.QuerySnapshot
 import com.personal.mise.data.RecipeRepository
 import com.personal.mise.data.RecipeStamp
+import com.personal.mise.image.ImageStore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.FlowPreview
@@ -37,12 +39,14 @@ import java.security.SecureRandom
 /**
  * 共享厨房：同一个厨房里的手机共用一份菜谱。
  *
- * 云端是 kitchens/{邀请码}/recipes/{uid}（每道菜一个文档）和 kitchens/{邀请码}/today/{uid}（今日菜单）。本地和云端任何一边变了，
+ * 云端是 kitchens/{邀请码}/recipes/{uid}（每道菜一个文档）、kitchens/{邀请码}/today/{uid}（今日菜单）
+ * 和 kitchens/{邀请码}/images/{文件名}（图片）。本地和云端任何一边变了，
  * 就逐道菜比较 updatedAt，新的覆盖旧的。Firestore 自带离线缓存，没网时的改动联网后补传。
  */
 class KitchenSync(
     context: Context,
     private val repository: RecipeRepository,
+    private val images: ImageStore,
     private val scope: CoroutineScope,
 ) {
     private val prefs = context.getSharedPreferences("kitchen", Context.MODE_PRIVATE)
@@ -123,7 +127,7 @@ class KitchenSync(
         while (true) {
             try {
                 signIn()
-                sync(firestore.collection(KITCHENS).document(code))
+                sync(code, firestore.collection(KITCHENS).document(code))
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -134,8 +138,8 @@ class KitchenSync(
         }
     }
 
-    /** 菜谱和今日菜单各自同步，任何一个出错就整体重来 */
-    private suspend fun sync(kitchen: DocumentReference) {
+    /** 菜谱、今日菜单、图片各自同步，任何一个出错就整体重来 */
+    private suspend fun sync(code: String, kitchen: DocumentReference) {
         coroutineScope {
             launch {
                 syncCollection<SyncedRecipe>(
@@ -157,7 +161,69 @@ class KitchenSync(
                     load = { uid -> repository.loadTodayForSync(uid)?.toMap() },
                 )
             }
+            launch { syncImages(code, kitchen.collection(IMAGES)) }
         }
+    }
+
+    /**
+     * 图片：kitchens/{邀请码}/images/{文件名}，一张图一个文档。文件名是 UUID、内容不会变，
+     * 所以不用比新旧：本机有、还没传过的就上传，菜谱用到但本机没有的就下载。
+     * 不监听整个集合，免得把所有图片都下载一遍。对方的图片可能还没传上来，缺图时隔一会儿再试。
+     */
+    @OptIn(FlowPreview::class)
+    private suspend fun syncImages(code: String, collection: CollectionReference) {
+        repository.observeImagePaths().debounce(LOCAL_DEBOUNCE_MS).collectLatest { paths ->
+            var wait = IMAGE_RETRY_FIRST_MS
+            while (syncImagesOnce(code, collection, paths) > 0) {
+                delay(wait)
+                wait = (wait * 3).coerceAtMost(IMAGE_RETRY_MAX_MS)
+            }
+        }
+    }
+
+    /** 返回还没办好的图片数 */
+    private suspend fun syncImagesOnce(code: String, collection: CollectionReference, paths: List<String>): Int {
+        val key = KEY_UPLOADED_PREFIX + code
+        val done = prefs.getStringSet(key, emptySet()).orEmpty().toMutableSet()
+        var pending = 0
+        for (path in paths) {
+            if (!ImageStore.isSyncPath(path)) continue
+            val name = path.removePrefix("${ImageStore.DIR}/")
+            val doc = collection.document(name)
+            val ok = try {
+                withTimeout(IMAGE_TIMEOUT_MS) {
+                    if (images.file(path).isFile) {
+                        if (name in done) return@withTimeout true
+                        val bytes = images.bytesForSync(path) ?: return@withTimeout true // 读不出来的坏图跳过
+                        // 不等服务器确认：写入先进本地缓存，没网时联网后自动补传；等的话每次重试都会多排一份
+                        doc.set(mapOf("data" to Blob.fromBytes(bytes))).addOnFailureListener { e ->
+                            Log.w(TAG, "image upload failed: $name", e)
+                            forgetDone(key, name)
+                        }
+                        true
+                    } else {
+                        val bytes = doc.get().await().getBlob("data")?.toBytes()
+                        bytes != null && images.saveSynced(path, bytes)
+                    }
+                }
+            } catch (e: TimeoutCancellationException) {
+                false
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "image sync failed: $name", e)
+                false
+            }
+            if (ok) done += name else pending++
+        }
+        prefs.edit().putStringSet(key, done).apply()
+        return pending
+    }
+
+    /** 上传最终失败时，下次再传 */
+    private fun forgetDone(key: String, name: String) {
+        val done = prefs.getStringSet(key, emptySet()).orEmpty() - name
+        prefs.edit().putStringSet(key, done).apply()
     }
 
     /**
@@ -212,6 +278,11 @@ class KitchenSync(
         const val KITCHENS = "kitchens"
         const val RECIPES = "recipes"
         const val TODAY = "today"
+        const val IMAGES = "images"
+        const val KEY_UPLOADED_PREFIX = "images_done_"
+        const val IMAGE_TIMEOUT_MS = 60_000L
+        const val IMAGE_RETRY_FIRST_MS = 5_000L
+        const val IMAGE_RETRY_MAX_MS = 5 * 60_000L
         const val TIMEOUT_MS = 15_000L
         const val RETRY_MS = 30_000L
         const val LOCAL_DEBOUNCE_MS = 500L

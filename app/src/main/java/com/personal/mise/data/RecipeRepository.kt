@@ -196,6 +196,8 @@ class RecipeRepository(
 
     fun observeStamps(): Flow<List<RecipeStamp>> = dao.observeStamps()
 
+    fun observeImagePaths(): Flow<List<String>> = dao.observeImagePaths()
+
     /** 要上传的样子；已删除的菜谱只有标记，没有内容 */
     suspend fun loadForSync(uid: String): SyncedRecipe? {
         val recipe = dao.getByUid(uid) ?: return null

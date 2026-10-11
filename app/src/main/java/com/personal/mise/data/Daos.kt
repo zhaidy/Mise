@@ -26,6 +26,16 @@ interface RecipeDao {
     @Query("SELECT uid, updatedAt FROM recipe")
     fun observeStamps(): Flow<List<RecipeStamp>>
 
+    /** 没删除的菜谱用到的所有图片，同步图片用 */
+    @Query(
+        """
+        SELECT coverImage FROM recipe WHERE deleted = 0 AND coverImage IS NOT NULL
+        UNION
+        SELECT s.image FROM step s JOIN recipe r ON r.id = s.recipeId WHERE r.deleted = 0 AND s.image IS NOT NULL
+        """
+    )
+    fun observeImagePaths(): Flow<List<String>>
+
     @Insert
     suspend fun insert(recipe: Recipe): Long
 

@@ -20,7 +20,10 @@ fun rememberApp(): MiseApp {
 }
 
 /** 图片文件在本机吗？别的手机同步来的菜谱可能只有路径，还没有文件 */
-fun MiseApp.hasImage(path: String?): Boolean = !path.isNullOrBlank() && images.file(path).exists()
+fun MiseApp.hasImage(path: String?): Boolean {
+    images.version.intValue // 在界面里调用时，同步来了新图片会触发重绘
+    return !path.isNullOrBlank() && images.file(path).exists()
+}
 
 /** 显示存在 files/ 下的图片；没有图片时显示占位 */
 @Composable
