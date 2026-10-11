@@ -1,6 +1,8 @@
 package com.personal.mise.importer
 
 import com.personal.mise.ai.AiRecipeOrganizer
+import com.personal.mise.ai.AiRecipeTranslator
+import com.personal.mise.ai.RecipeText
 import com.personal.mise.bowl.SeasoningDictionary
 import com.personal.mise.data.IngredientDraft
 import com.personal.mise.data.IngredientKind
@@ -38,12 +40,16 @@ data class ImportResult(val draft: RecipeDraft, val warnings: List<String>, val 
 
 /**
  * 在手机上直接抓取下厨房网页、解析内容、把图片下载到本地。
+ * 带菜谱 JSON-LD 的英文网站也能解析，解析出来是英文时交给 AI 翻译成中文。
  * 小红书笔记排版随意，抓到标题、正文和配图后交给 AI 整理。
  */
 class RecipeImporter(
     private val images: ImageStore,
     private val organizer: AiRecipeOrganizer,
     private val browser: WebPageLoader,
+    private val translator: AiRecipeTranslator,
+    /** 填了 AI 的 Key 才翻译英文菜谱 */
+    private val hasAiKey: () -> Boolean,
     private val cookieJar: CookieJar = MemoryCookieJar(),
 ) {
 
@@ -121,11 +127,22 @@ class RecipeImporter(
         if (parsed.ingredients.isEmpty()) warnings += "没有解析到用料，请手动添加"
         if (parsed.steps.isEmpty()) warnings += "没有解析到步骤，请手动添加"
 
-        val (cover, stepImages) = coroutineScope {
+        val original = RecipeText(parsed.title.orEmpty(), parsed.servings, parsed.ingredients, parsed.steps.map { it.text })
+        val english = AiRecipeTranslator.isEnglish(original)
+        if (english && !hasAiKey()) warnings += "这是英文菜谱，填写 AI 的 API Key 后导入会自动翻译成中文"
+        val (text, downloaded) = coroutineScope {
+            // 翻译和下载图片同时进行
+            val translateJob = async {
+                if (!english || !hasAiKey()) original
+                else runCatching { translator.translate(original) }
+                    .onFailure { warnings += "英文菜谱没能翻译成中文：${it.message ?: it.javaClass.simpleName}" }
+                    .getOrDefault(original)
+            }
             val coverJob = async { parsed.coverUrl?.let { download(it) } }
             val stepJobs = parsed.steps.map { step -> async { step.imageUrl?.let { download(it) } } }
-            coverJob.await() to stepJobs.awaitAll()
+            translateJob.await() to (coverJob.await() to stepJobs.awaitAll())
         }
+        val (cover, stepImages) = downloaded
         if (parsed.coverUrl != null && cover == null) warnings += "封面图下载失败"
         if (parsed.coverUrl == null) warnings += "没有找到封面图"
         val failedSteps = parsed.steps.indices.filter { parsed.steps[it].imageUrl != null && stepImages[it] == null }
@@ -134,18 +151,18 @@ class RecipeImporter(
         }
 
         val draft = RecipeDraft(
-            title = parsed.title.orEmpty(),
+            title = text.title,
             coverImage = cover,
             sourceUrl = recipeId?.let { XiachufangParser.desktopUrl(it) } ?: finalUrl,
-            servings = parsed.servings,
-            ingredients = parsed.ingredients.map { (name, amount) ->
+            servings = text.servings,
+            ingredients = text.ingredients.map { (name, amount) ->
                 IngredientDraft(
                     name = name,
                     amountText = amount,
                     kind = if (SeasoningDictionary.isSeasoning(name)) IngredientKind.SEASONING else IngredientKind.MAIN,
                 )
             },
-            steps = parsed.steps.mapIndexed { i, step -> StepDraft(text = step.text, image = stepImages[i]) },
+            steps = text.steps.mapIndexed { i, step -> StepDraft(text = step, image = stepImages[i]) },
         )
         return ImportResult(draft, warnings)
     }

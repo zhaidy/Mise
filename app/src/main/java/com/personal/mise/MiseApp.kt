@@ -14,6 +14,7 @@ import com.personal.mise.ai.AiClient
 import com.personal.mise.ai.AiHttp
 import com.personal.mise.ai.AiProvider
 import com.personal.mise.ai.AiRecipeOrganizer
+import com.personal.mise.ai.AiRecipeTranslator
 import com.personal.mise.ai.AiSettings
 import com.personal.mise.ai.AiStepSplitter
 import com.personal.mise.ai.AiUsage
@@ -52,7 +53,7 @@ class MiseApp : Application() {
         private set
     /** 跟着进程走的后台任务，比如同步 */
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-    val importer: RecipeImporter by lazy { RecipeImporter(images, noteOrganizer, WebPageLoader(this), WebViewCookieJar()) }
+    val importer: RecipeImporter by lazy { RecipeImporter(images, noteOrganizer, WebPageLoader(this), AiRecipeTranslator(ai), { aiSettings.hasKey }, WebViewCookieJar()) }
     val aiSettings: AiSettings by lazy { AiSettings(this) }
     val updater: UpdateChecker by lazy { UpdateChecker(this) }
     val backup: BackupManager by lazy { BackupManager(this, database) }
