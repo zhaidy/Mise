@@ -23,6 +23,7 @@ import com.personal.mise.update.UpdateChecker
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 class MiseApp : Application() {
     lateinit var database: MiseDatabase
@@ -59,5 +60,6 @@ class MiseApp : Application() {
         timers = TimerManager(this)
         kitchen = KitchenSync(this, repository, images, appScope).also { it.start() }
         Notifications.createChannels(this)
+        appScope.launch { updater.cleanup() }
     }
 }
