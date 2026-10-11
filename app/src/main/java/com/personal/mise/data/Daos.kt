@@ -137,35 +137,40 @@ interface TodayDao {
                t.bowlsChecked AS bowlsChecked, r.title AS title, r.coverImage AS coverImage,
                (SELECT COUNT(*) FROM step s WHERE s.recipeId = t.recipeId) AS stepCount
         FROM today_menu t JOIN recipe r ON r.id = t.recipeId
-        ORDER BY t.sortOrder
+        WHERE t.removed = 0
+        ORDER BY t.sortOrder, t.recipeId
         """
     )
     fun observe(): Flow<List<TodayRow>>
 
-    @Query("SELECT * FROM today_menu ORDER BY sortOrder")
-    suspend fun getAll(): List<TodayMenu>
-
+    /** 包括已移出的 */
     @Query("SELECT * FROM today_menu WHERE recipeId = :recipeId")
     suspend fun get(recipeId: Long): TodayMenu?
 
-    @Query("SELECT COALESCE(MAX(sortOrder), -1) FROM today_menu")
+    /** 包括已移出的，同步时比较两边谁新 */
+    @Query("SELECT r.uid AS uid, t.updatedAt AS updatedAt FROM today_menu t JOIN recipe r ON r.id = t.recipeId")
+    fun observeStamps(): Flow<List<RecipeStamp>>
+
+    @Query("SELECT COALESCE(MAX(sortOrder), -1) FROM today_menu WHERE removed = 0")
     suspend fun maxOrder(): Int
 
-    @Insert
-    suspend fun insert(entry: TodayMenu)
+    @Upsert
+    suspend fun upsert(entry: TodayMenu)
 
-    @Query("DELETE FROM today_menu WHERE recipeId = :recipeId")
-    suspend fun remove(recipeId: Long)
+    @Query("UPDATE today_menu SET removed = 1, updatedAt = :now WHERE recipeId = :recipeId AND removed = 0")
+    suspend fun markRemoved(recipeId: Long, now: Long)
 
-    @Query("DELETE FROM today_menu")
-    suspend fun clear()
+    @Query("UPDATE today_menu SET removed = 1, updatedAt = :now WHERE removed = 0")
+    suspend fun markAllRemoved(now: Long)
 
-    @Query("UPDATE today_menu SET sortOrder = :order WHERE recipeId = :recipeId")
-    suspend fun setOrder(recipeId: Long, order: Int)
+    // 下面几个值没变就不写，免得每次打开页面都算一次改动、触发同步
 
-    @Query("UPDATE today_menu SET currentStep = :step WHERE recipeId = :recipeId")
-    suspend fun setCurrentStep(recipeId: Long, step: Int)
+    @Query("UPDATE today_menu SET sortOrder = :order, updatedAt = :now WHERE recipeId = :recipeId AND sortOrder != :order")
+    suspend fun setOrder(recipeId: Long, order: Int, now: Long)
 
-    @Query("UPDATE today_menu SET bowlsChecked = :checked WHERE recipeId = :recipeId")
-    suspend fun setChecked(recipeId: Long, checked: String)
+    @Query("UPDATE today_menu SET currentStep = :step, updatedAt = :now WHERE recipeId = :recipeId AND currentStep != :step")
+    suspend fun setCurrentStep(recipeId: Long, step: Int, now: Long)
+
+    @Query("UPDATE today_menu SET bowlsChecked = :checked, updatedAt = :now WHERE recipeId = :recipeId AND bowlsChecked != :checked")
+    suspend fun setChecked(recipeId: Long, checked: String, now: Long)
 }

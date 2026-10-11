@@ -5,6 +5,7 @@ import android.util.Log
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseAuthException
 import com.google.firebase.firestore.CollectionReference
+import com.google.firebase.firestore.DocumentReference
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.FirebaseFirestoreException
@@ -17,6 +18,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -35,7 +37,7 @@ import java.security.SecureRandom
 /**
  * 共享厨房：同一个厨房里的手机共用一份菜谱。
  *
- * 云端是 kitchens/{邀请码}/recipes/{uid}，每道菜一个文档。本地和云端任何一边变了，
+ * 云端是 kitchens/{邀请码}/recipes/{uid}（每道菜一个文档）和 kitchens/{邀请码}/today/{uid}（今日菜单）。本地和云端任何一边变了，
  * 就逐道菜比较 updatedAt，新的覆盖旧的。Firestore 自带离线缓存，没网时的改动联网后补传。
  */
 class KitchenSync(
@@ -121,7 +123,7 @@ class KitchenSync(
         while (true) {
             try {
                 signIn()
-                sync(firestore.collection(KITCHENS).document(code).collection(RECIPES))
+                sync(firestore.collection(KITCHENS).document(code))
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -132,41 +134,76 @@ class KitchenSync(
         }
     }
 
-    @OptIn(FlowPreview::class)
-    private suspend fun sync(recipes: CollectionReference) {
-        combine(snapshots(recipes), repository.observeStamps().debounce(LOCAL_DEBOUNCE_MS)) { snap, local -> snap to local }
-            .conflate()
-            .collect { (snap, local) -> reconcile(recipes, snap, local) }
+    /** 菜谱和今日菜单各自同步，任何一个出错就整体重来 */
+    private suspend fun sync(kitchen: DocumentReference) {
+        coroutineScope {
+            launch {
+                syncCollection<SyncedRecipe>(
+                    collection = kitchen.collection(RECIPES),
+                    localStamps = repository.observeStamps(),
+                    parse = { uid, data -> SyncedRecipe.fromMap(uid, data) },
+                    updatedAt = { it.updatedAt },
+                    apply = { repository.applyRemote(it) },
+                    load = { uid -> repository.loadForSync(uid)?.toMap() },
+                )
+            }
+            launch {
+                syncCollection<SyncedTodayEntry>(
+                    collection = kitchen.collection(TODAY),
+                    localStamps = repository.observeTodayStamps(),
+                    parse = { uid, data -> SyncedTodayEntry.fromMap(uid, data) },
+                    updatedAt = { it.updatedAt },
+                    apply = { repository.applyRemoteToday(it) },
+                    load = { uid -> repository.loadTodayForSync(uid)?.toMap() },
+                )
+            }
+        }
     }
 
-    private fun snapshots(recipes: CollectionReference): Flow<QuerySnapshot> = callbackFlow {
-        val registration = recipes.addSnapshotListener(MetadataChanges.INCLUDE) { snap, e ->
+    /**
+     * 一个集合里每个文档对应本地一条记录（文档 id 是菜谱 uid）。
+     * 本地或云端有变化就逐条比较 updatedAt，新的覆盖旧的。
+     */
+    @OptIn(FlowPreview::class)
+    private suspend fun <T> syncCollection(
+        collection: CollectionReference,
+        localStamps: Flow<List<RecipeStamp>>,
+        parse: (String, Map<String, Any?>) -> T?,
+        updatedAt: (T) -> Long,
+        apply: suspend (T) -> Unit,
+        load: suspend (String) -> Map<String, Any?>?,
+    ) {
+        combine(snapshots(collection), localStamps.debounce(LOCAL_DEBOUNCE_MS)) { snap, local -> snap to local }
+            .conflate()
+            .collect { (snap, local) ->
+                val remote = snap.documents.mapNotNull { doc -> doc.data?.let { parse(doc.id, it) }?.let { doc.id to it } }.toMap()
+                val mine = local.associate { it.uid to it.updatedAt }
+
+                remote.forEach { (uid, r) ->
+                    val t = mine[uid]
+                    if (t == null || updatedAt(r) > t) apply(r)
+                }
+
+                // 只有确定看到的是服务器上的数据才上传，免得拿旧缓存覆盖对方刚改的
+                if (snap.metadata.isFromCache) return@collect
+                _error.value = null
+                mine.forEach { (uid, t) ->
+                    val theirs = remote[uid]
+                    if (theirs == null || t > updatedAt(theirs)) {
+                        val data = load(uid) ?: return@forEach
+                        // 不等服务器确认：写入先进本地缓存，没网时联网后自动补传
+                        collection.document(uid).set(data)
+                            .addOnFailureListener { e -> _error.value = "上传失败：${e.message}" }
+                    }
+                }
+            }
+    }
+
+    private fun snapshots(collection: CollectionReference): Flow<QuerySnapshot> = callbackFlow {
+        val registration = collection.addSnapshotListener(MetadataChanges.INCLUDE) { snap, e ->
             if (e != null) close(e) else if (snap != null) trySend(snap)
         }
         awaitClose { registration.remove() }
-    }
-
-    private suspend fun reconcile(recipes: CollectionReference, snap: QuerySnapshot, local: List<RecipeStamp>) {
-        val remote = snap.documents.mapNotNull { doc -> doc.data?.let { SyncedRecipe.fromMap(doc.id, it) } }.associateBy { it.uid }
-        val localStamps = local.associate { it.uid to it.updatedAt }
-
-        remote.values.forEach { r ->
-            val mine = localStamps[r.uid]
-            if (mine == null || r.updatedAt > mine) repository.applyRemote(r)
-        }
-
-        // 只有确定看到的是服务器上的数据才上传，免得拿旧缓存覆盖对方刚改的
-        if (snap.metadata.isFromCache) return
-        _error.value = null
-        localStamps.forEach { (uid, updatedAt) ->
-            val theirs = remote[uid]
-            if (theirs == null || updatedAt > theirs.updatedAt) {
-                val data = repository.loadForSync(uid) ?: return@forEach
-                // 不等服务器确认：写入先进本地缓存，没网时联网后自动补传
-                recipes.document(uid).set(data.toMap())
-                    .addOnFailureListener { e -> _error.value = "上传失败：${e.message}" }
-            }
-        }
     }
 
     private companion object {
@@ -174,6 +211,7 @@ class KitchenSync(
         const val KEY_CODE = "code"
         const val KITCHENS = "kitchens"
         const val RECIPES = "recipes"
+        const val TODAY = "today"
         const val TIMEOUT_MS = 15_000L
         const val RETRY_MS = 30_000L
         const val LOCAL_DEBOUNCE_MS = 500L

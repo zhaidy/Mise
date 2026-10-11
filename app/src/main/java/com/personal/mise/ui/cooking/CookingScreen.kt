@@ -78,6 +78,9 @@ import kotlinx.coroutines.launch
 private val BodySize = 24.sp
 private val ButtonHeight = 60.dp
 
+/** 别的手机翻了步骤后，等这么久再跟着翻 */
+private const val FOLLOW_DELAY_MS = 600L
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CookingScreen(initialRecipeId: Long, onBack: () -> Unit) {
@@ -189,6 +192,12 @@ private fun RecipePager(
     val pagerState = rememberPagerState(initialPage = row.currentStep.coerceIn(0, steps.lastIndex)) { steps.size }
     LaunchedEffect(pagerState) {
         snapshotFlow { pagerState.currentPage }.collect { app.repository.setCurrentStep(row.recipeId, it) }
+    }
+    // 对方手机翻了步骤，这边跟着翻。等一会儿再看，自己快速翻页时数据库里滞后的值不会把页面拽回去
+    LaunchedEffect(row.currentStep) {
+        delay(FOLLOW_DELAY_MS)
+        val target = row.currentStep.coerceIn(0, steps.lastIndex)
+        if (!pagerState.isScrollInProgress && pagerState.currentPage != target) pagerState.animateScrollToPage(target)
     }
 
     Column(modifier.fillMaxSize()) {

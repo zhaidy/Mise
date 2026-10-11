@@ -25,12 +25,12 @@ abstract class MiseDatabase : RoomDatabase() {
     abstract fun todayDao(): TodayDao
 
     companion object {
-        const val VERSION = 2
+        const val VERSION = 3
         const val NAME = "mise.db"
 
         fun create(context: Context): MiseDatabase =
             Room.databaseBuilder(context, MiseDatabase::class.java, NAME)
-                .addMigrations(MIGRATION_1_2)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                 .build()
     }
 }
@@ -49,5 +49,13 @@ val MIGRATION_1_2 = object : Migration(1, 2) {
             db.execSQL("UPDATE recipe SET uid = ? WHERE id = ?", arrayOf<Any>(UUID.randomUUID().toString(), id))
         }
         db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_recipe_uid ON recipe (uid)")
+    }
+}
+
+/** v3：今日菜单加 updatedAt / removed，为多设备同步做准备 */
+val MIGRATION_2_3 = object : Migration(2, 3) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE today_menu ADD COLUMN updatedAt INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE today_menu ADD COLUMN removed INTEGER NOT NULL DEFAULT 0")
     }
 }

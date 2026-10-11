@@ -128,6 +128,10 @@ data class TodayMenu(
     val currentStep: Int = 0,
     /** 备料清单里已勾选的项目，逗号分隔，如「i12,b3」 */
     val bowlsChecked: String = "",
+    /** 加入、移出、换顺序、翻步骤、勾备料时更新，同步时按它判断谁新 */
+    val updatedAt: Long = System.currentTimeMillis(),
+    /** 移出菜单只做标记，好让移出也能同步到别的设备 */
+    val removed: Boolean = false,
 )
 
 /** 调料碗里的一项，连同用料名称 */
