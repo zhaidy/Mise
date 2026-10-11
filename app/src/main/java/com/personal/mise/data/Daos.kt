@@ -235,7 +235,7 @@ interface CookLogDao {
     @Query(
         """
         SELECT c.uid AS uid, c.date AS date, COALESCE(r.title, c.title) AS title,
-               r.id AS recipeId, r.coverImage AS coverImage
+               r.id AS recipeId, r.coverImage AS coverImage, r.calories AS calories
         FROM cook_log c LEFT JOIN recipe r ON r.uid = c.recipeUid AND r.deleted = 0
         WHERE c.deleted = 0
         ORDER BY c.date DESC, c.updatedAt DESC

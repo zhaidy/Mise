@@ -172,6 +172,8 @@ data class CookLogRow(
     val title: String,
     val recipeId: Long?,
     val coverImage: String?,
+    /** 菜谱现在记的整道菜热量，菜谱删了或没估过是 null */
+    val calories: Int?,
 )
 
 /** 一道菜最后一次做的日子，菜单页用 */
