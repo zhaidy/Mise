@@ -133,7 +133,7 @@ fun RecipeListScreen(
     LaunchedEffect(loadedCategories, loadedTags) {
         applyFilter(filter.prune(loadedCategories ?: return@LaunchedEffect, loadedTags ?: return@LaunchedEffect))
     }
-    val recipes = found.filter(filter::matches)
+    val hits = found.filter { filter.matches(it.recipe) }
     val subcategories = categories.find { it.name == category }?.subcategories.orEmpty()
     var menuOpen by remember { mutableStateOf(false) }
     var pasteOpen by remember { mutableStateOf(false) }
@@ -291,7 +291,7 @@ fun RecipeListScreen(
                             }
                         }
                     }
-                    if (recipes.isNotEmpty()) {
+                    if (hits.isNotEmpty()) {
                         val heading = when {
                             query.isNotEmpty() -> "搜索结果"
                             category == Categories.NONE -> "未分类"
@@ -302,7 +302,7 @@ fun RecipeListScreen(
                         Row(verticalAlignment = Alignment.Bottom) {
                             Text(heading, style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
                             Text(
-                                "共 ${recipes.size} 道 · 长按加入今日",
+                                "共 ${hits.size} 道 · 长按加入今日",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -310,7 +310,7 @@ fun RecipeListScreen(
                     }
                 }
             }
-            if (recipes.isEmpty()) {
+            if (hits.isEmpty()) {
                 item(key = "empty", span = { full }) {
                     if (found.isNotEmpty()) {
                         EmptyState("类", "没有符合条件的菜谱", "换个分类或者少选几个标签看看", Modifier.padding(top = 24.dp))
@@ -326,9 +326,11 @@ fun RecipeListScreen(
                     }
                 }
             } else {
-                items(recipes, key = { it.id }) { recipe ->
+                items(hits, key = { it.recipe.id }) { hit ->
+                    val recipe = hit.recipe
                     RecipeCard(
                         recipe = recipe,
+                        matchedIngredients = hit.matchedIngredients,
                         onClick = { onOpen(recipe.id) },
                         onLongClick = {
                             scope.launch {
@@ -442,7 +444,7 @@ fun RecipeListScreen(
 /** 网格卡片：上面是封面（没图就用首字色块），下面是菜名和份量 */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun RecipeCard(recipe: Recipe, onClick: () -> Unit, onLongClick: () -> Unit) {
+private fun RecipeCard(recipe: Recipe, matchedIngredients: List<String>, onClick: () -> Unit, onLongClick: () -> Unit) {
     val shape = RoundedCornerShape(22.dp)
     SoftCard(
         Modifier.fillMaxWidth().clip(shape).combinedClickable(onClick = onClick, onLongClick = onLongClick),
@@ -457,10 +459,15 @@ private fun RecipeCard(recipe: Recipe, onClick: () -> Unit, onLongClick: () -> U
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                val info = listOfNotNull(
-                    recipe.servings?.takeIf { it.isNotBlank() },
-                    recipe.calories?.let { CalorieText.format(it) },
-                ).joinToString(" · ")
+                // 靠用料搜到的，这一行换成对上的用料
+                val info = if (matchedIngredients.isNotEmpty()) {
+                    "用料：" + matchedIngredients.joinToString("、")
+                } else {
+                    listOfNotNull(
+                        recipe.servings?.takeIf { it.isNotBlank() },
+                        recipe.calories?.let { CalorieText.format(it) },
+                    ).joinToString(" · ")
+                }
                 Text(
                     info.ifEmpty { "　" },
                     style = MaterialTheme.typography.bodySmall,
@@ -500,7 +507,7 @@ private fun SearchField(query: String, onChange: (String) -> Unit) {
         value = query,
         onValueChange = onChange,
         modifier = Modifier.fillMaxWidth(),
-        placeholder = { Text("搜索菜谱") },
+        placeholder = { Text("搜菜名或用料，多样用空格隔开") },
         leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
         trailingIcon = {
             if (query.isNotEmpty()) {

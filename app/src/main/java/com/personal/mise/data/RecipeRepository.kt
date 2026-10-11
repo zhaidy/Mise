@@ -65,8 +65,11 @@ class RecipeRepository(
     private val todayDao = db.todayDao()
     private val cookLogDao = db.cookLogDao()
 
-    /** 搜「#荤菜」也能搜到标签 */
-    fun search(query: String): Flow<List<Recipe>> = dao.search(query.trim().trimStart('#', '＃').trim())
+    /** 按菜名、分类、标签或用料搜，见 RecipeSearch */
+    fun search(query: String): Flow<List<SearchHit>> =
+        combine(dao.observeAll(), dao.observeIngredientNames()) { recipes, ingredients ->
+            RecipeSearch.search(query, recipes, ingredients)
+        }
 
     fun observeCategories(): Flow<List<CategoryNode>> = dao.observeCategoryCounts().map(Categories::tree)
 

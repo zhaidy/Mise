@@ -9,15 +9,11 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface RecipeDao {
-    @Query(
-        """
-        SELECT * FROM recipe WHERE deleted = 0
-          AND (title LIKE '%' || :query || '%' OR category LIKE '%' || :query || '%'
-               OR subcategory LIKE '%' || :query || '%' OR tags LIKE '%' || :query || '%')
-        ORDER BY createdAt DESC
-        """
-    )
-    fun search(query: String): Flow<List<Recipe>>
+    @Query("SELECT * FROM recipe WHERE deleted = 0 ORDER BY createdAt DESC")
+    fun observeAll(): Flow<List<Recipe>>
+
+    @Query("SELECT recipeId, name FROM ingredient WHERE recipeId IN (SELECT id FROM recipe WHERE deleted = 0)")
+    fun observeIngredientNames(): Flow<List<IngredientName>>
 
     /** 每个大类、小类组合用了几次，排序交给 Categories.tree */
     @Query(
