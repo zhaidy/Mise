@@ -42,9 +42,40 @@ class SauceBowlGeneratorTest {
     @Test
     fun `只有一种用料的步骤也配碗`() {
         val ingredients = listOf(ing("青菜", "300克"), ing("盐", "1 茶匙"))
-        val bowls = SauceBowlGenerator.generate(ingredients, listOf("青菜下锅炒软", "加盐出锅"))
+        val bowls = SauceBowlGenerator.generate(ingredients, listOf("青菜下锅翻炒", "加盐出锅"))
         assertEquals(1, bowls.size)
         assertEquals(listOf("青菜", "盐"), names(ingredients, bowls[0]))
+    }
+
+    @Test
+    fun `先下锅炒一会儿的用料单独一碗，下锅步骤不算切配`() {
+        val ingredients = listOf(
+            ing("菜花", "1 个"),
+            ing("五花肉", "100克"),
+            ing("干辣椒", "5克"),
+            ing("蒜", "3 瓣"),
+            ing("姜", "5克"),
+            ing("盐", "3克"),
+            ing("生抽", "1 勺"),
+        )
+        val steps = listOf(
+            "菜花削成小朵",
+            "五花肉切薄片",
+            "干辣椒剪段，姜蒜切片",
+            "烧热锅",
+            "五花肉入锅小火慢慢煸炒出油，将肉推至一边",
+            "干红辣椒与姜、蒜放入煸炒出味",
+            "放入菜花大火翻炒",
+            "加盐、生抽炒匀出锅",
+        )
+        val bowls = SauceBowlGenerator.generate(ingredients, steps)
+        assertEquals(
+            listOf(setOf("五花肉"), setOf("干辣椒", "姜", "蒜"), setOf("菜花", "盐", "生抽")),
+            bowls.map { names(ingredients, it).toSet() },
+        )
+        assertEquals(listOf(4, 5, 6), bowls.map { it.stepIndex })
+        // 葱姜蒜在切配步骤里出现过，不算分次加入
+        assertTrue(bowls.flatMap { it.items }.none { it.amountText.startsWith("分次加入") })
     }
 
     @Test

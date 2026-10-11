@@ -39,6 +39,7 @@ object SeasoningDictionary {
         "芝麻油" to listOf("香油"),
         "香油" to listOf("芝麻油"),
         "清水" to listOf("水"),
+        "干辣椒" to listOf("干红辣椒", "辣椒干"),
     )
 
     fun isCookingOil(name: String): Boolean = name.trim() in cookingOils
