@@ -16,7 +16,7 @@ data class XhsNote(val title: String, val desc: String, val imageUrls: List<Stri
  */
 object XiaohongshuParser {
 
-    private val hostRegex = Regex("^https?://(?:[\\w-]+\\.)*(?:xiaohongshu\\.com|xhslink\\.com)(?:[/:?#]|$)", RegexOption.IGNORE_CASE)
+    private val hostRegex = Regex("^https?://(?:[\\w-]+\\.)*(?:xiaohongshu\\.com|xhslink\\.(?:com|cn))(?:[/:?#]|$)", RegexOption.IGNORE_CASE)
 
     fun isNoteUrl(url: String): Boolean = hostRegex.containsMatchIn(url)
 
