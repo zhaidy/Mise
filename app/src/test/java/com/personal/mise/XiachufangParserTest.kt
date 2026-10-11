@@ -29,6 +29,29 @@ class XiachufangParserTest {
     }
 
     @Test
+    fun `解析 MIP 页面`() {
+        val r = XiachufangParser.parse(page("100371213_mip"), "https://hanwuji.xiachufang.com/recipe/100371213/")
+
+        assertEquals("锅包肉", r.title)
+        assertEquals("https://i2.chuimg.com/30be8264887811e6b87c0242ac110003_640w_640h.jpg", r.coverUrl)
+        // 名称末尾多余的逗号去掉
+        assertEquals("里脊肉" to "200克", r.ingredients.first())
+        assertEquals("植物油" to "600ml（实用不多）", r.ingredients[4])
+        assertEquals(9, r.ingredients.size)
+        assertEquals(11, r.steps.size)
+        assertEquals("把肉洗净并切成刀背厚簿的片，用1克盐和5ml料酒腌制二十分钟。", r.steps.first().text)
+        assertEquals("https://i2.chuimg.com/394e41e48ec211e6b87c0242ac110003_640w_640h.jpg", r.steps.first().imageUrl)
+        assertTrue(r.steps.all { it.imageUrl != null })
+        assertTrue(r.isComplete)
+    }
+
+    @Test
+    fun `MIP 页面地址`() {
+        assertEquals("100371213", XiachufangParser.recipeId("https://hanwuji.xiachufang.com/recipe/100371213/"))
+        assertEquals("https://hanwuji.xiachufang.com/recipe/1/", XiachufangParser.mipUrls("1").first())
+    }
+
+    @Test
     fun `用料分组标题不算用料`() {
         val r = XiachufangParser.parse(page("107508795"), "https://www.xiachufang.com/recipe/107508795/")
 
