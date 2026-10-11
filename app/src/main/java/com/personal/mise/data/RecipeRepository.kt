@@ -407,6 +407,10 @@ class RecipeRepository(
         }
 
     /** 记一笔：这天做了这道菜。这天已经记过返回 false */
+    /** 菜谱 uid → 最后一次做的日子 */
+    fun observeLastCooked(): Flow<Map<String, String>> =
+        cookLogDao.observeLastCooked().map { rows -> rows.associate { it.recipeUid to it.date } }
+
     suspend fun logCooked(recipeId: Long, date: String = DayText.today()): Boolean = db.withTransaction {
         val recipe = dao.get(recipeId) ?: return@withTransaction false
         val uid = CookLog.uidOf(recipe.uid, date)
