@@ -3,7 +3,7 @@ package com.personal.mise.sync
 import com.personal.mise.ai.AiProvider
 import com.personal.mise.ai.AiSettings
 
-/** 一家 AI 的 API Key 在云端的样子，文档 id 是服务商的名字（GEMINI、DEEPSEEK）；Key 为空表示清空了 */
+/** 一家 AI 的 API Key 在云端的样子，文档 id 是服务商的名字（GEMINI、DEEPSEEK、AGNES）；Key 为空表示清空了 */
 data class SyncedAiKey(
     val provider: AiProvider,
     val key: String,
