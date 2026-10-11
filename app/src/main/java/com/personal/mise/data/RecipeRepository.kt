@@ -11,6 +11,7 @@ import com.personal.mise.util.DayText
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
@@ -341,11 +342,18 @@ class RecipeRepository(
 
     suspend fun isInToday(recipeId: Long): Boolean = todayDao.get(recipeId)?.removed == false
 
-    /** 加入今日菜单；已经在菜单里返回 false */
+    /** 加入今日菜单，同时排进今天的计划；已经在菜单里返回 false */
     suspend fun addToToday(recipeId: Long): Boolean = db.withTransaction {
+        addToPlan(recipeId, DayText.today())
         if (isInToday(recipeId)) return@withTransaction false
         todayDao.upsert(TodayMenu(recipeId = recipeId, order = todayDao.maxOrder() + 1))
         true
+    }
+
+    /** 今日菜单里的菜都排进今天的计划；有计划之前加进今日菜单的菜靠这个补上 */
+    suspend fun todayToPlan() = db.withTransaction {
+        val today = DayText.today()
+        todayDao.observe().first().forEach { addToPlan(it.recipeId, today) }
     }
 
     suspend fun removeFromToday(recipeId: Long) = todayDao.markRemoved(recipeId, System.currentTimeMillis())
