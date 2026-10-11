@@ -66,7 +66,14 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLinkStyles
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.withLink
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -370,8 +377,24 @@ fun RecipeDetailScreen(
             }
             data.recipe.sourceUrl?.let { url ->
                 item(key = "source") {
+                    val uriHandler = LocalUriHandler.current
+                    val linkColor = MaterialTheme.colorScheme.primary
+                    val text = remember(url, linkColor) {
+                        buildAnnotatedString {
+                            append("来源：")
+                            if (url.startsWith("http://") || url.startsWith("https://")) {
+                                val link = LinkAnnotation.Url(
+                                    url,
+                                    TextLinkStyles(SpanStyle(color = linkColor, textDecoration = TextDecoration.Underline)),
+                                ) { runCatching { uriHandler.openUri(url) } }
+                                withLink(link) { append(url) }
+                            } else {
+                                append(url)
+                            }
+                        }
+                    }
                     Text(
-                        "来源：$url",
+                        text,
                         Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
