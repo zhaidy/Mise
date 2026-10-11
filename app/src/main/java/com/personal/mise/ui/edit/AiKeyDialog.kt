@@ -12,6 +12,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -20,6 +21,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.personal.mise.ai.AiProvider
@@ -35,11 +37,22 @@ fun AiKeyDialog(confirmLabel: String, onDismiss: () -> Unit, onConfirm: () -> Un
     var provider by rememberSaveable { mutableStateOf(settings.provider) }
     var keys by remember { mutableStateOf(AiProvider.entries.associateWith { settings.key(it) }) }
     val key = keys.getValue(provider)
+    var cellularFallback by rememberSaveable { mutableStateOf(settings.cellularFallback) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("AI 设置") },
         text = {
-            AiKeyFields(provider, { provider = it }, key, { keys = keys + (provider to it) })
+            Column {
+                AiKeyFields(provider, { provider = it }, key, { keys = keys + (provider to it) })
+                Spacer(Modifier.height(12.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Wi-Fi 连不上时改用移动数据", style = MaterialTheme.typography.bodyMedium)
+                        Text("会用掉一些流量，漫游时注意费用", style = MaterialTheme.typography.bodySmall)
+                    }
+                    Switch(checked = cellularFallback, onCheckedChange = { cellularFallback = it })
+                }
+            }
         },
         confirmButton = {
             TextButton(
@@ -47,6 +60,7 @@ fun AiKeyDialog(confirmLabel: String, onDismiss: () -> Unit, onConfirm: () -> Un
                 onClick = {
                     settings.saveKey(provider, key)
                     settings.provider = provider
+                    settings.cellularFallback = cellularFallback
                     onConfirm()
                 },
             ) { Text(confirmLabel) }
