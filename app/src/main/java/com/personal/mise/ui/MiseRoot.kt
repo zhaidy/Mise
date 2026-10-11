@@ -5,7 +5,7 @@ import android.net.Uri
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.core.tween
@@ -357,15 +357,21 @@ private fun RowScope.TabPill(
     badge: Int? = null,
 ) {
     val colors = LocalMiseColors.current
-    val weight by animateFloatAsState(if (selected) 2f else 1f, label = "tab")
+    // 选中的那格按文字和角标的实际宽度撑开，其余几格平分剩下的地方；四个 tab 时按比例分会把文字和角标切掉
     Surface(
         onClick = onClick,
-        modifier = Modifier.weight(weight).height(52.dp).semantics { contentDescription = label },
+        modifier = (if (selected) Modifier.animateContentSize() else Modifier.weight(1f))
+            .height(52.dp)
+            .semantics { contentDescription = label },
         shape = CircleShape,
         color = if (selected) colors.onInk else colors.ink,
         contentColor = if (selected) colors.ink else colors.onInkMuted,
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
+        Row(
+            Modifier.padding(horizontal = if (selected) 18.dp else 0.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center,
+        ) {
             Icon(icon, contentDescription = null, modifier = Modifier.size(22.dp))
             if (selected) {
                 Spacer(Modifier.width(8.dp))
