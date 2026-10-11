@@ -41,9 +41,9 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.material3.HorizontalDivider
 import com.personal.mise.data.CategoryNode
 import com.personal.mise.data.tagList
-import androidx.compose.material3.TextField
-import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import com.personal.mise.ui.common.CircleIconButton
@@ -218,8 +218,8 @@ fun RecipeListScreen(
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
             Column(
-                Modifier.padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 14.dp),
-                verticalArrangement = Arrangement.spacedBy(18.dp),
+                Modifier.padding(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Row(verticalAlignment = Alignment.Top) {
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -497,7 +497,7 @@ private fun RecipeCard(
     onClick: () -> Unit,
     onLongClick: () -> Unit,
 ) {
-    val shape = RoundedCornerShape(22.dp)
+    val shape = RoundedCornerShape(18.dp)
     SoftCard(
         Modifier.fillMaxWidth().clip(shape).combinedClickable(onClick = onClick, onLongClick = onLongClick),
         shape = shape,
@@ -507,14 +507,16 @@ private fun RecipeCard(
             RecipeCover(
                 recipe.title,
                 recipe.coverImage,
-                Modifier.fillMaxWidth().height(if (compact) 96.dp else 118.dp),
-                initialSize = if (compact) 40.sp else 52.sp,
+                Modifier.fillMaxWidth().height(if (compact) 72.dp else 100.dp),
+                initialSize = if (compact) 30.sp else 44.sp,
             )
-            Column(Modifier.padding(start = 12.dp, end = 12.dp, top = 10.dp, bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Column(Modifier.padding(start = 10.dp, end = 10.dp, top = 8.dp, bottom = 10.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                // 菜名给两行，长名字也能看全；固定两行高，卡片才对得齐
                 Text(
                     recipe.title,
-                    style = MaterialTheme.typography.titleMedium,
-                    maxLines = 1,
+                    style = MaterialTheme.typography.titleMedium.copy(fontSize = 15.sp, lineHeight = 20.sp),
+                    minLines = 2,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
                 // 靠用料搜到的，这一行换成对上的用料
@@ -679,27 +681,51 @@ private fun RailSubItem(text: String, selected: Boolean, count: Int = 0, onClick
 /** 胶囊形搜索框 */
 @Composable
 private fun SearchField(query: String, onChange: (String) -> Unit) {
-    TextField(
+    // 自己画的矮胶囊：默认 TextField 至少 56dp 高，占地方
+    BasicTextField(
         value = query,
         onValueChange = onChange,
+        singleLine = true,
+        textStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface),
+        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
         modifier = Modifier.fillMaxWidth(),
-        placeholder = { Text("搜菜名或用料，多样用空格隔开") },
-        leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
-        trailingIcon = {
-            if (query.isNotEmpty()) {
-                IconButton(onClick = { onChange("") }) { Icon(Icons.Filled.Clear, contentDescription = "清空") }
+        decorationBox = { inner ->
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .height(44.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                    .padding(start = 14.dp, end = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    Icons.Filled.Search,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp),
+                )
+                Box(Modifier.weight(1f).padding(start = 10.dp)) {
+                    if (query.isEmpty()) {
+                        Text(
+                            "搜菜名或用料，空格隔开",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    inner()
+                }
+                if (query.isNotEmpty()) {
+                    IconButton(onClick = { onChange("") }, modifier = Modifier.size(36.dp)) {
+                        Icon(Icons.Filled.Clear, contentDescription = "清空", modifier = Modifier.size(18.dp))
+                    }
+                } else {
+                    Spacer(Modifier.width(10.dp))
+                }
             }
         },
-        singleLine = true,
-        shape = CircleShape,
-        colors = TextFieldDefaults.colors(
-            focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-            focusedIndicatorColor = Color.Transparent,
-            unfocusedIndicatorColor = Color.Transparent,
-            focusedLeadingIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-            unfocusedLeadingIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-        ),
     )
 }
 
