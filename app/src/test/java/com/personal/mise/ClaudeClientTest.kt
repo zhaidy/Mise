@@ -7,7 +7,6 @@ import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ClaudeClientTest {
@@ -24,7 +23,7 @@ class ClaudeClientTest {
         assertEquals("整理一下", body.getJSONArray("messages").getJSONObject(0).getString("content"))
         val format = body.getJSONObject("output_config").getJSONObject("format")
         assertEquals("json_schema", format.getString("type"))
-        assertTrue(schema.similar(format.getJSONObject("schema")))
+        assertEquals(schema.toString(), format.getJSONObject("schema").toString())
         // 新模型不接受 temperature
         assertFalse(body.has("temperature"))
     }
