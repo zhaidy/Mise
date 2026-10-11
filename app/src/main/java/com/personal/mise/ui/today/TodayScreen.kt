@@ -1,6 +1,16 @@
 package com.personal.mise.ui.today
 
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.width
@@ -154,7 +164,11 @@ fun TodayScreen(
         topBar = {
             MiseHeader(
                 "今日菜单",
-                eyebrow = if (items.isEmpty()) "还没选菜" else "共 ${items.size} 道菜",
+                eyebrow = when {
+                    items.isEmpty() -> "还没选菜"
+                    items.any { it.done } -> "共 ${items.size} 道菜 · 做完 ${items.count { it.done }} 道"
+                    else -> "共 ${items.size} 道菜"
+                },
             ) {
                 if (items.isNotEmpty()) {
                     CircleIconButton(
@@ -229,6 +243,7 @@ fun TodayScreen(
                             factor = app.scaleOf(row.recipeId),
                             dragging = isDragging,
                             onClick = { onOpenRecipe(row.recipeId) },
+                            onToggleDone = { scope.launch { app.repository.setTodayDone(row.recipeId, !row.done) } },
                             onRemove = { scope.launch { app.repository.removeFromToday(row.recipeId) } },
                             handle = Modifier.draggableHandle(),
                         )
@@ -420,6 +435,7 @@ private fun TodayCard(
     factor: Double,
     dragging: Boolean,
     onClick: () -> Unit,
+    onToggleDone: () -> Unit,
     onRemove: () -> Unit,
     handle: Modifier,
 ) {
@@ -437,16 +453,25 @@ private fun TodayCard(
             IconButton(onClick = {}, modifier = handle.size(width = 32.dp, height = 48.dp)) {
                 Icon(MiseIcons.DragDots, contentDescription = "拖动排序", tint = MaterialTheme.colorScheme.outline)
             }
-            RecipeCover(row.title, row.coverImage, Modifier.size(64.dp).clip(RoundedCornerShape(18.dp)), initialSize = 30.sp)
-            Column(Modifier.weight(1f).padding(start = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            // 做完的菜淡一点，菜名划掉
+            val fade = Modifier.graphicsLayer { alpha = if (row.done) 0.55f else 1f }
+            RecipeCover(row.title, row.coverImage, fade.size(56.dp).clip(RoundedCornerShape(16.dp)), initialSize = 26.sp)
+            Column(fade.weight(1f).padding(start = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
                     row.title,
                     style = MaterialTheme.typography.titleMedium,
+                    textDecoration = if (row.done) TextDecoration.LineThrough else null,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
                 LinearProgressIndicator(
-                    progress = { if (row.stepCount == 0) 0f else (row.currentStep.coerceAtMost(row.stepCount) / row.stepCount.toFloat()) },
+                    progress = {
+                        when {
+                            row.done -> 1f
+                            row.stepCount == 0 -> 0f
+                            else -> row.currentStep.coerceAtMost(row.stepCount) / row.stepCount.toFloat()
+                        }
+                    },
                     modifier = Modifier.fillMaxWidth().height(6.dp),
                     color = MaterialTheme.colorScheme.primary,
                     trackColor = MaterialTheme.colorScheme.outlineVariant,
@@ -468,6 +493,7 @@ private fun TodayCard(
                         listOfNotNull(
                             row.calories?.let { CalorieText.describe(it, null, factor) },
                             when {
+                                row.done -> "做完了"
                                 row.stepCount == 0 -> "没有步骤"
                                 row.currentStep == 0 -> "共 ${row.stepCount} 步"
                                 else -> "第 $step / ${row.stepCount} 步"
@@ -480,8 +506,37 @@ private fun TodayCard(
                     )
                 }
             }
-            IconButton(onClick = onRemove) {
+            DoneToggle(row.done, onToggleDone)
+            IconButton(onClick = onRemove, modifier = Modifier.size(40.dp)) {
                 Icon(Icons.Filled.Close, contentDescription = "移出今日菜单", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
+}
+
+/** 做完了打个勾，再点一下取消 */
+@Composable
+private fun DoneToggle(done: Boolean, onToggle: () -> Unit) {
+    val accent = MaterialTheme.colorScheme.secondary
+    val fill by animateColorAsState(if (done) accent else Color.Transparent, label = "done")
+    Box(
+        Modifier
+            .size(44.dp)
+            .clip(CircleShape)
+            .toggleable(value = done, role = Role.Checkbox, onValueChange = { onToggle() })
+            .semantics { contentDescription = if (done) "已做完，点一下取消" else "标记为做完" },
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            Modifier
+                .size(26.dp)
+                .clip(CircleShape)
+                .background(fill)
+                .border(2.dp, if (done) accent else MaterialTheme.colorScheme.outline, CircleShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (done) {
+                Icon(Icons.Filled.Check, contentDescription = null, tint = MaterialTheme.colorScheme.onSecondary, modifier = Modifier.size(16.dp))
             }
         }
     }

@@ -29,12 +29,12 @@ abstract class MiseDatabase : RoomDatabase() {
     abstract fun mealPlanDao(): MealPlanDao
 
     companion object {
-        const val VERSION = 8
+        const val VERSION = 9
         const val NAME = "mise.db"
 
         fun create(context: Context): MiseDatabase =
             Room.databaseBuilder(context, MiseDatabase::class.java, NAME)
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9)
                 .build()
     }
 }
@@ -108,5 +108,12 @@ val MIGRATION_7_8 = object : Migration(7, 8) {
         )
         db.execSQL("CREATE INDEX IF NOT EXISTS index_meal_plan_recipeUid ON meal_plan (recipeUid)")
         db.execSQL("CREATE INDEX IF NOT EXISTS index_meal_plan_date ON meal_plan (date)")
+    }
+}
+
+/** v9：今日菜单加 done，做完的菜打个勾 */
+val MIGRATION_8_9 = object : Migration(8, 9) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE today_menu ADD COLUMN done INTEGER NOT NULL DEFAULT 0")
     }
 }

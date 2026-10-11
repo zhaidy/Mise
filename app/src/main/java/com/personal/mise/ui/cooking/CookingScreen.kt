@@ -225,6 +225,12 @@ private fun RecipeTab(row: TodayRow, selected: Boolean, timers: List<CookingTime
                     fontWeight = FontWeight.Bold,
                     color = if (selected) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.tertiary,
                 )
+            } else if (row.done) {
+                Text(
+                    "做完了",
+                    fontSize = 12.sp,
+                    color = if (selected) ink.onInkMuted else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             } else if (row.stepCount > 0) {
                 Text(
                     "${(row.currentStep + 1).coerceAtMost(row.stepCount)} / ${row.stepCount}",
@@ -343,9 +349,13 @@ private fun RecipePager(
                             if (!last) {
                                 pagerState.animateScrollToPage(pagerState.currentPage + 1)
                             } else {
-                                // 最后一步点「做好了」记一笔，记录页能看到哪天做过
-                                val logged = app.repository.logCooked(row.recipeId)
-                                snackbar.showSnackbar(if (logged) "已记下：今天做了${row.title}" else "今天已经记过了")
+                                // 最后一步点「做好了」：今日菜单里标成做完，记录页也记一笔
+                                if (row.done) {
+                                    snackbar.showSnackbar("${row.title}已经标成做完了")
+                                } else {
+                                    app.repository.setTodayDone(row.recipeId, true)
+                                    snackbar.showSnackbar("${row.title}做完了，已记下")
+                                }
                             }
                         }
                     },

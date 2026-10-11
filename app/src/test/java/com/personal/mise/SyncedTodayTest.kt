@@ -30,10 +30,16 @@ class SyncedTodayTest {
 
     @Test
     fun `转成文档再读回来不变`() {
-        val entry = SyncedTodayEntry("u-1", order = 2, currentStep = 3, checked = listOf("b0", "i1"), updatedAt = 500, removed = false)
+        val entry = SyncedTodayEntry("u-1", order = 2, currentStep = 3, checked = listOf("b0", "i1"), updatedAt = 500, removed = false, done = true)
         // Firestore 读回来时整数都是 Long
         val stored = entry.toMap().mapValues { (_, v) -> if (v is Int) v.toLong() else v }
         assertEquals(entry, SyncedTodayEntry.fromMap("u-1", stored))
+    }
+
+    @Test
+    fun `旧版本没有 done 字段时当作没做完`() {
+        val map = SyncedTodayEntry("u-1", 0, 0, emptyList(), 1, false, done = true).toMap() - "done"
+        assertEquals(false, SyncedTodayEntry.fromMap("u-1", map)?.done)
     }
 
     @Test
