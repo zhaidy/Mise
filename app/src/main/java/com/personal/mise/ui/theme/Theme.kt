@@ -118,10 +118,14 @@ data class CoverColors(val background: Color, val content: Color)
 @Immutable
 data class MiseExtraColors(
     val covers: List<CoverColors>,
-    /** 底部导航、备料进度卡这类深色块 */
+    /** 底部导航、备料进度卡这类深色块；深色模式下也是深色，只比背景亮一档 */
     val ink: Color,
     val onInk: Color,
     val onInkMuted: Color,
+    /** 分段切换、菜名胶囊、日历这类选中态：和页面背景反差最大的一块 */
+    val selected: Color,
+    val onSelected: Color,
+    val onSelectedMuted: Color,
 )
 
 internal val LightExtra = MiseExtraColors(
@@ -136,6 +140,9 @@ internal val LightExtra = MiseExtraColors(
     ink = Color(0xFF2A211B),
     onInk = Color(0xFFFBF6EE),
     onInkMuted = Color(0xFFCBBBA8),
+    selected = Color(0xFF2A211B),
+    onSelected = Color(0xFFFBF6EE),
+    onSelectedMuted = Color(0xFFCBBBA8),
 )
 
 private val DarkExtra = MiseExtraColors(
@@ -147,9 +154,12 @@ private val DarkExtra = MiseExtraColors(
         CoverColors(Color(0xFF3A4556), Color(0xFFEDE6DA)),
         CoverColors(Color(0xFF7E8C70), Color(0xFF1E2418)),
     ),
-    ink = Color(0xFFF3EADD),
-    onInk = Color(0xFF1B1612),
-    onInkMuted = Color(0xFF6B5C50),
+    ink = Color(0xFF362D26),
+    onInk = Color(0xFFF3EADD),
+    onInkMuted = Color(0xFFA8978A),
+    selected = Color(0xFFF3EADD),
+    onSelected = Color(0xFF1B1612),
+    onSelectedMuted = Color(0xFF6B5C50),
 )
 
 val LocalMiseColors = staticCompositionLocalOf { LightExtra }

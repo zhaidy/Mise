@@ -70,8 +70,8 @@ private fun ViewOption(label: String, selected: Boolean, onClick: () -> Unit) {
     Surface(
         onClick = onClick,
         shape = CircleShape,
-        color = if (selected) ink.ink else Color.Transparent,
-        contentColor = if (selected) ink.onInk else MaterialTheme.colorScheme.onSurfaceVariant,
+        color = if (selected) ink.selected else Color.Transparent,
+        contentColor = if (selected) ink.onSelected else MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.height(36.dp),
     ) {
         Box(Modifier.padding(horizontal = 14.dp), contentAlignment = Alignment.Center) {

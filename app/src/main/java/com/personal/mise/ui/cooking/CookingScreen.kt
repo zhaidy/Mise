@@ -211,8 +211,8 @@ private fun RecipeTab(row: TodayRow, selected: Boolean, timers: List<CookingTime
     Surface(
         onClick = onClick,
         shape = CircleShape,
-        color = if (selected) ink.ink else MaterialTheme.colorScheme.surfaceContainerHigh,
-        contentColor = if (selected) ink.onInk else MaterialTheme.colorScheme.onSurface,
+        color = if (selected) ink.selected else MaterialTheme.colorScheme.surfaceContainerHigh,
+        contentColor = if (selected) ink.onSelected else MaterialTheme.colorScheme.onSurface,
         modifier = Modifier.heightIn(min = 52.dp),
     ) {
         Column(Modifier.padding(horizontal = 18.dp, vertical = 6.dp), verticalArrangement = Arrangement.Center) {
@@ -235,7 +235,7 @@ private fun RecipeTab(row: TodayRow, selected: Boolean, timers: List<CookingTime
                 Text(
                     "${(row.currentStep + 1).coerceAtMost(row.stepCount)} / ${row.stepCount}",
                     fontSize = 12.sp,
-                    color = if (selected) ink.onInkMuted else MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = if (selected) ink.onSelectedMuted else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
@@ -391,8 +391,8 @@ private fun ModeOption(label: String, selected: Boolean, onClick: () -> Unit, mo
     Surface(
         onClick = onClick,
         shape = CircleShape,
-        color = if (selected) ink.ink else Color.Transparent,
-        contentColor = if (selected) ink.onInk else MaterialTheme.colorScheme.onSurfaceVariant,
+        color = if (selected) ink.selected else Color.Transparent,
+        contentColor = if (selected) ink.onSelected else MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = modifier.height(44.dp),
     ) {
         Box(contentAlignment = Alignment.Center) {
