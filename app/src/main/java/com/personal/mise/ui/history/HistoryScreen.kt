@@ -351,13 +351,13 @@ private fun DayCell(day: LocalDate, logs: List<CookLogRow>, planned: Int, isToda
     val cooked = logs.isNotEmpty()
     val shape = RoundedCornerShape(12.dp)
     val background = when {
-        isSelected -> ink.ink
+        isSelected -> ink.selected
         cooked -> MaterialTheme.colorScheme.primaryContainer
         planned > 0 -> MaterialTheme.colorScheme.tertiaryContainer
         else -> Color.Transparent
     }
     val content = when {
-        isSelected -> ink.onInk
+        isSelected -> ink.onSelected
         cooked -> MaterialTheme.colorScheme.onPrimaryContainer
         planned > 0 -> MaterialTheme.colorScheme.onTertiaryContainer
         else -> MaterialTheme.colorScheme.onSurface
