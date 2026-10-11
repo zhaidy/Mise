@@ -301,20 +301,23 @@ private fun DayCell(day: LocalDate, logs: List<CookLogRow>, isToday: Boolean, is
             .background(background)
             .then(if (isToday && !isSelected) Modifier.border(1.5.dp, MaterialTheme.colorScheme.primary, shape) else Modifier)
             .clickable(onClick = onClick)
-            .padding(vertical = 6.dp),
+            .padding(vertical = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
     ) {
+        // 字号都配上行高：不配的话会沿用主题 bodyLarge 的 26sp 行高，格子装不下，"几道" 被切掉
         Text(
             "${day.dayOfMonth}",
             fontSize = 15.sp,
+            lineHeight = 18.sp,
             fontWeight = if (cooked || isToday) FontWeight.Bold else FontWeight.Normal,
             color = if (isToday && !isSelected && !cooked) MaterialTheme.colorScheme.primary else content,
         )
         if (cooked) {
-            Spacer(Modifier.height(2.dp))
-            Text("${logs.size} 道", fontSize = 10.sp, color = content)
+            Spacer(Modifier.height(1.dp))
+            Text("${logs.size} 道", fontSize = 10.sp, lineHeight = 12.sp, color = content, maxLines = 1)
             CookCalendar.total(logs.map { it.calories })?.let {
-                Text(CookCalendar.short(it), fontSize = 10.sp, color = content.copy(alpha = 0.75f), maxLines = 1)
+                Text(CookCalendar.short(it), fontSize = 10.sp, lineHeight = 12.sp, color = content.copy(alpha = 0.75f), maxLines = 1)
             }
         }
     }
