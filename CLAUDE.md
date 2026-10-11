@@ -1,5 +1,9 @@
 # Mise
 
+## 本地编译
+
+- 云端会话启动时 `.claude/hooks/session-start.sh` 会装好 Android SDK，推送前先在本地跑 `./gradlew assembleDebug testDebugUnitTest`。
+
 ## Pull request 流程
 
 - 推送分支后创建 PR，CI（`build`）通过后自动合并，不需要再问。
