@@ -2,6 +2,7 @@ package com.personal.mise.ai
 
 import com.personal.mise.importer.ImportException
 import com.personal.mise.util.StepPhase
+import com.personal.mise.util.UnitText
 import org.json.JSONObject
 
 /** AI 分好的一个碗：[stepIndex] 是下锅的步骤（从 0 开始），items 是 用料序号 to 这碗的用量 */
@@ -85,7 +86,7 @@ class AiBowlOrganizer(private val ai: AiClient) {
                     val item = itemsJson.optJSONObject(j) ?: return@mapNotNull null
                     val index = item.optDouble("ingredient", Double.NaN).takeIf { !it.isNaN() }?.toInt()?.minus(1)
                         ?.takeIf { it in 0 until ingredientCount } ?: return@mapNotNull null
-                    index to item.optString("amount").trim().let { if (it == "null") "" else it }
+                    index to item.optString("amount").trim().let { if (it == "null") "" else UnitText.normalize(it) }
                 }.distinctBy { it.first }
                 if (items.isEmpty()) null else AiBowl(step, items)
             }

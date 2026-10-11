@@ -61,4 +61,10 @@ class AmountScalerTest {
         assertEquals("个", AmountScaler.unit("半个"))
         assertEquals("", AmountScaler.unit("适量"))
     }
+
+    @Test
+    fun `单位写在前面的也能取出数量和单位`() {
+        assertEquals(250.0, AmountScaler.quantity("克250")!!, 0.001)
+        assertEquals("克", AmountScaler.unit("克250"))
+    }
 }
