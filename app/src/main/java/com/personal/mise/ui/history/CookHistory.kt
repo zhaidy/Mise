@@ -24,11 +24,9 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -47,19 +45,13 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.personal.mise.data.CookLogRow
 import com.personal.mise.data.PlanRow
-import com.personal.mise.ui.plan.PlanDayCard
 import com.personal.mise.ui.common.CircleIconButton
-import com.personal.mise.ui.common.EmptyState
-import com.personal.mise.ui.common.MiseHeader
 import com.personal.mise.ui.common.RecipeCover
 import com.personal.mise.ui.common.SectionHeader
 import com.personal.mise.ui.common.SoftCard
 import com.personal.mise.ui.common.rememberApp
-import com.personal.mise.ui.common.rememberSavedView
-import com.personal.mise.ui.list.ViewSwitch
 import com.personal.mise.ui.theme.LocalMiseColors
 import com.personal.mise.util.CalorieText
 import com.personal.mise.util.CookCalendar
@@ -68,117 +60,54 @@ import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.YearMonth
 
-/**
- * 做菜记录：哪天做过哪道菜，可以按月份、日期分组列出来，也可以看月历；新的在前。
- * 月历上也标出做菜计划，点一天可以给那天排菜。
- */
-@OptIn(ExperimentalMaterial3Api::class)
+/** 删一条做菜记录前问一下 */
 @Composable
-fun HistoryScreen(
-    onOpenRecipe: (Long) -> Unit,
-    onPrep: (date: String) -> Unit,
-    onShopping: (from: String, days: Int) -> Unit,
-    onToday: () -> Unit,
-) {
+internal fun DeleteLogDialog(log: CookLogRow, onDismiss: () -> Unit) {
     val app = rememberApp()
     val scope = rememberCoroutineScope()
-    val logs by app.repository.observeCookLog().collectAsStateWithLifecycle(emptyList())
-    val plans by app.repository.observePlan().collectAsStateWithLifecycle(emptyList())
-    var confirmDelete by remember { mutableStateOf<CookLogRow?>(null) }
-    var calendarView by rememberSavedView("history_calendar")
-
-    Scaffold(
-        topBar = {
-            MiseHeader("做菜记录", eyebrow = if (logs.isEmpty()) "还没有记录" else "一共做了 ${logs.size} 次") {
-                if (logs.isNotEmpty() || plans.isNotEmpty()) {
-                    ViewSwitch(calendarView, onChange = { calendarView = it }, labels = "列表" to "日历")
-                }
-            }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("删除记录") },
+        text = { Text("删除「${DayText.label(log.date)}做了${log.title}」这条记录吗？") },
+        confirmButton = {
+            TextButton(onClick = {
+                onDismiss()
+                scope.launch { app.repository.deleteCookLog(log.uid) }
+            }) { Text("删除") }
         },
-    ) { padding ->
-        if (logs.isEmpty() && (!calendarView || plans.isEmpty())) {
-            EmptyState(
-                "记",
-                "还没有记录",
-                "做菜时翻到最后一步点「做好了」，或者在菜谱详情里点「记一笔」。",
-                Modifier.padding(padding),
-            )
-            return@Scaffold
-        }
-        val onDelete: (CookLogRow) -> Unit = { confirmDelete = it }
-        if (calendarView) {
-            CookCalendarView(
-                logs = logs,
-                plans = plans,
-                onOpenRecipe = onOpenRecipe,
-                onDelete = onDelete,
-                planDay = { date, rows ->
-                    PlanDayCard(
-                        date = date,
-                        rows = rows,
-                        onOpenRecipe = onOpenRecipe,
-                        onPrep = onPrep,
-                        onShopping = onShopping,
-                        onToday = onToday,
-                        modifier = Modifier.padding(top = 16.dp),
-                        showDate = false,
-                    )
-                },
-                modifier = Modifier.padding(padding).fillMaxSize(),
-            )
-        } else {
-            ListView(logs, onOpenRecipe, onDelete, Modifier.padding(padding).fillMaxSize())
-        }
-    }
-
-    confirmDelete?.let { log ->
-        AlertDialog(
-            onDismissRequest = { confirmDelete = null },
-            title = { Text("删除记录") },
-            text = { Text("删除「${DayText.label(log.date)}做了${log.title}」这条记录吗？") },
-            confirmButton = {
-                TextButton(onClick = {
-                    confirmDelete = null
-                    scope.launch { app.repository.deleteCookLog(log.uid) }
-                }) { Text("删除") }
-            },
-            dismissButton = { TextButton(onClick = { confirmDelete = null }) { Text("取消") } },
-        )
-    }
+        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
+    )
 }
 
 /** 「做了 3 次 · 约 1860 千卡」，都不知道热量时只写次数 */
-private fun summary(logs: List<CookLogRow>): String {
+internal fun summary(logs: List<CookLogRow>): String {
     val total = CookCalendar.total(logs.map { it.calories })
     return listOfNotNull("做了 ${logs.size} 次", total?.let(CalorieText::format)).joinToString(" · ")
 }
 
-@Composable
-private fun ListView(
+/** 以前做过的菜：按月份、日期分组，新的在前 */
+internal fun LazyListScope.cookLogItems(
     logs: List<CookLogRow>,
     onOpenRecipe: (Long) -> Unit,
     onDelete: (CookLogRow) -> Unit,
-    modifier: Modifier,
 ) {
     val months = logs.groupBy { DayText.month(it.date) }
-    LazyColumn(modifier, contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = 16.dp)) {
-        months.forEach { (month, monthLogs) ->
-            item(key = "month-$month") {
-                SectionHeader(
-                    month,
-                    Modifier.padding(top = 20.dp, bottom = 4.dp),
-                ) {
-                    Text(
-                        summary(monthLogs),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+    months.forEach { (month, monthLogs) ->
+        item(key = "month-$month") {
+            SectionHeader(
+                month,
+                Modifier.padding(top = 20.dp, bottom = 4.dp),
+            ) {
+                Text(
+                    summary(monthLogs),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
-            monthLogs.groupBy { it.date }.forEach { (date, dayLogs) ->
-                item(key = "day-$date") { DayHeading(date, dayLogs) }
-                logRows(dayLogs, onOpenRecipe, onDelete)
-            }
+        }
+        monthLogs.groupBy { it.date }.forEach { (date, dayLogs) ->
+            item(key = "day-$date") { DayHeading(date, dayLogs) }
+            logRows(dayLogs, onOpenRecipe, onDelete)
         }
     }
 }
@@ -218,17 +147,14 @@ private fun LazyListScope.logRows(
 
 /**
  * 月历：一格一天，做过菜的格子写几道菜、多少千卡，排了计划的格子写计划几道；
- * 点一天在下面列出那天做的菜和计划。planOnly 是做菜计划页用的，只看计划
+ * 点一天在下面用 day 列出那天排的和做过的菜
  */
 @Composable
 internal fun CookCalendarView(
     logs: List<CookLogRow>,
     plans: List<PlanRow>,
-    onOpenRecipe: (Long) -> Unit,
-    onDelete: (CookLogRow) -> Unit,
-    planDay: @Composable (date: String, rows: List<PlanRow>) -> Unit,
+    day: @Composable (date: String, plans: List<PlanRow>, logs: List<CookLogRow>) -> Unit,
     modifier: Modifier,
-    planOnly: Boolean = false,
 ) {
     val today = remember { LocalDate.now() }
     var monthText by rememberSaveable { mutableStateOf(YearMonth.from(today).toString()) }
@@ -252,11 +178,10 @@ internal fun CookCalendarView(
                     Text("${month.year}年${month.monthValue}月", style = MaterialTheme.typography.titleLarge)
                     val monthPlans = plans.count { it.date.startsWith("$monthText-") }
                     Text(
-                        when {
-                            planOnly -> if (monthPlans == 0) "这个月还没排菜" else "这个月排了 $monthPlans 道菜"
-                            monthLogs.isEmpty() -> "这个月还没做过菜"
-                            else -> summary(monthLogs)
-                        },
+                        listOfNotNull(
+                            monthLogs.takeIf { it.isNotEmpty() }?.let(::summary),
+                            "排了 $monthPlans 道".takeIf { monthPlans > 0 },
+                        ).joinToString(" · ").ifEmpty { "这个月还没排菜，也没做过菜" },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -308,34 +233,19 @@ internal fun CookCalendarView(
         item(key = "selected-$selected") {
             DayHeading(selected, dayLogs, Modifier.padding(start = 4.dp, top = 20.dp, bottom = 6.dp))
         }
-        // 今天和以后的日子主要看计划，没做过就不用再说一遍
-        val past = selected < today.toString()
+        // 以前的日子没排菜也没做过就说一声；今天和以后的日子可以加菜
         val dayPlans = plansByDate[selected].orEmpty()
-        if (planOnly) {
-            if (past && dayPlans.isEmpty()) {
-                item(key = "selected-empty") {
-                    Text(
-                        "这天没有排菜",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(start = 4.dp, top = 4.dp),
-                    )
-                }
-            }
-        } else if (dayLogs.isEmpty() && past) {
+        if (selected < today.toString() && dayPlans.isEmpty() && dayLogs.isEmpty()) {
             item(key = "selected-empty") {
                 Text(
-                    "这天没有做菜的记录",
+                    "这天没有排菜，也没有做菜的记录",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(start = 4.dp, top = 4.dp),
                 )
             }
         } else {
-            logRows(dayLogs, onOpenRecipe, onDelete)
-        }
-        if (!past || dayPlans.isNotEmpty()) {
-            item(key = "plan-$selected") { planDay(selected, dayPlans) }
+            item(key = "day-$selected") { day(selected, dayPlans, dayLogs) }
         }
     }
 }

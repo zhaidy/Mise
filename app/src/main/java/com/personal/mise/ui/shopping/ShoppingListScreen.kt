@@ -120,7 +120,7 @@ fun ShoppingListScreen(planFrom: String?, planDays: Int, onBack: () -> Unit) {
                     },
                     when {
                         rows.isNotEmpty() -> "这些菜还没有填用料。"
-                        planFrom != null -> "在「计划」里给这几天加几道菜。"
+                        planFrom != null -> "在「日历」里给这几天加几道菜。"
                         else -> "先在菜谱里挑几道菜加入今日菜单。"
                     },
                 )

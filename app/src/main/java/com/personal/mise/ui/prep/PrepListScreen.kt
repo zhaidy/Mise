@@ -206,7 +206,7 @@ fun PrepListScreen(planDate: String?, onBack: () -> Unit, onCook: () -> Unit) {
             if (planDate == null) {
                 EmptyState("备", "今日菜单是空的", "先在菜谱里挑几道菜加入今日菜单。", Modifier.padding(padding))
             } else {
-                EmptyState("备", "这天还没排菜", "在「计划」里给这天加几道菜。", Modifier.padding(padding))
+                EmptyState("备", "这天还没排菜", "在「日历」里给这天加几道菜。", Modifier.padding(padding))
             }
             return@Scaffold
         }

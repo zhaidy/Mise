@@ -53,7 +53,7 @@ import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
-/** 两种视图的切换，放在头部右上角；菜谱页是「卡片 / 菜单」，做菜记录是「列表 / 日历」 */
+/** 两种视图的切换，放在头部右上角；菜谱页是「卡片 / 菜单」，日历页是「列表 / 日历」 */
 @Composable
 internal fun ViewSwitch(second: Boolean, onChange: (Boolean) -> Unit, labels: Pair<String, String> = "卡片" to "菜单") {
     Surface(shape = CircleShape, color = MaterialTheme.colorScheme.surfaceContainerHigh) {
