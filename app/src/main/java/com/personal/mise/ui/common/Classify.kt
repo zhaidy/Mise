@@ -38,6 +38,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.personal.mise.data.Recipe
@@ -113,7 +114,8 @@ fun ClassifyFields(state: ClassifyState) {
             colors = miseFieldColors(),
             value = state.category,
             onValueChange = { state.category = it },
-            label = { Text("大类（可不填，如 家常菜、汤、甜点）") },
+            label = { OneLine("大类（可不填）") },
+            placeholder = { OneLine("如 家常菜、汤、甜点") },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
         )
@@ -126,7 +128,8 @@ fun ClassifyFields(state: ClassifyState) {
                 colors = miseFieldColors(),
                 value = state.subcategory,
                 onValueChange = { state.subcategory = it },
-                label = { Text("小类（可不填，如 炒菜、炖菜）") },
+                label = { OneLine("小类（可不填）") },
+                placeholder = { OneLine("如 炒菜、炖菜") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
             )
@@ -155,7 +158,8 @@ fun ClassifyFields(state: ClassifyState) {
             colors = miseFieldColors(),
             value = state.tagInput,
             onValueChange = state::updateTagInput,
-            label = { Text("加标签（如 荤菜、烘焙、好吃）") },
+            label = { OneLine("加标签（可不填）") },
+            placeholder = { OneLine("如 荤菜、烘焙、好吃") },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
@@ -178,6 +182,12 @@ fun ClassifyFields(state: ClassifyState) {
             }
         }
     }
+}
+
+/** 输入框的提示只占一行，放不下就省略，免得输入框被撑高 */
+@Composable
+private fun OneLine(text: String) {
+    Text(text, maxLines = 1, overflow = TextOverflow.Ellipsis)
 }
 
 /** 已有的名字，点一下选中，再点一下清空 */
