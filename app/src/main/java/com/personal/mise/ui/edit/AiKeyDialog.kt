@@ -25,6 +25,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -36,6 +37,11 @@ import androidx.compose.ui.unit.dp
 import com.personal.mise.ai.AiProvider
 import com.personal.mise.ai.GeminiClient
 import com.personal.mise.ui.common.rememberApp
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 
 /**
  * 选用哪家的 AI 并填写它的 API Key；已经填过的 Key 会带出来，可以直接切换。
@@ -58,6 +64,7 @@ fun AiKeyDialog(confirmLabel: String, onDismiss: () -> Unit, onConfirm: () -> Un
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 AiKeyFields(provider, { provider = it }, key, { keys = keys + (provider to it) })
+                if (provider == AiProvider.DEEPSEEK && key.isNotBlank()) DeepSeekBalance(key.trim())
                 if (provider == AiProvider.GEMINI) {
                     Spacer(Modifier.height(12.dp))
                     GeminiFallbackFields(
@@ -110,8 +117,13 @@ private fun GeminiFallbackFields(
     hasDeepSeekKey: Boolean,
 ) {
     val labels = GeminiClient.MODELS.toMap()
+    val usage = rememberApp().geminiUsage
+    val now = remember { System.currentTimeMillis() }
     Text("免费额度用完时依次换用", style = MaterialTheme.typography.bodyMedium)
-    Text("每个模型的免费额度分开算，从上往下试；点箭头调整顺序", style = MaterialTheme.typography.bodySmall)
+    Text(
+        "每个模型的免费额度分开算，从上往下试；点箭头调整顺序。Google 查不到剩余额度，次数是这台手机今天用的",
+        style = MaterialTheme.typography.bodySmall,
+    )
     order.forEachIndexed { i, model ->
         val checked = model in enabled
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -121,7 +133,12 @@ private fun GeminiFallbackFields(
                 enabled = !checked || enabled.size > 1,
                 onCheckedChange = { onEnabledChange(if (it) enabled + model else enabled - model) },
             )
-            Text(labels[model] ?: model, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+            Column(Modifier.weight(1f)) {
+                Text(labels[model] ?: model, style = MaterialTheme.typography.bodyMedium)
+                geminiUsageText(usage.exhaustedUntil(model, now), usage.count(model, now))?.let {
+                    Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
             IconButton(
                 enabled = i > 0,
                 onClick = { onOrderChange(order.toMutableList().apply { add(i - 1, removeAt(i)) }) },
@@ -139,6 +156,36 @@ private fun GeminiFallbackFields(
         }
         Switch(checked = deepSeekFallback, onCheckedChange = onDeepSeekFallbackChange)
     }
+}
+
+/** 模型今天的用量：额度用完了就说几点重置，否则说用了几次；还没用过返回 null */
+private fun geminiUsageText(exhaustedUntil: Long?, count: Int): String? = when {
+    exhaustedUntil != null -> {
+        val reset = Instant.ofEpochMilli(exhaustedUntil).atZone(ZoneId.systemDefault())
+        "今天额度用完了，${reset.format(DateTimeFormatter.ofPattern("HH:mm"))} 重置"
+    }
+    count > 0 -> "今天用了 $count 次"
+    else -> null
+}
+
+/** DeepSeek 账户余额，打开设置或改了 Key 时查一次 */
+@Composable
+private fun DeepSeekBalance(key: String) {
+    val app = rememberApp()
+    var text by remember(key) { mutableStateOf("正在查余额…") }
+    LaunchedEffect(key) {
+        // 正在输入 Key 时等停下来再查
+        delay(600)
+        text = try {
+            app.deepSeek.balance(key)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            "查不到余额：${e.message ?: e.javaClass.simpleName}"
+        }
+    }
+    Spacer(Modifier.height(4.dp))
+    Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
 
 /** 选 AI 服务商 + 填 Key 的输入框，AI 设置和「AI 整理笔记」共用 */

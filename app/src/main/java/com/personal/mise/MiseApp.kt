@@ -15,9 +15,9 @@ import com.personal.mise.ai.AiRecipeOrganizer
 import com.personal.mise.ai.AiSettings
 import com.personal.mise.ai.AiStepSplitter
 import com.personal.mise.ai.CellularNetwork
-import com.personal.mise.ai.ClaudeClient
 import com.personal.mise.ai.DeepSeekClient
 import com.personal.mise.ai.GeminiClient
+import com.personal.mise.ai.GeminiUsage
 import com.personal.mise.ai.SwitchableAiClient
 import com.personal.mise.backup.BackupManager
 import com.personal.mise.data.CalorieBudget
@@ -56,19 +56,23 @@ class MiseApp : Application() {
     val backup: BackupManager by lazy { BackupManager(this, database) }
     val pantry: Pantry by lazy { Pantry(this) }
     val calorieBudget: CalorieBudget by lazy { CalorieBudget(this) }
-    private val ai: AiClient by lazy {
-        val cellular = CellularNetwork(this)
-        val onCellularUsed = {
-            Handler(Looper.getMainLooper()).post {
-                Toast.makeText(this, "Wi-Fi 连不上，已改用移动数据", Toast.LENGTH_SHORT).show()
-            }
-            Unit
+    val geminiUsage: GeminiUsage by lazy { GeminiUsage(this) }
+    private val cellular: CellularNetwork by lazy { CellularNetwork(this) }
+    private val onCellularUsed = {
+        Handler(Looper.getMainLooper()).post {
+            Toast.makeText(this, "Wi-Fi 连不上，已改用移动数据", Toast.LENGTH_SHORT).show()
         }
+        Unit
+    }
+    /** 也用来在 AI 设置里查余额 */
+    val deepSeek: DeepSeekClient by lazy {
+        DeepSeekClient(aiSettings, AiHttp(aiSettings, cellular, readTimeoutSeconds = 120, onCellularUsed = onCellularUsed))
+    }
+    private val ai: AiClient by lazy {
         SwitchableAiClient(
             aiSettings,
-            GeminiClient(aiSettings, AiHttp(aiSettings, cellular, readTimeoutSeconds = 90, onCellularUsed = onCellularUsed)),
-            ClaudeClient(aiSettings, AiHttp(aiSettings, cellular, readTimeoutSeconds = 120, onCellularUsed = onCellularUsed)),
-            DeepSeekClient(aiSettings, AiHttp(aiSettings, cellular, readTimeoutSeconds = 120, onCellularUsed = onCellularUsed)),
+            GeminiClient(aiSettings, geminiUsage, AiHttp(aiSettings, cellular, readTimeoutSeconds = 90, onCellularUsed = onCellularUsed)),
+            deepSeek,
             onModelUsed = ::showModelUsed,
         )
     }

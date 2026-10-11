@@ -4,7 +4,7 @@ import com.personal.mise.importer.ImportException
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** 让大模型按 JSON Schema 返回 JSON；Gemini、Claude、DeepSeek 各有一个实现 */
+/** 让大模型按 JSON Schema 返回 JSON；Gemini、DeepSeek 各有一个实现 */
 interface AiClient {
     /** 返回模型回复里的 JSON 对象，出错时抛 ImportException；images 是一起发给模型看的 JPEG 图片 */
     suspend fun generate(prompt: String, schema: JSONObject, images: List<ByteArray> = emptyList()): JSONObject
@@ -18,7 +18,7 @@ interface AiProviderClient {
     suspend fun generate(prompt: String, schema: JSONObject, images: List<ByteArray> = emptyList()): AiReply
 }
 
-/** 把 API 返回的模型名变成好读的名字，比如 claude-opus-5-5 → Claude Opus 5.5、deepseek-flash → DeepSeek Flash */
+/** 把 API 返回的模型名变成好读的名字，比如 deepseek-flash → DeepSeek Flash */
 fun modelDisplayName(id: String): String {
     val words = id.split('-').filter { it.isNotEmpty() && !(it.length == 8 && it.all(Char::isDigit)) }
     val out = mutableListOf<String>()
@@ -41,7 +41,6 @@ fun modelDisplayName(id: String): String {
 class SwitchableAiClient(
     private val settings: AiSettings,
     private val gemini: AiProviderClient,
-    private val claude: AiProviderClient,
     private val deepseek: AiProviderClient,
     /** 每次调用成功后调用，参数是给用户看的提示，比如「AI 模型：Gemini 3.8 Flash」 */
     private val onModelUsed: (String) -> Unit = {},
@@ -57,7 +56,6 @@ class SwitchableAiClient(
                 onModelUsed("Gemini 免费额度用完了，这次用的是 ${fallback.model}")
                 return fallback.json
             }
-            AiProvider.CLAUDE -> claude.generate(prompt, schema, images)
             AiProvider.DEEPSEEK -> deepseek.generate(prompt, schema, images)
         }
         onModelUsed("AI 模型：${reply.model}")
@@ -82,7 +80,7 @@ fun networkErrorDetail(e: Throwable): String {
     return parts.distinct().joinToString("\n")
 }
 
-/** 标准 JSON Schema 的小工具；Claude 直接用，Gemini 由 [GeminiClient.toGeminiSchema] 转成它自己的格式 */
+/** 标准 JSON Schema 的小工具；DeepSeek 写进提示里，Gemini 由 [GeminiClient.toGeminiSchema] 转成它自己的格式 */
 object AiSchema {
     fun obj(vararg props: Pair<String, JSONObject>, required: List<String> = emptyList()): JSONObject =
         JSONObject().put("type", "object")

@@ -44,4 +44,16 @@ class DeepSeekClientTest {
         assertThrows(ImportException::class.java) { DeepSeekClient.replyJson(reply("不是 JSON")) }
         assertThrows(ImportException::class.java) { DeepSeekClient.replyJson(reply("""{"steps":[""", finish = "length")) }
     }
+
+    @Test
+    fun `余额显示成人看的文字`() {
+        val cny = """{"is_available":true,"balance_infos":[{"currency":"CNY","total_balance":"110.00","granted_balance":"10.00","topped_up_balance":"100.00"}]}"""
+        assertEquals("余额 ¥110.00", DeepSeekClient.balanceText(cny))
+        val both = """{"is_available":true,"balance_infos":[{"currency":"CNY","total_balance":"1.00"},{"currency":"USD","total_balance":"2.50"}]}"""
+        assertEquals("余额 ¥1.00、$2.50", DeepSeekClient.balanceText(both))
+        val empty = """{"is_available":false,"balance_infos":[{"currency":"CNY","total_balance":"0.00"}]}"""
+        assertTrue(DeepSeekClient.balanceText(empty).startsWith("余额 ¥0.00，不够用了"))
+        assertThrows(ImportException::class.java) { DeepSeekClient.balanceText("{}") }
+        assertThrows(ImportException::class.java) { DeepSeekClient.balanceText("不是 JSON") }
+    }
 }

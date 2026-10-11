@@ -71,6 +71,13 @@ class GeminiClientTest {
     }
 
     @Test
+    fun `用量按太平洋时间的日期算`() {
+        // 北京时间 10-11 10:00 在太平洋时间还是 10-10
+        assertEquals("2026-10-10", GeminiClient.quotaDay(Instant.parse("2026-10-11T02:00:00Z").toEpochMilli()))
+        assertEquals("2026-10-11", GeminiClient.quotaDay(Instant.parse("2026-10-11T07:00:00Z").toEpochMilli()))
+    }
+
+    @Test
     fun `默认先用最新的模型`() {
         assertEquals("gemini-3.8-flash", GeminiClient.MODELS.first().first)
     }
