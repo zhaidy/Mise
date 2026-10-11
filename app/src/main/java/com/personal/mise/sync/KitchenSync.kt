@@ -7,6 +7,7 @@ import com.google.firebase.auth.FirebaseAuthException
 import com.google.firebase.firestore.Blob
 import com.google.firebase.firestore.CollectionReference
 import com.google.firebase.firestore.DocumentReference
+import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.FirebaseFirestoreException
@@ -65,10 +66,15 @@ class KitchenSync(
     /** 最近一次同步出错的原因；同步正常时为 null */
     val error: StateFlow<String?> = _error.asStateFlow()
 
+    private val _memberCount = MutableStateFlow<Int?>(null)
+    /** 厨房里已经加入的人数（按手机算）；还没拿到或没加入为 null */
+    val memberCount: StateFlow<Int?> = _memberCount.asStateFlow()
+
     fun start() {
         scope.launch {
             _kitchenCode.collectLatest { code ->
                 _error.value = null
+                _memberCount.value = null
                 if (code != null) syncForever(code)
             }
         }
@@ -142,9 +148,14 @@ class KitchenSync(
         }
     }
 
-    /** 菜谱、今日菜单、做菜记录、图片、AI Key 各自同步，任何一个出错就整体重来 */
+    /** 成员人数、菜谱、今日菜单、做菜记录、图片、AI Key 各自同步，任何一个出错就整体重来 */
     private suspend fun sync(code: String, kitchen: DocumentReference) {
         coroutineScope {
+            launch {
+                snapshots(kitchen).collect { snap ->
+                    (snap.get("members") as? List<*>)?.let { _memberCount.value = it.size }
+                }
+            }
             launch {
                 syncCollection<SyncedRecipe>(
                     collection = kitchen.collection(RECIPES),
@@ -291,6 +302,13 @@ class KitchenSync(
 
     private fun snapshots(collection: CollectionReference): Flow<QuerySnapshot> = callbackFlow {
         val registration = collection.addSnapshotListener(MetadataChanges.INCLUDE) { snap, e ->
+            if (e != null) close(e) else if (snap != null) trySend(snap)
+        }
+        awaitClose { registration.remove() }
+    }
+
+    private fun snapshots(document: DocumentReference): Flow<DocumentSnapshot> = callbackFlow {
+        val registration = document.addSnapshotListener { snap, e ->
             if (e != null) close(e) else if (snap != null) trySend(snap)
         }
         awaitClose { registration.remove() }
