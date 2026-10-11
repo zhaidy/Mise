@@ -448,12 +448,17 @@ class EditorViewModel(
 
     // 保存
 
+    /** 导入后 AI 还在拆步骤、估用量或热量，结果会改内容，等它做完再保存 */
+    val importAiRunning: Boolean get() = isImport && (aiBusy || estimating || estimatingCalories)
+
+    val canSave: Boolean get() = !saving && !importAiRunning
+
     fun save(onSaved: (Long) -> Unit, onError: (String) -> Unit) {
         if (title.isBlank()) {
             onError("请填写菜名")
             return
         }
-        if (saving) return
+        if (!canSave) return
         saving = true
         viewModelScope.launch {
             try {
