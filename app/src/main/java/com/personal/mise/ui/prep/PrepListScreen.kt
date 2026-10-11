@@ -57,12 +57,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.personal.mise.data.IngredientKind
@@ -70,6 +72,8 @@ import com.personal.mise.data.RecipeFull
 import com.personal.mise.data.TodayRow
 import com.personal.mise.data.parseChecked
 import com.personal.mise.ui.common.rememberApp
+import com.personal.mise.ui.cooking.ModeSwitch
+import com.personal.mise.ui.cooking.recipeOverviewItems
 import com.personal.mise.util.AmountScaler
 import com.personal.mise.util.StepPhase
 import com.personal.mise.util.UnitText
@@ -118,6 +122,8 @@ fun PrepListScreen(onBack: () -> Unit, onCook: () -> Unit) {
         else combine(ids.map { app.repository.observeFull(it) }) { it.toList() }
     }.collectAsStateWithLifecycle(emptyList())
     var showDone by remember { mutableStateOf(false) }
+    // 切到整份菜谱，对照原始用料和步骤，看调料碗有没有配错
+    var showRecipe by rememberSaveable { mutableStateOf(false) }
 
     val recipes = rows.mapNotNull { row ->
         fulls.firstOrNull { it?.recipe?.id == row.recipeId }?.let { buildPrep(row, it, app.scaleOf(row.recipeId)) }
@@ -143,60 +149,67 @@ fun PrepListScreen(onBack: () -> Unit, onCook: () -> Unit) {
             EmptyState("备", "今日菜单是空的", "先在菜谱里挑几道菜加入今日菜单。", Modifier.padding(padding))
             return@Scaffold
         }
-        LazyColumn(
-            Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(
-                start = 20.dp,
-                end = 20.dp,
-                top = padding.calculateTopPadding() + 8.dp,
-                bottom = padding.calculateBottomPadding() + 16.dp,
-            ),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
-        ) {
-            item(key = "progress") { ProgressCard(done, total) }
-            recipes.forEach { recipe ->
-                val checked = parseChecked(recipe.row.bowlsChecked)
-                item(key = "recipe-${recipe.row.recipeId}") {
-                    SoftCard(Modifier.fillMaxWidth()) {
-                        Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 8.dp)) {
-                            Row(verticalAlignment = Alignment.Bottom) {
-                                Text(recipe.row.title, style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f, fill = false))
-                                app.scaleOf(recipe.row.recipeId).takeIf { it != 1.0 }?.let {
+        Column(Modifier.fillMaxSize().padding(top = padding.calculateTopPadding())) {
+            ModeSwitch(showRecipe, { showRecipe = it }, mainLabel = "备料")
+            if (showRecipe) {
+                RecipesOverview(recipes, fulls, Modifier.weight(1f), bottom = padding.calculateBottomPadding())
+                return@Column
+            }
+            LazyColumn(
+                Modifier.weight(1f),
+                contentPadding = PaddingValues(
+                    start = 20.dp,
+                    end = 20.dp,
+                    top = 8.dp,
+                    bottom = padding.calculateBottomPadding() + 16.dp,
+                ),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                item(key = "progress") { ProgressCard(done, total) }
+                recipes.forEach { recipe ->
+                    val checked = parseChecked(recipe.row.bowlsChecked)
+                    item(key = "recipe-${recipe.row.recipeId}") {
+                        SoftCard(Modifier.fillMaxWidth()) {
+                            Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 8.dp)) {
+                                Row(verticalAlignment = Alignment.Bottom) {
+                                    Text(recipe.row.title, style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f, fill = false))
+                                    app.scaleOf(recipe.row.recipeId).takeIf { it != 1.0 }?.let {
+                                        Text(
+                                            " ${AmountScaler.label(it)}",
+                                            style = MaterialTheme.typography.labelLarge,
+                                            color = MaterialTheme.colorScheme.primary,
+                                        )
+                                    }
+                                    Spacer(Modifier.weight(1f))
                                     Text(
-                                        " ${AmountScaler.label(it)}",
-                                        style = MaterialTheme.typography.labelLarge,
-                                        color = MaterialTheme.colorScheme.primary,
+                                        "${checked.count { it in recipe.allKeys }} / ${recipe.allKeys.size}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
                                 }
-                                Spacer(Modifier.weight(1f))
-                                Text(
-                                    "${checked.count { it in recipe.allKeys }} / ${recipe.allKeys.size}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                            recipe.sections.forEach { section ->
-                                val accent = when (section.name) {
-                                    "调料碗" -> MaterialTheme.colorScheme.tertiary
-                                    "备菜" -> MaterialTheme.colorScheme.secondary
-                                    else -> MaterialTheme.colorScheme.primary
-                                }
-                                Text(
-                                    section.name,
-                                    style = MaterialTheme.typography.labelMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = accent,
-                                    modifier = Modifier.padding(top = 12.dp, bottom = 2.dp),
-                                )
-                                section.items.forEach { prep ->
-                                    CheckRow(
-                                        title = prep.title,
-                                        detail = prep.detail,
-                                        checked = prep.key in checked,
-                                        onToggle = { toggle(recipe, prep.key) },
-                                        accent = accent,
-                                        bold = section.name == "调料碗",
+                                recipe.sections.forEach { section ->
+                                    val accent = when (section.name) {
+                                        "调料碗" -> MaterialTheme.colorScheme.tertiary
+                                        "备菜" -> MaterialTheme.colorScheme.secondary
+                                        else -> MaterialTheme.colorScheme.primary
+                                    }
+                                    Text(
+                                        section.name,
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = accent,
+                                        modifier = Modifier.padding(top = 12.dp, bottom = 2.dp),
                                     )
+                                    section.items.forEach { prep ->
+                                        CheckRow(
+                                            title = prep.title,
+                                            detail = prep.detail,
+                                            checked = prep.key in checked,
+                                            onToggle = { toggle(recipe, prep.key) },
+                                            accent = accent,
+                                            bold = section.name == "调料碗",
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -214,6 +227,39 @@ fun PrepListScreen(onBack: () -> Unit, onCook: () -> Unit) {
             confirmButton = { TextButton(onClick = { showDone = false; onCook() }) { Text("开始做菜") } },
             dismissButton = { TextButton(onClick = { showDone = false }) { Text("再看看") } },
         )
+    }
+}
+
+/** 今日菜单里每道菜的完整菜谱：用料、调料碗、步骤，用量按换算倍率显示 */
+@Composable
+private fun RecipesOverview(recipes: List<PrepRecipe>, fulls: List<RecipeFull?>, modifier: Modifier, bottom: Dp) {
+    val app = rememberApp()
+    LazyColumn(modifier.fillMaxWidth(), contentPadding = PaddingValues(top = 8.dp, bottom = bottom + 24.dp)) {
+        recipes.forEachIndexed { index, recipe ->
+            val full = fulls.firstOrNull { it?.recipe?.id == recipe.row.recipeId } ?: return@forEachIndexed
+            val factor = app.scaleOf(recipe.row.recipeId)
+            item(key = "title-${recipe.row.recipeId}") {
+                Column {
+                    if (index > 0) HorizontalDivider(Modifier.padding(horizontal = 20.dp, vertical = 16.dp))
+                    Row(Modifier.padding(horizontal = 20.dp), verticalAlignment = Alignment.Bottom) {
+                        Text(recipe.row.title, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f, fill = false))
+                        factor.takeIf { it != 1.0 }?.let {
+                            Text(
+                                " ${AmountScaler.label(it)}",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                    }
+                }
+            }
+            recipeOverviewItems(
+                data = full,
+                factor = factor,
+                cookStart = StepPhase.cookStart(full.steps.map { it.text }),
+                keyPrefix = "r${recipe.row.recipeId}-",
+            )
+        }
     }
 }
 

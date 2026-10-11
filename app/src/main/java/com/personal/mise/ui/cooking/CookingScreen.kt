@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -352,16 +353,16 @@ private fun RecipePager(
     }
 }
 
-/** 「做菜 / 菜谱」切换：做菜是一步一页，菜谱是整份用料和全部步骤 */
+/** 「做菜 / 菜谱」切换：做菜是一步一页，菜谱是整份用料和全部步骤；备料清单也用它切到菜谱 */
 @Composable
-private fun ModeSwitch(showRecipe: Boolean, onChange: (Boolean) -> Unit) {
+internal fun ModeSwitch(showRecipe: Boolean, onChange: (Boolean) -> Unit, mainLabel: String = "做菜") {
     Surface(
         shape = CircleShape,
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
         modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp),
     ) {
         Row(Modifier.padding(4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            ModeOption("做菜", selected = !showRecipe, onClick = { onChange(false) }, modifier = Modifier.weight(1f))
+            ModeOption(mainLabel, selected = !showRecipe, onClick = { onChange(false) }, modifier = Modifier.weight(1f))
             ModeOption("菜谱", selected = showRecipe, onClick = { onChange(true) }, modifier = Modifier.weight(1f))
         }
     }
@@ -393,80 +394,96 @@ private fun RecipeOverview(
     onJump: (Int) -> Unit,
     modifier: Modifier,
 ) {
+    LazyColumn(modifier.fillMaxWidth(), contentPadding = PaddingValues(bottom = 24.dp)) {
+        recipeOverviewItems(data, factor, cookStart, currentStep, onJump)
+    }
+}
+
+/**
+ * 整份菜谱的列表项，做菜页和备料清单共用。
+ * [onJump] 为 null 时步骤不能点；[keyPrefix] 让一个列表里放多道菜时 key 不重复。
+ */
+internal fun LazyListScope.recipeOverviewItems(
+    data: RecipeFull,
+    factor: Double,
+    cookStart: Int?,
+    currentStep: Int = -1,
+    onJump: ((Int) -> Unit)? = null,
+    keyPrefix: String = "",
+) {
     val mains = data.ingredients.filter { it.kind != IngredientKind.SEASONING }
     val seasonings = data.ingredients.filter { it.kind == IngredientKind.SEASONING }
-    LazyColumn(modifier.fillMaxWidth(), contentPadding = PaddingValues(bottom = 24.dp)) {
-        item(key = "mains-title") { SectionHeader("主料", Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 4.dp)) }
-        item(key = "mains") { IngredientTable(mains, factor) }
-        item(key = "seasonings-title") {
+    item(key = keyPrefix + "mains-title") { SectionHeader("主料", Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 4.dp)) }
+    item(key = keyPrefix + "mains") { IngredientTable(mains, factor) }
+    item(key = keyPrefix + "seasonings-title") {
+        SectionHeader(
+            "调料",
+            Modifier.padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 4.dp),
+            accent = MaterialTheme.colorScheme.secondary,
+        )
+    }
+    item(key = keyPrefix + "seasonings") { IngredientTable(seasonings, factor) }
+    if (data.bowls.isNotEmpty()) {
+        item(key = keyPrefix + "bowls-title") {
             SectionHeader(
-                "调料",
+                "调料碗",
                 Modifier.padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 4.dp),
-                accent = MaterialTheme.colorScheme.secondary,
+                accent = MaterialTheme.colorScheme.tertiary,
             )
         }
-        item(key = "seasonings") { IngredientTable(seasonings, factor) }
-        if (data.bowls.isNotEmpty()) {
-            item(key = "bowls-title") {
-                SectionHeader(
-                    "调料碗",
-                    Modifier.padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 4.dp),
-                    accent = MaterialTheme.colorScheme.tertiary,
-                )
-            }
-            items(data.bowls, key = { "bowl-${it.bowl.id}" }) { bowl ->
-                val stepIndex = data.steps.indexOfFirst { it.id == bowl.bowl.stepId }
-                BowlCard(bowl, if (stepIndex >= 0) StepPhase.bowlStepLabel(stepIndex, cookStart, data.steps[stepIndex].text) else null, factor)
-            }
+        items(data.bowls, key = { keyPrefix + "bowl-${it.bowl.id}" }) { bowl ->
+            val stepIndex = data.steps.indexOfFirst { it.id == bowl.bowl.stepId }
+            BowlCard(bowl, if (stepIndex >= 0) StepPhase.bowlStepLabel(stepIndex, cookStart, data.steps[stepIndex].text) else null, factor)
         }
-        if (data.steps.isNotEmpty()) {
-            item(key = "steps-title") {
-                SectionHeader(
-                    "步骤",
-                    Modifier.padding(start = 20.dp, end = 20.dp, top = 24.dp, bottom = 8.dp),
-                    accent = MaterialTheme.colorScheme.secondary,
-                    hint = "点一步，回到做菜从这步接着做",
-                )
-            }
-            itemsIndexed(data.steps, key = { _, s -> "step-${s.id}" }) { index, step ->
-                val current = index == currentStep
-                Surface(
-                    onClick = { onJump(index) },
-                    shape = RoundedCornerShape(20.dp),
-                    color = if (current) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
-                    contentColor = if (current) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
-                ) {
-                    Row(Modifier.padding(horizontal = 12.dp, vertical = 12.dp)) {
-                        Box(
-                            Modifier.size(32.dp).background(
-                                if (current) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                                CircleShape,
-                            ),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Text(
-                                "${index + 1}",
-                                color = if (current) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.background,
-                                fontFamily = SerifFamily,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 15.sp,
-                            )
+    }
+    if (data.steps.isNotEmpty()) {
+        item(key = keyPrefix + "steps-title") {
+            SectionHeader(
+                "步骤",
+                Modifier.padding(start = 20.dp, end = 20.dp, top = 24.dp, bottom = 8.dp),
+                accent = MaterialTheme.colorScheme.secondary,
+                hint = if (onJump != null) "点一步，回到做菜从这步接着做" else null,
+            )
+        }
+        itemsIndexed(data.steps, key = { _, s -> keyPrefix + "step-${s.id}" }) { index, step ->
+            val current = index == currentStep
+            Surface(
+                onClick = { onJump?.invoke(index) },
+                enabled = onJump != null,
+                shape = RoundedCornerShape(20.dp),
+                color = if (current) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+                contentColor = if (current) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
+            ) {
+                Row(Modifier.padding(horizontal = 12.dp, vertical = 12.dp)) {
+                    Box(
+                        Modifier.size(32.dp).background(
+                            if (current) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                            CircleShape,
+                        ),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            "${index + 1}",
+                            color = if (current) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.background,
+                            fontFamily = SerifFamily,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp,
+                        )
+                    }
+                    Spacer(Modifier.width(14.dp))
+                    Column(Modifier.weight(1f).padding(top = 4.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        when {
+                            current -> Text("正在做", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                            cookStart != null && index == cookStart -> Text("开火", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                         }
-                        Spacer(Modifier.width(14.dp))
-                        Column(Modifier.weight(1f).padding(top = 4.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            when {
-                                current -> Text("正在做", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
-                                cookStart != null && index == cookStart -> Text("开火", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
-                            }
-                            Text(step.text, style = MaterialTheme.typography.bodyLarge)
-                            data.bowlsForStep(step.id).forEach { bowl ->
-                                Text(
-                                    "倒入${bowl.bowl.label}",
-                                    style = MaterialTheme.typography.labelLarge,
-                                    color = MaterialTheme.colorScheme.tertiary,
-                                )
-                            }
+                        Text(step.text, style = MaterialTheme.typography.bodyLarge)
+                        data.bowlsForStep(step.id).forEach { bowl ->
+                            Text(
+                                "倒入${bowl.bowl.label}",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.tertiary,
+                            )
                         }
                     }
                 }
