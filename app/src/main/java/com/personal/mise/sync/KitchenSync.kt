@@ -12,6 +12,7 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.FirebaseFirestoreException
 import com.google.firebase.firestore.MetadataChanges
 import com.google.firebase.firestore.QuerySnapshot
+import com.personal.mise.ai.AiSettings
 import com.personal.mise.data.CookLog
 import com.personal.mise.data.RecipeRepository
 import com.personal.mise.data.RecipeStamp
@@ -41,14 +42,15 @@ import java.security.SecureRandom
  * 共享厨房：同一个厨房里的手机共用一份菜谱。
  *
  * 云端是 kitchens/{邀请码}/recipes/{uid}（每道菜一个文档）、kitchens/{邀请码}/today/{uid}（今日菜单）、
- * kitchens/{邀请码}/history/{菜谱 uid_日期}（做菜记录）
- * 和 kitchens/{邀请码}/images/{文件名}（图片）。本地和云端任何一边变了，
- * 就逐道菜比较 updatedAt，新的覆盖旧的。Firestore 自带离线缓存，没网时的改动联网后补传。
+ * kitchens/{邀请码}/history/{菜谱 uid_日期}（做菜记录）、kitchens/{邀请码}/images/{文件名}（图片）
+ * 和 kitchens/{邀请码}/aiKeys/{服务商}（AI 的 API Key）。本地和云端任何一边变了，
+ * 就逐条比较 updatedAt，新的覆盖旧的。Firestore 自带离线缓存，没网时的改动联网后补传。
  */
 class KitchenSync(
     context: Context,
     private val repository: RecipeRepository,
     private val images: ImageStore,
+    private val aiSettings: AiSettings,
     private val scope: CoroutineScope,
 ) {
     private val prefs = context.getSharedPreferences("kitchen", Context.MODE_PRIVATE)
@@ -140,7 +142,7 @@ class KitchenSync(
         }
     }
 
-    /** 菜谱、今日菜单、做菜记录、图片各自同步，任何一个出错就整体重来 */
+    /** 菜谱、今日菜单、做菜记录、图片、AI Key 各自同步，任何一个出错就整体重来 */
     private suspend fun sync(code: String, kitchen: DocumentReference) {
         coroutineScope {
             launch {
@@ -174,6 +176,16 @@ class KitchenSync(
                 )
             }
             launch { syncImages(code, kitchen.collection(IMAGES)) }
+            launch {
+                syncCollection<SyncedAiKey>(
+                    collection = kitchen.collection(AI_KEYS),
+                    localStamps = aiSettings.observeKeyStamps(),
+                    parse = { id, data -> SyncedAiKey.fromMap(id, data) },
+                    updatedAt = { it.updatedAt },
+                    apply = { aiSettings.applyRemoteKey(it.provider, it.key, it.updatedAt) },
+                    load = { id -> SyncedAiKey.local(aiSettings, id)?.toMap() },
+                )
+            }
         }
     }
 
@@ -292,6 +304,7 @@ class KitchenSync(
         const val TODAY = "today"
         const val IMAGES = "images"
         const val HISTORY = "history"
+        const val AI_KEYS = "aiKeys"
         const val KEY_UPLOADED_PREFIX = "images_done_"
         const val IMAGE_TIMEOUT_MS = 60_000L
         const val IMAGE_RETRY_FIRST_MS = 5_000L

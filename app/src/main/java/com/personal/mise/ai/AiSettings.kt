@@ -1,6 +1,11 @@
 package com.personal.mise.ai
 
 import android.content.Context
+import com.personal.mise.data.RecipeStamp
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.update
 
 enum class AiProvider(val label: String, val keyHelp: String) {
     GEMINI("Gemini", "在 aistudio.google.com 免费申请"),
@@ -8,9 +13,10 @@ enum class AiProvider(val label: String, val keyHelp: String) {
     DEEPSEEK("DeepSeek", "在 platform.deepseek.com 申请，预付费，余额用完就停、不会自动扣费"),
 }
 
-/** 用哪家的 AI 和各家的 API Key，只存在本机，不会跟菜谱一起导出 */
+/** 用哪家的 AI 和各家的 API Key，存在本机，不会跟菜谱一起导出；加入共享厨房时 Key 会同步给厨房里的人 */
 class AiSettings(context: Context) {
     private val prefs = context.getSharedPreferences("ai", Context.MODE_PRIVATE)
+    private val keysChanged = MutableStateFlow(0)
 
     var provider: AiProvider
         get() = prefs.getString(PROVIDER, null)?.let { name -> AiProvider.entries.firstOrNull { it.name == name } } ?: AiProvider.GEMINI
@@ -20,8 +26,33 @@ class AiSettings(context: Context) {
 
     fun key(provider: AiProvider): String = prefs.getString(keyName(provider), "").orEmpty()
 
+    /** Key 上次修改的时间；改之前就填好的 Key 是 0 */
+    fun keyUpdatedAt(provider: AiProvider): Long = prefs.getLong(keyName(provider) + UPDATED_AT_SUFFIX, 0)
+
+    /** 没改就不动，免得 AI 设置每次确认都把没碰过的 Key 当成新改的同步出去 */
     fun saveKey(provider: AiProvider, key: String) {
-        prefs.edit().putString(keyName(provider), key.trim()).apply()
+        val trimmed = key.trim()
+        if (trimmed == key(provider)) return
+        writeKey(provider, trimmed, System.currentTimeMillis())
+    }
+
+    /** 共享厨房里别人改了 Key，同步到本机 */
+    fun applyRemoteKey(provider: AiProvider, key: String, updatedAt: Long) = writeKey(provider, key.trim(), updatedAt)
+
+    private fun writeKey(provider: AiProvider, key: String, updatedAt: Long) {
+        prefs.edit()
+            .putString(keyName(provider), key)
+            .putLong(keyName(provider) + UPDATED_AT_SUFFIX, updatedAt)
+            .apply()
+        keysChanged.update { it + 1 }
+    }
+
+    /** 填过（包括清空过）的 Key 和修改时间，uid 是服务商的名字；给共享厨房同步用 */
+    fun observeKeyStamps(): Flow<List<RecipeStamp>> = keysChanged.map {
+        AiProvider.entries.mapNotNull { p ->
+            val at = keyUpdatedAt(p)
+            RecipeStamp(p.name, at).takeIf { at > 0 || key(p).isNotBlank() }
+        }
     }
 
     /** Wi-Fi 连不上 AI 服务器时，是否改用移动数据再试一次 */
@@ -57,6 +88,7 @@ class AiSettings(context: Context) {
         const val CELLULAR_FALLBACK = "cellular_fallback"
         const val GEMINI_MODELS = "gemini_models"
         const val DEEPSEEK_FALLBACK = "deepseek_fallback"
+        const val UPDATED_AT_SUFFIX = "_updated_at"
 
         fun keyName(provider: AiProvider) = when (provider) {
             AiProvider.GEMINI -> "gemini_key"
