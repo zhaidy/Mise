@@ -16,6 +16,7 @@ class DeepSeekClientTest {
         val schema = AiSchema.obj("steps" to AiSchema.array(AiSchema.stepSchema), required = listOf("steps"))
         val body = DeepSeekClient.requestBody("拆分步骤", schema)
         assertEquals("json_object", body.getJSONObject("response_format").getString("type"))
+        assertEquals("disabled", body.getJSONObject("thinking").getString("type"))
         val messages = body.getJSONArray("messages")
         val system = messages.getJSONObject(0)
         assertEquals("system", system.getString("role"))

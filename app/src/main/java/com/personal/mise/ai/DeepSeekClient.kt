@@ -13,6 +13,8 @@ import java.util.Base64
 /**
  * 调用 DeepSeek 的 OpenAI 格式接口。它只支持 JSON 模式（json_object），不认 JSON Schema，
  * 所以把 schema 写进系统提示，让模型照着返回。
+ * 思考模式默认开着，思考过程也算在 max_tokens 里，分调料碗这种要琢磨的活会把额度想光、
+ * 正式回复被截断；这些都是照格式整理的活，关掉思考。
  */
 class DeepSeekClient(private val settings: AiSettings, private val http: AiHttp) : AiProviderClient {
 
@@ -53,6 +55,7 @@ class DeepSeekClient(private val settings: AiSettings, private val http: AiHttp)
             .put("model", MODEL)
             .put("temperature", 0.2)
             .put("max_tokens", 8000)
+            .put("thinking", JSONObject().put("type", "disabled"))
             .put("response_format", JSONObject().put("type", "json_object"))
             .put(
                 "messages",
