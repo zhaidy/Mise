@@ -2,6 +2,8 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
+    // 读取 app/google-services.json（CI 从 Secrets 写入，不进仓库）
+    alias(libs.plugins.google.services)
 }
 
 android {
@@ -78,6 +80,10 @@ dependencies {
     ksp(libs.room.compiler)
 
     implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.kotlinx.coroutines.play.services)
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.auth)
+    implementation(libs.firebase.firestore)
     implementation(libs.okhttp)
     implementation(libs.jsoup)
     compileOnly(libs.jspecify)

@@ -1,0 +1,121 @@
+package com.personal.mise.sync
+
+import com.personal.mise.data.RecipeFull
+
+/**
+ * 一道菜在云端的样子：菜谱、用料、步骤、调料碗打包成一个文档。
+ * 本地 id 只在一台手机上有意义，所以调料碗按下标引用用料和步骤。
+ */
+data class SyncedRecipe(
+    val uid: String,
+    val title: String,
+    val coverImage: String?,
+    val sourceUrl: String?,
+    val servings: String?,
+    val createdAt: Long,
+    val updatedAt: Long,
+    val deleted: Boolean,
+    val bowlsManual: Boolean,
+    val ingredients: List<SyncedIngredient>,
+    val steps: List<SyncedStep>,
+    val bowls: List<SyncedBowl>,
+) {
+    fun toMap(): Map<String, Any?> = mapOf(
+        "schema" to SCHEMA,
+        "title" to title,
+        "coverImage" to coverImage,
+        "sourceUrl" to sourceUrl,
+        "servings" to servings,
+        "createdAt" to createdAt,
+        "updatedAt" to updatedAt,
+        "deleted" to deleted,
+        "bowlsManual" to bowlsManual,
+        "ingredients" to ingredients.map { mapOf("name" to it.name, "amountText" to it.amountText, "kind" to it.kind) },
+        "steps" to steps.map { mapOf("text" to it.text, "image" to it.image, "timerSeconds" to it.timerSeconds) },
+        "bowls" to bowls.map { bowl ->
+            mapOf(
+                "label" to bowl.label,
+                "stepIndex" to bowl.stepIndex,
+                "items" to bowl.items.map { mapOf("ingredientIndex" to it.ingredientIndex, "amountText" to it.amountText) },
+            )
+        },
+    )
+
+    companion object {
+        const val SCHEMA = 1
+
+        fun from(full: RecipeFull): SyncedRecipe {
+            val ingredientIndex = full.ingredients.withIndex().associate { (i, g) -> g.id to i }
+            val stepIndex = full.steps.withIndex().associate { (i, s) -> s.id to i }
+            val r = full.recipe
+            return SyncedRecipe(
+                uid = r.uid,
+                title = r.title,
+                coverImage = r.coverImage,
+                sourceUrl = r.sourceUrl,
+                servings = r.servings,
+                createdAt = r.createdAt,
+                updatedAt = r.updatedAt,
+                deleted = r.deleted,
+                bowlsManual = r.bowlsManual,
+                ingredients = full.ingredients.map { SyncedIngredient(it.name, it.amountText, it.kind) },
+                steps = full.steps.map { SyncedStep(it.text, it.image, it.timerSeconds) },
+                bowls = full.bowls.map { b ->
+                    SyncedBowl(
+                        label = b.bowl.label,
+                        stepIndex = b.bowl.stepId?.let { stepIndex[it] },
+                        items = b.items.mapNotNull { item ->
+                            ingredientIndex[item.ingredientId]?.let { SyncedBowlItem(it, item.amountText) }
+                        },
+                    )
+                },
+            )
+        }
+
+        /** Firestore 读回来的数字都是 Long；格式不对或来自更新的版本时返回 null */
+        fun fromMap(uid: String, data: Map<String, Any?>): SyncedRecipe? = runCatching {
+            if (((data["schema"] as? Number)?.toInt() ?: return null) > SCHEMA) return null
+            val ingredients = list(data["ingredients"]).map {
+                SyncedIngredient(it["name"] as String, it["amountText"] as String, it["kind"] as String)
+            }
+            val steps = list(data["steps"]).map {
+                SyncedStep(it["text"] as String, it["image"] as String?, (it["timerSeconds"] as Number?)?.toInt())
+            }
+            val bowls = list(data["bowls"]).map { bowl ->
+                SyncedBowl(
+                    label = bowl["label"] as String,
+                    stepIndex = (bowl["stepIndex"] as Number?)?.toInt()?.takeIf { it in steps.indices },
+                    items = list(bowl["items"]).mapNotNull { item ->
+                        val index = (item["ingredientIndex"] as Number).toInt()
+                        if (index in ingredients.indices) SyncedBowlItem(index, item["amountText"] as String) else null
+                    },
+                )
+            }
+            SyncedRecipe(
+                uid = uid,
+                title = data["title"] as String,
+                coverImage = data["coverImage"] as String?,
+                sourceUrl = data["sourceUrl"] as String?,
+                servings = data["servings"] as String?,
+                createdAt = (data["createdAt"] as Number).toLong(),
+                updatedAt = (data["updatedAt"] as Number).toLong(),
+                deleted = data["deleted"] as Boolean,
+                bowlsManual = data["bowlsManual"] as Boolean,
+                ingredients = ingredients,
+                steps = steps,
+                bowls = bowls,
+            )
+        }.getOrNull()
+
+        @Suppress("UNCHECKED_CAST")
+        private fun list(value: Any?): List<Map<String, Any?>> = (value as List<*>).map { it as Map<String, Any?> }
+    }
+}
+
+data class SyncedIngredient(val name: String, val amountText: String, val kind: String)
+
+data class SyncedStep(val text: String, val image: String?, val timerSeconds: Int?)
+
+data class SyncedBowl(val label: String, val stepIndex: Int?, val items: List<SyncedBowlItem>)
+
+data class SyncedBowlItem(val ingredientIndex: Int, val amountText: String)
