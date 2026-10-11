@@ -17,6 +17,7 @@ class XiaohongshuParserTest {
     @Test
     fun `识别小红书链接`() {
         assertTrue(XiaohongshuParser.isNoteUrl("http://xhslink.com/a/AbCdEf"))
+        assertTrue(XiaohongshuParser.isNoteUrl("https://xhslink.cn/o/32yv0Wq7FMZ"))
         assertTrue(XiaohongshuParser.isNoteUrl("https://www.xiaohongshu.com/explore/66aabbccdd?xsec_token=x"))
         assertTrue(XiaohongshuParser.isNoteUrl("https://www.xiaohongshu.com/discovery/item/66aabbccdd"))
         assertFalse(XiaohongshuParser.isNoteUrl("https://www.xiachufang.com/recipe/100403615/"))
@@ -29,6 +30,13 @@ class XiaohongshuParserTest {
             "http://xhslink.com/a/AbCdEf，复制本条信息，打开【小红书】App查看精彩内容！"
         assertTrue(UrlExtractor.isLinkShare(shared))
         assertEquals("http://xhslink.com/a/AbCdEf", UrlExtractor.firstUrl(shared))
+    }
+
+    @Test
+    fun `xhslink cn 短链的分享文字`() {
+        val shared = "今年出炉的第3款面包｜第一次做港式菠萝包 慢慢解锁我... https://xhslink.cn/o/32yv0Wq7FMZ 把文本复制下来，打开【小红书】即可查看。"
+        assertEquals("https://xhslink.cn/o/32yv0Wq7FMZ", UrlExtractor.firstUrl(shared))
+        assertTrue(XiaohongshuParser.isNoteUrl(UrlExtractor.firstUrl(shared)!!))
     }
 
     @Test

@@ -24,6 +24,14 @@ import com.personal.mise.ui.common.CircleIconButton
 import com.personal.mise.ui.edit.AiKeyDialog
 import com.personal.mise.importer.ImportException
 import com.personal.mise.util.CalorieText
+import com.personal.mise.data.CalorieBudget
+import com.personal.mise.data.CalorieLimit
+import com.personal.mise.ui.common.FieldShape
+import com.personal.mise.ui.common.miseFieldColors
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.ui.text.input.KeyboardType
 import kotlinx.coroutines.CancellationException
 import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material3.CircularProgressIndicator
@@ -95,6 +103,8 @@ fun TodayScreen(
     var estimating by remember { mutableStateOf(false) }
     var calorieMessage by remember { mutableStateOf<String?>(null) }
     var askingKey by remember { mutableStateOf(false) }
+    val limit by app.calorieBudget.limit.collectAsStateWithLifecycle()
+    var editingLimit by remember { mutableStateOf(false) }
 
     /** 让 AI 把还没算热量的菜逐道估一下 */
     fun estimateMissing() {
@@ -192,6 +202,8 @@ fun TodayScreen(
                     CaloriesSummary(
                         rows = items,
                         factorOf = app::scaleOf,
+                        limit = limit,
+                        onEditLimit = { editingLimit = true },
                         estimating = estimating,
                         message = calorieMessage,
                         onEstimate = { if (app.aiSettings.hasKey) estimateMissing() else askingKey = true },
@@ -233,6 +245,17 @@ fun TodayScreen(
         )
     }
 
+    if (editingLimit) {
+        CalorieLimitDialog(
+            current = limit,
+            onDismiss = { editingLimit = false },
+            onSave = {
+                app.calorieBudget.save(it)
+                editingLimit = false
+            },
+        )
+    }
+
     if (confirmClear) {
         AlertDialog(
             onDismissRequest = { confirmClear = false },
@@ -249,11 +272,13 @@ fun TodayScreen(
     }
 }
 
-/** 今日菜单一共多少千卡；按每道菜现在的换算倍率算 */
+/** 今日菜单一共多少千卡；按每道菜现在的换算倍率算，超过「人数 × 每人上限」时提醒超了多少 */
 @Composable
 private fun CaloriesSummary(
     rows: List<TodayRow>,
     factorOf: (Long) -> Double,
+    limit: CalorieLimit,
+    onEditLimit: () -> Unit,
     estimating: Boolean,
     message: String?,
     onEstimate: () -> Unit,
@@ -261,34 +286,100 @@ private fun CaloriesSummary(
     val known = rows.filter { it.calories != null }
     val missing = rows.size - known.size
     val total = known.sumOf { CalorieText.scaled(it.calories!!, factorOf(it.recipeId)) }
+    val over = if (known.isEmpty()) null else CalorieText.overBy(total, limit.diners, limit.perPerson)
     Surface(
         Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(24.dp),
-        color = MaterialTheme.colorScheme.secondaryContainer,
-        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+        color = if (over != null) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.secondaryContainer,
+        contentColor = if (over != null) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSecondaryContainer,
     ) {
-        Row(Modifier.padding(start = 18.dp, end = 8.dp, top = 14.dp, bottom = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text("今日热量", style = MaterialTheme.typography.labelMedium)
-                Text(
-                    if (known.isEmpty()) "还没算" else CalorieText.format(total),
-                    style = MaterialTheme.typography.titleLarge,
-                )
-                val detail = when {
-                    missing == 0 -> "${rows.size} 道菜，整道菜的热量加起来"
-                    known.isEmpty() -> "可以让 AI 按用料估算每道菜的热量"
-                    else -> "还有 $missing 道菜没算热量，没算进去"
+        Column(Modifier.padding(start = 18.dp, end = 8.dp, top = 14.dp, bottom = 14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text("今日热量", style = MaterialTheme.typography.labelMedium)
+                    Text(
+                        if (known.isEmpty()) "还没算" else CalorieText.format(total),
+                        style = MaterialTheme.typography.titleLarge,
+                    )
+                    val detail = when {
+                        missing == 0 -> "${rows.size} 道菜，整道菜的热量加起来"
+                        known.isEmpty() -> "可以让 AI 按用料估算每道菜的热量"
+                        else -> "还有 $missing 道菜没算热量，没算进去"
+                    }
+                    Text(detail, style = MaterialTheme.typography.bodySmall)
+                    message?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
                 }
-                Text(detail, style = MaterialTheme.typography.bodySmall)
-                message?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+                if (estimating) {
+                    CircularProgressIndicator(Modifier.padding(12.dp).size(20.dp), strokeWidth = 2.dp)
+                } else if (missing > 0) {
+                    TextButton(onClick = onEstimate) { Text("AI 估算") }
+                }
             }
-            if (estimating) {
-                CircularProgressIndicator(Modifier.padding(12.dp).size(20.dp), strokeWidth = 2.dp)
-            } else if (missing > 0) {
-                TextButton(onClick = onEstimate) { Text("AI 估算") }
+            if (over != null) {
+                Text(
+                    "超了约 $over 千卡（每人多约 ${CalorieText.perPerson(over, limit.diners)}）",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+            Row(
+                Modifier.fillMaxWidth().padding(end = 10.dp).clip(RoundedCornerShape(12.dp)).clickable(onClick = onEditLimit),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                val perPerson = if (known.isEmpty()) "" else "每人约 ${CalorieText.perPerson(total, limit.diners)} · "
+                Text(
+                    "${limit.diners} 人吃 · ${perPerson}上限每人 ${limit.perPerson} 千卡",
+                    Modifier.weight(1f).padding(vertical = 6.dp),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Text("设置", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
             }
         }
     }
+}
+
+/** 设今天几个人吃、每人热量上限 */
+@Composable
+private fun CalorieLimitDialog(current: CalorieLimit, onDismiss: () -> Unit, onSave: (CalorieLimit) -> Unit) {
+    var diners by remember { mutableStateOf(current.diners) }
+    var perPerson by remember { mutableStateOf(current.perPerson.toString()) }
+    val perPersonValue = perPerson.toIntOrNull()?.takeIf { it in 1..CalorieBudget.MAX_PER_PERSON }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("热量提醒") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("今日菜单的热量超过「人数 × 每人上限」时会提醒超了多少。")
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("今天几个人吃", Modifier.weight(1f))
+                    IconButton(onClick = { diners-- }, enabled = diners > 1) {
+                        Text("−", style = MaterialTheme.typography.titleLarge)
+                    }
+                    Text("$diners 人", style = MaterialTheme.typography.titleMedium)
+                    IconButton(onClick = { diners++ }, enabled = diners < CalorieBudget.MAX_DINERS) {
+                        Text("+", style = MaterialTheme.typography.titleLarge)
+                    }
+                }
+                OutlinedTextField(
+                    value = perPerson,
+                    onValueChange = { perPerson = it.filter { c -> c.isDigit() }.take(5) },
+                    label = { Text("每人上限（千卡）") },
+                    singleLine = true,
+                    shape = FieldShape,
+                    colors = miseFieldColors(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    isError = perPersonValue == null,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { perPersonValue?.let { onSave(CalorieLimit(diners, it)) } },
+                enabled = perPersonValue != null,
+            ) { Text("保存") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
+    )
 }
 
 @Composable

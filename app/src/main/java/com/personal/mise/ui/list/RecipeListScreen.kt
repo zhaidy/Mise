@@ -4,6 +4,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
@@ -84,6 +85,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.personal.mise.MainActivity
 import com.personal.mise.ai.AiProvider
+import com.personal.mise.ai.AiRecipeOrganizer
 import com.personal.mise.data.Recipe
 import com.personal.mise.importer.UrlExtractor
 import com.personal.mise.ui.common.LocalImage
@@ -102,6 +104,7 @@ fun RecipeListScreen(
     onOpen: (Long) -> Unit,
     onCreate: () -> Unit,
     onImport: (text: String, aiNote: Boolean) -> Unit,
+    onImportImages: (List<Uri>) -> Unit,
 ) {
     val app = rememberApp()
     val scope = rememberCoroutineScope()
@@ -145,6 +148,11 @@ fun RecipeListScreen(
             }
         }
     }
+    val imagesLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickMultipleVisualMedia(AiRecipeOrganizer.MAX_IMAGES),
+    ) { uris ->
+        if (uris.isNotEmpty()) onImportImages(uris)
+    }
     val restoreLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) restoreUri = uri
     }
@@ -179,6 +187,13 @@ fun RecipeListScreen(
                     DropdownMenuItem(text = { Text("手动新建") }, onClick = { menuOpen = false; onCreate() })
                     DropdownMenuItem(text = { Text("粘贴链接导入") }, onClick = { menuOpen = false; pasteOpen = true })
                     DropdownMenuItem(text = { Text("AI 整理笔记") }, onClick = { menuOpen = false; noteOpen = true })
+                    DropdownMenuItem(
+                        text = { Text("从图片导入") },
+                        onClick = {
+                            menuOpen = false
+                            imagesLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                        },
+                    )
                 }
             }
         },

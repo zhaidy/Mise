@@ -4,49 +4,71 @@ import com.personal.mise.importer.ImportException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
-import java.io.IOException
+import java.time.Instant
+import java.time.ZoneId
 import java.util.Base64
-import java.util.concurrent.TimeUnit
+import java.util.concurrent.ConcurrentHashMap
 
-/** 调用 Gemini，要求按 responseSchema 返回 JSON。 */
-class GeminiClient(private val settings: AiSettings) : AiClient {
+/**
+ * 调用 Gemini，要求按 responseSchema 返回 JSON。
+ * 按设置里的顺序一个个模型试：免费额度用完（429）、模型下线（404）或太忙（503）就换下一个，
+ * 都不行时抛 [GeminiQuotaException]，由 [SwitchableAiClient] 决定要不要改用 DeepSeek。
+ */
+class GeminiClient(private val settings: AiSettings, private val http: AiHttp) : AiClient {
 
-    private val client = OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(90, TimeUnit.SECONDS)
-        .build()
+    /** 当天额度已经用完的模型，到太平洋时间零点额度重置前不再去试 */
+    private val exhaustedUntil = ConcurrentHashMap<String, Long>()
 
     override suspend fun generate(prompt: String, schema: JSONObject, images: List<ByteArray>): JSONObject = withContext(Dispatchers.IO) {
         val key = settings.key(AiProvider.GEMINI)
         if (key.isBlank()) throw ImportException(NO_KEY)
 
-        val request = Request.Builder()
-            .url("$ENDPOINT/$MODEL:generateContent")
-            .header("x-goog-api-key", key)
-            .post(requestBody(prompt, schema, images).toString().toRequestBody("application/json".toMediaType()))
-            .build()
-        val body = try {
-            client.newCall(request).execute().use { response ->
-                val s = response.body.string()
-                if (!response.isSuccessful) throw ImportException(errorMessage(response.code, s))
-                s
-            }
-        } catch (e: IOException) {
-            throw ImportException("连接 Gemini 失败：${e.message ?: "请检查网络"}")
+        val body = requestBody(prompt, schema, images).toString()
+        for (model in settings.geminiModels) {
+            val now = System.currentTimeMillis()
+            if ((exhaustedUntil[model] ?: 0L) > now) continue
+            val request = Request.Builder()
+                .url("$ENDPOINT/$model:generateContent")
+                .header("x-goog-api-key", key)
+                .post(body.toRequestBody("application/json".toMediaType()))
+                .build()
+            val reply = http.execute(request, "Gemini")
+            if (reply.isSuccessful) return@withContext replyJson(reply.body)
+            if (reply.code !in TRY_NEXT) throw ImportException(errorMessage(reply.code, reply.body))
+            if (reply.code == 429 && isDailyQuota(reply.body)) exhaustedUntil[model] = nextQuotaReset(now)
         }
-        replyJson(body)
+        throw GeminiQuotaException()
     }
 
     companion object {
         const val NO_KEY = "还没有填写 Gemini API Key"
 
         private const val ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models"
-        private const val MODEL = "gemini-3.8-flash"
+
+        /** 可选的模型（API 名 to 显示名），也是默认的尝试顺序；免费版每个模型的额度是分开算的 */
+        val MODELS = listOf(
+            "gemini-3.8-flash" to "Gemini 3.8 Flash",
+            "gemini-3-flash-preview" to "Gemini 3 Flash",
+            "gemini-2.5-flash" to "Gemini 2.5 Flash",
+            "gemini-2.5-flash-lite" to "Gemini 2.5 Flash Lite",
+        )
+
+        /** 这些状态码换下一个模型再试：额度用完、模型不存在、服务器太忙 */
+        private val TRY_NEXT = setOf(404, 429, 503)
+
+        /** 429 是不是当天的额度用完了（而不只是每分钟请求太多），Google 会在 quotaId 里写 PerDay */
+        fun isDailyQuota(body: String): Boolean = body.contains("PerDay")
+
+        /** 免费额度在太平洋时间零点重置 */
+        fun nextQuotaReset(nowMillis: Long): Long {
+            val zone = ZoneId.of("America/Los_Angeles")
+            val today = Instant.ofEpochMilli(nowMillis).atZone(zone).toLocalDate()
+            return today.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
+        }
 
         fun requestBody(prompt: String, schema: JSONObject, images: List<ByteArray> = emptyList()): JSONObject = JSONObject()
             .put("contents", JSONArray().put(JSONObject().put("parts", parts(prompt, images))))
@@ -111,3 +133,6 @@ class GeminiClient(private val settings: AiSettings) : AiClient {
         }
     }
 }
+
+/** 设置里勾选的 Gemini 模型都用完了免费额度（或都暂时不可用） */
+class GeminiQuotaException : ImportException("勾选的 Gemini 模型免费额度都用完了或暂时不可用；每天额度在北京时间下午三四点重置")

@@ -9,6 +9,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.personal.mise.MiseApp
 import com.personal.mise.ai.AiAmountEstimator
+import com.personal.mise.ai.AiRecipeOrganizer
 import com.personal.mise.ai.AiStepSplitter
 import com.personal.mise.bowl.SeasoningDictionary
 import com.personal.mise.data.IngredientDraft
@@ -16,6 +17,7 @@ import com.personal.mise.data.IngredientKind
 import com.personal.mise.data.RecipeDraft
 import com.personal.mise.data.StepDraft
 import com.personal.mise.importer.ImportException
+import com.personal.mise.importer.ImportResult
 import com.personal.mise.importer.UrlExtractor
 import com.personal.mise.importer.XiaohongshuParser
 import kotlinx.coroutines.launch
@@ -51,12 +53,14 @@ sealed interface LoadState {
  * 菜谱编辑页和导入预览页共用的状态。
  * recipeId = 0 且 importText 不为空时是导入预览：aiNote = true 时 importText 是笔记文字，交给 AI 整理，
  * 否则是下厨房或小红书链接（小红书笔记也由 AI 整理）。
+ * imageUris 不为空时是从图片导入：图片交给 AI 看图整理，importText 不用。
  */
 class EditorViewModel(
     private val app: MiseApp,
     private val recipeId: Long,
     private val importText: String?,
     val aiNote: Boolean = false,
+    private val imageUris: List<Uri> = emptyList(),
 ) : ViewModel() {
 
     private val keys = AtomicLong(1)
@@ -102,13 +106,19 @@ class EditorViewModel(
     /** 这次编辑新加的图片；放弃或被替换时要删掉 */
     private val addedImages = mutableSetOf<String>()
 
-    val isImport: Boolean get() = importText != null
+    /** 从图片导入时复制到本地的图片；只复制一次，整理失败重试时直接用 */
+    private var sourceImages: List<String>? = null
+
+    /** 从相册或分享来的图片导入，由 AI 看图整理 */
+    val imageImport: Boolean = imageUris.isNotEmpty()
+
+    val isImport: Boolean get() = importText != null || imageImport
 
     /** 小红书链接：抓到笔记后交给 AI 整理 */
     val isXhsLink: Boolean = !aiNote && importText?.let { UrlExtractor.firstUrl(it) }?.let { XiaohongshuParser.isNoteUrl(it) } == true
 
     /** 导入内容由 AI 整理（笔记文字或小红书），需要 Key */
-    val aiImport: Boolean get() = aiNote || isXhsLink
+    val aiImport: Boolean get() = aiNote || isXhsLink || imageImport
 
     init {
         load()
@@ -119,6 +129,12 @@ class EditorViewModel(
         viewModelScope.launch {
             try {
                 val draft = when {
+                    imageImport -> {
+                        val result = importImages()
+                        warnings = result.warnings
+                        aiOrganized = true
+                        result.draft
+                    }
                     importText != null -> {
                         // 没填 Key 时先别去抓网页、下图片
                         if (isXhsLink && !app.aiSettings.hasKey) throw ImportException("小红书笔记要用 AI 整理，请先填写 AI 的 API Key")
@@ -138,18 +154,40 @@ class EditorViewModel(
                 loadState = LoadState.Ready
                 // 导入的菜谱里有「适量」、没写用量或不是按克写的，有 Key 就顺手让 AI 估一下用量和克重，
                 // 再按估好的用量算热量
-                if (importText != null && hasAiKey) viewModelScope.launch {
+                if (isImport && hasAiKey) viewModelScope.launch {
                     if (canEstimate) estimateAmounts()
                     if (calories.isBlank()) estimateCalories()
                 }
                 // 下厨房链接导入的步骤常常几件事挤在一步里，有 Key 就自动用 AI 拆一下（AI 整理时已经分好步了）
-                if (importText != null && !aiOrganized && hasAiKey && steps.any { it.text.isNotBlank() }) aiSplitSteps(auto = true)
+                if (isImport && !aiOrganized && hasAiKey && steps.any { it.text.isNotBlank() }) aiSplitSteps(auto = true)
             } catch (e: ImportException) {
                 loadState = LoadState.Failed(e.message ?: "导入失败", needsKey = aiImport && !app.aiSettings.hasKey)
             } catch (e: Exception) {
                 loadState = LoadState.Failed("出错了：${e.message ?: e.javaClass.simpleName}")
             }
         }
+    }
+
+    /** 把图片复制到本地交给 AI 整理；第一张图当封面，其余的整理完就删掉 */
+    private suspend fun importImages(): ImportResult {
+        // 没填 Key 时先别复制图片
+        if (!app.aiSettings.hasKey) throw ImportException("从图片导入要用 AI 整理，请先填写 AI 的 API Key")
+        val paths = sourceImages ?: imageUris.take(AiRecipeOrganizer.MAX_IMAGES)
+            .mapNotNull { app.images.importUri(it) }
+            .also { sourceImages = it; addedImages += it }
+        if (paths.isEmpty()) throw ImportException("图片打不开，请换几张再试")
+        val bytes = paths.mapNotNull { runCatching { app.images.file(it).readBytes() }.getOrNull() }
+        val recipe = app.noteOrganizer.organizeImages(bytes)
+        paths.drop(1).forEach { app.images.delete(it) }
+        addedImages -= paths.drop(1).toSet()
+        sourceImages = null
+
+        val result = AiRecipeOrganizer.toImportResult(recipe, "")
+        val warnings = result.warnings.toMutableList()
+        val wanted = imageUris.size.coerceAtMost(AiRecipeOrganizer.MAX_IMAGES)
+        if (paths.size < wanted) warnings += "有 ${wanted - paths.size} 张图片打不开，AI 没看到上面的内容"
+        if (imageUris.size > AiRecipeOrganizer.MAX_IMAGES) warnings += "图片太多，AI 只看了前 ${AiRecipeOrganizer.MAX_IMAGES} 张"
+        return ImportResult(result.draft.copy(coverImage = paths.first()), warnings, aiOrganized = true)
     }
 
     private fun fill(draft: RecipeDraft) {

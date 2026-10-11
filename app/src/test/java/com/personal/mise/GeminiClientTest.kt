@@ -5,7 +5,10 @@ import com.personal.mise.ai.GeminiClient
 import com.personal.mise.importer.ImportException
 import org.json.JSONArray
 import org.json.JSONObject
+import java.time.Instant
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Assert.assertThrows
 import org.junit.Test
 
@@ -45,5 +48,30 @@ class GeminiClientTest {
         assertEquals(0, GeminiClient.replyJson(body).getJSONArray("steps").length())
         assertThrows(ImportException::class.java) { GeminiClient.replyJson("{}") }
         assertThrows(ImportException::class.java) { GeminiClient.replyJson("""{"candidates":[{"content":{"parts":[{"text":"不是 JSON"}]}}]}""") }
+    }
+
+    @Test
+    fun `分清当天额度用完和每分钟请求太多`() {
+        val daily = """{"error":{"code":429,"details":[{"@type":"type.googleapis.com/google.rpc.QuotaFailure",
+            "violations":[{"quotaId":"GenerateRequestsPerDayPerProjectPerModel-FreeTier"}]}]}}"""
+        val perMinute = """{"error":{"code":429,"details":[{"@type":"type.googleapis.com/google.rpc.QuotaFailure",
+            "violations":[{"quotaId":"GenerateRequestsPerMinutePerProjectPerModel-FreeTier"}]}]}}"""
+        assertTrue(GeminiClient.isDailyQuota(daily))
+        assertFalse(GeminiClient.isDailyQuota(perMinute))
+    }
+
+    @Test
+    fun `额度在太平洋时间零点重置`() {
+        // 北京时间 2026-10-11 10:00 = 太平洋时间（夏令时）10-10 19:00，下次重置是 10-11 00:00 PDT = 07:00 UTC
+        val now = Instant.parse("2026-10-11T02:00:00Z").toEpochMilli()
+        assertEquals(Instant.parse("2026-10-11T07:00:00Z").toEpochMilli(), GeminiClient.nextQuotaReset(now))
+        // 冬令时 PST 是 UTC-8
+        val winter = Instant.parse("2026-12-01T09:00:00Z").toEpochMilli()
+        assertEquals(Instant.parse("2026-12-02T08:00:00Z").toEpochMilli(), GeminiClient.nextQuotaReset(winter))
+    }
+
+    @Test
+    fun `默认先用最新的模型`() {
+        assertEquals("gemini-3.8-flash", GeminiClient.MODELS.first().first)
     }
 }

@@ -1,25 +1,56 @@
 package com.personal.mise.ai
 
+import com.personal.mise.importer.ImportException
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** 让大模型按 JSON Schema 返回 JSON；Gemini 和 Claude 各有一个实现 */
+/** 让大模型按 JSON Schema 返回 JSON；Gemini、Claude、DeepSeek 各有一个实现 */
 interface AiClient {
     /** 返回模型回复里的 JSON 对象，出错时抛 ImportException；images 是一起发给模型看的 JPEG 图片 */
     suspend fun generate(prompt: String, schema: JSONObject, images: List<ByteArray> = emptyList()): JSONObject
 }
 
-/** 按设置里选的服务商转给对应的客户端，每次调用时才读设置，切换后立即生效 */
+/**
+ * 按设置里选的服务商转给对应的客户端，每次调用时才读设置，切换后立即生效。
+ * 选的是 Gemini 且勾选的模型都用完时，按设置改用 DeepSeek。
+ */
 class SwitchableAiClient(
     private val settings: AiSettings,
     private val gemini: AiClient,
     private val claude: AiClient,
+    private val deepseek: AiClient,
+    /** 改用 DeepSeek 时调用，用来提示一下 */
+    private val onDeepSeekFallback: () -> Unit = {},
 ) : AiClient {
     override suspend fun generate(prompt: String, schema: JSONObject, images: List<ByteArray>): JSONObject =
         when (settings.provider) {
-            AiProvider.GEMINI -> gemini
-            AiProvider.CLAUDE -> claude
-        }.generate(prompt, schema, images)
+            AiProvider.GEMINI -> try {
+                gemini.generate(prompt, schema, images)
+            } catch (e: GeminiQuotaException) {
+                if (!settings.deepSeekFallback) throw e
+                if (settings.key(AiProvider.DEEPSEEK).isBlank()) throw ImportException("${e.message}。在 AI 设置里填好 DeepSeek Key 后会自动改用 DeepSeek")
+                deepseek.generate(prompt, schema, images).also { onDeepSeekFallback() }
+            }
+            AiProvider.CLAUDE -> claude.generate(prompt, schema, images)
+            AiProvider.DEEPSEEK -> deepseek.generate(prompt, schema, images)
+        }
+}
+
+/**
+ * 网络出错时的说明：OkHttp 只在最外层写 "Failed to connect to …"，
+ * 真正原因（拒绝连接、网络不可达、超时）在 cause 和 suppressed 里，一起列出来方便排查。
+ */
+fun networkErrorDetail(e: Throwable): String {
+    val seen = mutableSetOf<Throwable>()
+    val parts = mutableListOf<String>()
+    fun walk(t: Throwable?) {
+        if (t == null || !seen.add(t)) return
+        parts += t.message?.takeIf { it.isNotBlank() }?.let { "${t.javaClass.simpleName}: $it" } ?: t.javaClass.simpleName
+        t.suppressed.forEach { walk(it) }
+        walk(t.cause)
+    }
+    walk(e)
+    return parts.distinct().joinToString("\n")
 }
 
 /** 标准 JSON Schema 的小工具；Claude 直接用，Gemini 由 [GeminiClient.toGeminiSchema] 转成它自己的格式 */

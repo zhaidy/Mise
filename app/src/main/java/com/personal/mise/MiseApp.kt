@@ -1,18 +1,25 @@
 package com.personal.mise
 
 import android.app.Application
+import android.os.Handler
+import android.os.Looper
+import android.widget.Toast
 import androidx.compose.runtime.mutableStateMapOf
 import com.personal.mise.ai.AiAmountEstimator
 import com.personal.mise.ai.AiBowlOrganizer
 import com.personal.mise.ai.AiCalorieEstimator
 import com.personal.mise.ai.AiClient
+import com.personal.mise.ai.AiHttp
 import com.personal.mise.ai.AiRecipeOrganizer
 import com.personal.mise.ai.AiSettings
 import com.personal.mise.ai.AiStepSplitter
+import com.personal.mise.ai.CellularNetwork
 import com.personal.mise.ai.ClaudeClient
+import com.personal.mise.ai.DeepSeekClient
 import com.personal.mise.ai.GeminiClient
 import com.personal.mise.ai.SwitchableAiClient
 import com.personal.mise.backup.BackupManager
+import com.personal.mise.data.CalorieBudget
 import com.personal.mise.data.MiseDatabase
 import com.personal.mise.data.Pantry
 import com.personal.mise.data.RecipeRepository
@@ -46,7 +53,27 @@ class MiseApp : Application() {
     val updater: UpdateChecker by lazy { UpdateChecker(this) }
     val backup: BackupManager by lazy { BackupManager(this, database) }
     val pantry: Pantry by lazy { Pantry(this) }
-    private val ai: AiClient by lazy { SwitchableAiClient(aiSettings, GeminiClient(aiSettings), ClaudeClient(aiSettings)) }
+    val calorieBudget: CalorieBudget by lazy { CalorieBudget(this) }
+    private val ai: AiClient by lazy {
+        val cellular = CellularNetwork(this)
+        val onCellularUsed = {
+            Handler(Looper.getMainLooper()).post {
+                Toast.makeText(this, "Wi-Fi 连不上，已改用移动数据", Toast.LENGTH_SHORT).show()
+            }
+            Unit
+        }
+        SwitchableAiClient(
+            aiSettings,
+            GeminiClient(aiSettings, AiHttp(aiSettings, cellular, readTimeoutSeconds = 90, onCellularUsed = onCellularUsed)),
+            ClaudeClient(aiSettings, AiHttp(aiSettings, cellular, readTimeoutSeconds = 120, onCellularUsed = onCellularUsed)),
+            DeepSeekClient(aiSettings, AiHttp(aiSettings, cellular, readTimeoutSeconds = 120, onCellularUsed = onCellularUsed)),
+            onDeepSeekFallback = {
+                Handler(Looper.getMainLooper()).post {
+                    Toast.makeText(this, "Gemini 免费额度用完了，这次用的是 DeepSeek", Toast.LENGTH_SHORT).show()
+                }
+            },
+        )
+    }
     val stepSplitter: AiStepSplitter by lazy { AiStepSplitter(ai) }
     val noteOrganizer: AiRecipeOrganizer by lazy { AiRecipeOrganizer(ai) }
     val bowlOrganizer: AiBowlOrganizer by lazy { AiBowlOrganizer(ai) }
