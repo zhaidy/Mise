@@ -40,7 +40,7 @@ class ClaudeClient(private val settings: AiSettings) : AiClient {
                 s
             }
         } catch (e: IOException) {
-            throw ImportException("连接 Claude 失败：${e.message ?: "请检查网络"}")
+            throw ImportException("连接 Claude 失败：${networkErrorDetail(e)}")
         }
         replyJson(body)
     }
