@@ -1,5 +1,6 @@
 package com.personal.mise
 
+import com.personal.mise.ai.AiClient
 import com.personal.mise.ai.AiRecipeOrganizer
 import com.personal.mise.data.IngredientKind
 import com.personal.mise.importer.ImportException
@@ -9,6 +10,8 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
+import kotlinx.coroutines.runBlocking
+import org.json.JSONObject
 import org.junit.Test
 
 class AiRecipeOrganizerTest {
@@ -50,6 +53,32 @@ class AiRecipeOrganizerTest {
             AiRecipeOrganizer.parseResponse(reply("""{"title":"","ingredients":[],"steps":[]}"""))
         }
         assertThrows(ImportException::class.java) { AiRecipeOrganizer.parseResponse(reply("{}")) }
+    }
+
+    @Test
+    fun `从图片导入时把所有图片按顺序发给 AI`() = runBlocking {
+        var sentPrompt = ""
+        var sentImages = emptyList<ByteArray>()
+        val ai = object : AiClient {
+            override suspend fun generate(prompt: String, schema: JSONObject, images: List<ByteArray>): JSONObject {
+                sentPrompt = prompt
+                sentImages = images
+                return reply("""{"title":"可乐鸡翅","ingredients":[{"name":"鸡翅","amount":"8个"}],"steps":[{"text":"鸡翅焯水"}]}""")
+            }
+        }
+        val images = listOf(byteArrayOf(1), byteArrayOf(2), byteArrayOf(3))
+        val recipe = AiRecipeOrganizer(ai).organizeImages(images)
+        assertEquals("可乐鸡翅", recipe.title)
+        assertEquals(images, sentImages)
+        assertTrue(sentPrompt.contains("3 张图片"))
+    }
+
+    @Test
+    fun `没有图片时报错`() {
+        val ai = object : AiClient {
+            override suspend fun generate(prompt: String, schema: JSONObject, images: List<ByteArray>): JSONObject = error("不该调用")
+        }
+        assertThrows(ImportException::class.java) { runBlocking { AiRecipeOrganizer(ai).organizeImages(emptyList()) } }
     }
 
     @Test

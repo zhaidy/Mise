@@ -4,25 +4,17 @@ import com.personal.mise.importer.ImportException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
-import java.io.IOException
 import java.util.Base64
-import java.util.concurrent.TimeUnit
 
 /**
  * 调用 DeepSeek 的 OpenAI 格式接口。它只支持 JSON 模式（json_object），不认 JSON Schema，
  * 所以把 schema 写进系统提示，让模型照着返回。
  */
-class DeepSeekClient(private val settings: AiSettings) : AiClient {
-
-    private val client = OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(120, TimeUnit.SECONDS)
-        .build()
+class DeepSeekClient(private val settings: AiSettings, private val http: AiHttp) : AiClient {
 
     override suspend fun generate(prompt: String, schema: JSONObject, images: List<ByteArray>): JSONObject = withContext(Dispatchers.IO) {
         val key = settings.key(AiProvider.DEEPSEEK)
@@ -33,16 +25,9 @@ class DeepSeekClient(private val settings: AiSettings) : AiClient {
             .header("Authorization", "Bearer $key")
             .post(requestBody(prompt, schema, images).toString().toRequestBody("application/json".toMediaType()))
             .build()
-        val body = try {
-            client.newCall(request).execute().use { response ->
-                val s = response.body.string()
-                if (!response.isSuccessful) throw ImportException(errorMessage(response.code, s))
-                s
-            }
-        } catch (e: IOException) {
-            throw ImportException("连接 DeepSeek 失败：${networkErrorDetail(e)}")
-        }
-        replyJson(body)
+        val reply = http.execute(request, "DeepSeek")
+        if (!reply.isSuccessful) throw ImportException(errorMessage(reply.code, reply.body))
+        replyJson(reply.body)
     }
 
     companion object {

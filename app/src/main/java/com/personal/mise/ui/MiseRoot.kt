@@ -75,6 +75,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 sealed interface NavRequest {
     /** aiNote = true 时交给 AI 整理笔记文字，否则按下厨房或小红书链接导入 */
     data class Import(val text: String, val aiNote: Boolean = false) : NavRequest
+    /** 分享来的图片，交给 AI 看图整理 */
+    data class ImportImages(val uris: List<Uri>) : NavRequest
     data class Cooking(val recipeId: Long) : NavRequest
 }
 
@@ -88,6 +90,7 @@ object Routes {
     fun edit(id: Long) = "edit/$id"
     fun bowls(id: Long) = "bowls/$id"
     fun import(text: String, aiNote: Boolean = false) = "import?text=${Uri.encode(text)}&ai=$aiNote"
+    fun importImages(uris: List<Uri>) = "import?images=${Uri.encode(uris.joinToString("\n"))}"
     fun cooking(recipeId: Long = -1L) = "cooking?recipeId=$recipeId"
 }
 
@@ -107,6 +110,7 @@ fun MiseRoot(navRequests: MutableStateFlow<NavRequest?>) {
     LaunchedEffect(request) {
         when (val r = request) {
             is NavRequest.Import -> nav.navigate(Routes.import(r.text, r.aiNote))
+            is NavRequest.ImportImages -> nav.navigate(Routes.importImages(r.uris))
             is NavRequest.Cooking -> nav.navigate(Routes.cooking(r.recipeId)) { launchSingleTop = true }
             null -> Unit
         }
@@ -175,6 +179,7 @@ fun MiseRoot(navRequests: MutableStateFlow<NavRequest?>) {
                     onOpen = { nav.navigate(Routes.detail(it)) },
                     onCreate = { nav.navigate(Routes.edit(0)) },
                     onImport = { text, aiNote -> nav.navigate(Routes.import(text, aiNote)) },
+                    onImportImages = { nav.navigate(Routes.importImages(it)) },
                 )
             }
             composable(Routes.TODAY) {
@@ -215,15 +220,17 @@ fun MiseRoot(navRequests: MutableStateFlow<NavRequest?>) {
                 )
             }
             composable(
-                "import?text={text}&ai={ai}",
+                "import?text={text}&ai={ai}&images={images}",
                 arguments = listOf(
                     navArgument("text") { type = NavType.StringType; defaultValue = "" },
                     navArgument("ai") { type = NavType.BoolType; defaultValue = false },
+                    navArgument("images") { type = NavType.StringType; defaultValue = "" },
                 ),
             ) { entry ->
                 ImportScreen(
                     sharedText = entry.arguments?.getString("text").orEmpty(),
                     aiNote = entry.arguments?.getBoolean("ai") ?: false,
+                    imageUris = entry.arguments?.getString("images").orEmpty().lines().filter { it.isNotBlank() }.map { Uri.parse(it) },
                     onDone = { savedId ->
                         nav.popBackStack()
                         if (savedId != null) nav.navigate(Routes.detail(savedId))

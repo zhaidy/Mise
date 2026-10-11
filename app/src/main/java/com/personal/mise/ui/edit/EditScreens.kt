@@ -1,5 +1,6 @@
 package com.personal.mise.ui.edit
 
+import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -59,11 +60,14 @@ fun RecipeEditScreen(recipeId: Long, onDone: (savedId: Long?) -> Unit) {
     )
 }
 
-/** 导入预览：解析下厨房链接，或让 AI 整理笔记文字、小红书笔记，确认或修改后再保存 */
+/** 导入预览：解析下厨房链接，或让 AI 整理笔记文字、小红书笔记、图片，确认或修改后再保存 */
 @Composable
-fun ImportScreen(sharedText: String, aiNote: Boolean, onDone: (savedId: Long?) -> Unit) {
+fun ImportScreen(sharedText: String, aiNote: Boolean, imageUris: List<Uri>, onDone: (savedId: Long?) -> Unit) {
     val app = rememberApp()
-    val vm: EditorViewModel = viewModel(key = "import-$aiNote-$sharedText") { EditorViewModel(app, 0L, sharedText, aiNote) }
+    val vm: EditorViewModel = viewModel(key = "import-$aiNote-$sharedText-$imageUris") {
+        if (imageUris.isNotEmpty()) EditorViewModel(app, 0L, null, imageUris = imageUris)
+        else EditorViewModel(app, 0L, sharedText, aiNote)
+    }
     EditorScaffold(
         vm = vm,
         title = if (vm.aiImport) "AI 整理预览" else "导入预览",
@@ -150,6 +154,7 @@ private fun EditorScaffold(
                     Spacer(Modifier.height(20.dp))
                     Text(
                         when {
+                            vm.imageImport -> "AI 正在看图整理菜谱，大约需要半分钟…"
                             vm.aiNote -> "AI 正在整理菜谱，大约需要十几秒…"
                             vm.isXhsLink -> "正在读取小红书笔记，AI 看图整理大约需要半分钟…"
                             vm.isImport -> "正在读取网页和下载图片…"
