@@ -1,6 +1,7 @@
 package com.personal.mise.sync
 
 import com.personal.mise.data.RecipeFull
+import com.personal.mise.data.tagList
 
 /**
  * 一道菜在云端的样子：菜谱、用料、步骤、调料碗打包成一个文档。
@@ -17,6 +18,9 @@ data class SyncedRecipe(
     val deleted: Boolean,
     val bowlsManual: Boolean,
     val calories: Int?,
+    val category: String?,
+    val subcategory: String?,
+    val tags: List<String>,
     val ingredients: List<SyncedIngredient>,
     val steps: List<SyncedStep>,
     val bowls: List<SyncedBowl>,
@@ -32,6 +36,9 @@ data class SyncedRecipe(
         "deleted" to deleted,
         "bowlsManual" to bowlsManual,
         "calories" to calories,
+        "category" to category,
+        "subcategory" to subcategory,
+        "tags" to tags,
         "ingredients" to ingredients.map { mapOf("name" to it.name, "amountText" to it.amountText, "kind" to it.kind) },
         "steps" to steps.map { mapOf("text" to it.text, "image" to it.image, "timerSeconds" to it.timerSeconds) },
         "bowls" to bowls.map { bowl ->
@@ -61,6 +68,9 @@ data class SyncedRecipe(
                 deleted = r.deleted,
                 bowlsManual = r.bowlsManual,
                 calories = r.calories,
+                category = r.category,
+                subcategory = r.subcategory,
+                tags = r.tagList,
                 ingredients = full.ingredients.map { SyncedIngredient(it.name, it.amountText, it.kind) },
                 steps = full.steps.map { SyncedStep(it.text, it.image, it.timerSeconds) },
                 bowls = full.bowls.map { b ->
@@ -106,6 +116,9 @@ data class SyncedRecipe(
                 bowlsManual = data["bowlsManual"] as Boolean,
                 // 旧版本写的文档没有这一项
                 calories = (data["calories"] as Number?)?.toInt(),
+                category = data["category"] as String?,
+                subcategory = data["subcategory"] as String?,
+                tags = (data["tags"] as List<*>?).orEmpty().map { it as String },
                 ingredients = ingredients,
                 steps = steps,
                 bowls = bowls,

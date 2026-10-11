@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 
 data class IngredientDraft(
     val id: Long = 0,
@@ -35,9 +36,19 @@ data class RecipeDraft(
     val servings: String? = null,
     /** 整道菜的千卡 */
     val calories: Int? = null,
+    /** 大类，空表示未分类 */
+    val category: String? = null,
+    val subcategory: String? = null,
+    val tags: List<String> = emptyList(),
     val ingredients: List<IngredientDraft> = emptyList(),
     val steps: List<StepDraft> = emptyList(),
 )
+
+private val RecipeDraft.cleanCategory: String? get() = category?.trim()?.takeIf { it.isNotEmpty() }
+
+/** 没有大类时小类也不留 */
+private val RecipeDraft.cleanSubcategory: String?
+    get() = subcategory?.trim()?.takeIf { it.isNotEmpty() && cleanCategory != null }
 
 /** 手动编辑后的调料碗 */
 data class BowlEdit(
@@ -54,7 +65,12 @@ class RecipeRepository(
     private val todayDao = db.todayDao()
     private val cookLogDao = db.cookLogDao()
 
-    fun search(query: String): Flow<List<Recipe>> = dao.search(query.trim())
+    /** 搜「#荤菜」也能搜到标签 */
+    fun search(query: String): Flow<List<Recipe>> = dao.search(query.trim().trimStart('#', '＃').trim())
+
+    fun observeCategories(): Flow<List<CategoryNode>> = dao.observeCategoryCounts().map(Categories::tree)
+
+    fun observeTags(): Flow<List<String>> = dao.observeTagStrings().map(Categories::tagsByUse)
 
     fun observeFull(id: Long): Flow<RecipeFull?> = combine(
         dao.observe(id),
@@ -88,6 +104,9 @@ class RecipeRepository(
             sourceUrl = full.recipe.sourceUrl,
             servings = full.recipe.servings,
             calories = full.recipe.calories,
+            category = full.recipe.category,
+            subcategory = full.recipe.subcategory,
+            tags = full.recipe.tagList,
             ingredients = full.ingredients.map { IngredientDraft(it.id, it.name, it.amountText, it.kind) },
             steps = full.steps.map { StepDraft(it.id, it.text, it.image, it.timerSeconds) },
         )
@@ -105,6 +124,9 @@ class RecipeRepository(
                         sourceUrl = draft.sourceUrl,
                         servings = draft.servings?.takeIf { it.isNotBlank() },
                         calories = draft.calories,
+                        category = draft.cleanCategory,
+                        subcategory = draft.cleanSubcategory,
+                        tags = RecipeTags.format(draft.tags),
                     )
                 )
             } else {
@@ -116,6 +138,9 @@ class RecipeRepository(
                         sourceUrl = draft.sourceUrl,
                         servings = draft.servings?.takeIf { it.isNotBlank() },
                         calories = draft.calories,
+                        category = draft.cleanCategory,
+                        subcategory = draft.cleanSubcategory,
+                        tags = RecipeTags.format(draft.tags),
                         updatedAt = System.currentTimeMillis(),
                     )
                 )
@@ -241,6 +266,9 @@ class RecipeRepository(
                 updatedAt = remote.updatedAt,
                 deleted = remote.deleted,
                 calories = remote.calories,
+                category = remote.category,
+                subcategory = remote.subcategory,
+                tags = RecipeTags.format(remote.tags),
             )
             val recipeId = if (existing == null) dao.insert(row) else { dao.update(row); existing.id }
 

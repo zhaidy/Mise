@@ -28,6 +28,12 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.FilterChip
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.LazyListScope
+import com.personal.mise.data.Categories
+import com.personal.mise.data.RecipeFilter
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.ui.graphics.Color
@@ -107,7 +113,28 @@ fun RecipeListScreen(
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
     var query by rememberSaveable { mutableStateOf("") }
-    val recipes by remember(query) { app.repository.search(query) }.collectAsStateWithLifecycle(emptyList())
+    val found by remember(query) { app.repository.search(query) }.collectAsStateWithLifecycle(emptyList())
+    // 还没读出来时是 null，免得把转屏前选的分类、标签当成不存在
+    val loadedCategories by remember { app.repository.observeCategories() }.collectAsStateWithLifecycle(null)
+    val loadedTags by remember { app.repository.observeTags() }.collectAsStateWithLifecycle(null)
+    val categories = loadedCategories.orEmpty()
+    val allTags = loadedTags.orEmpty()
+    // 筛选条件拆成几个能存进 Bundle 的值，转屏后还在；标签用换行连起来
+    var category by rememberSaveable { mutableStateOf<String?>(null) }
+    var subcategory by rememberSaveable { mutableStateOf<String?>(null) }
+    var tagsSaved by rememberSaveable { mutableStateOf("") }
+    val filter = RecipeFilter(category, subcategory, tagsSaved.split('\n').filter { it.isNotEmpty() }.toSet())
+    fun applyFilter(f: RecipeFilter) {
+        category = f.category
+        subcategory = f.subcategory
+        tagsSaved = f.tags.joinToString("\n")
+    }
+    // 选中的分类、标签被改名或删光了，就去掉
+    LaunchedEffect(loadedCategories, loadedTags) {
+        applyFilter(filter.prune(loadedCategories ?: return@LaunchedEffect, loadedTags ?: return@LaunchedEffect))
+    }
+    val recipes = found.filter(filter::matches)
+    val subcategories = categories.find { it.name == category }?.subcategories.orEmpty()
     var menuOpen by remember { mutableStateOf(false) }
     var pasteOpen by remember { mutableStateOf(false) }
     var noteOpen by remember { mutableStateOf(false) }
@@ -230,9 +257,50 @@ fun RecipeListScreen(
                         }
                     }
                     SearchField(query, { query = it })
+                    if (categories.isNotEmpty() || allTags.isNotEmpty()) {
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            if (categories.isNotEmpty()) {
+                                ChipRow {
+                                    item(key = "all") { CategoryChip("全部", category == null) { applyFilter(filter.copy(category = null, subcategory = null)) } }
+                                    items(categories, key = { "c:${it.name}" }) { node ->
+                                        CategoryChip(node.name, category == node.name) { applyFilter(filter.copy(category = node.name, subcategory = null)) }
+                                    }
+                                    item(key = "none") {
+                                        CategoryChip("未分类", category == Categories.NONE) { applyFilter(filter.copy(category = Categories.NONE, subcategory = null)) }
+                                    }
+                                }
+                            }
+                            if (subcategories.isNotEmpty()) {
+                                ChipRow {
+                                    item(key = "all") { CategoryChip("全部${category}", subcategory == null) { applyFilter(filter.copy(subcategory = null)) } }
+                                    items(subcategories, key = { "s:$it" }) { name ->
+                                        CategoryChip(name, subcategory == name) { applyFilter(filter.copy(subcategory = name)) }
+                                    }
+                                }
+                            }
+                            if (allTags.isNotEmpty()) {
+                                // 标签可以多选，要全都带上才显示
+                                ChipRow {
+                                    items(allTags, key = { it }) { tag ->
+                                        val on = tag in filter.tags
+                                        CategoryChip("#$tag", on) {
+                                            applyFilter(filter.copy(tags = if (on) filter.tags - tag else filter.tags + tag))
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                     if (recipes.isNotEmpty()) {
+                        val heading = when {
+                            query.isNotEmpty() -> "搜索结果"
+                            category == Categories.NONE -> "未分类"
+                            category != null -> listOfNotNull(category, subcategory).joinToString(" › ")
+                            filter.tags.isNotEmpty() -> filter.tags.joinToString(" ") { "#$it" }
+                            else -> "我的菜谱"
+                        }
                         Row(verticalAlignment = Alignment.Bottom) {
-                            Text(if (query.isEmpty()) "我的菜谱" else "搜索结果", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+                            Text(heading, style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
                             Text(
                                 "共 ${recipes.size} 道 · 长按加入今日",
                                 style = MaterialTheme.typography.bodySmall,
@@ -244,7 +312,9 @@ fun RecipeListScreen(
             }
             if (recipes.isEmpty()) {
                 item(key = "empty", span = { full }) {
-                    if (query.isEmpty()) {
+                    if (found.isNotEmpty()) {
+                        EmptyState("类", "没有符合条件的菜谱", "换个分类或者少选几个标签看看", Modifier.padding(top = 24.dp))
+                    } else if (query.isEmpty()) {
                         EmptyState(
                             "谱",
                             "还没有菜谱",
@@ -401,6 +471,26 @@ private fun RecipeCard(recipe: Recipe, onClick: () -> Unit, onLongClick: () -> U
             }
         }
     }
+}
+
+/** 一排横着滑的筛选标签 */
+@Composable
+private fun ChipRow(content: LazyListScope.() -> Unit) {
+    LazyRow(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        content = content,
+    )
+}
+
+@Composable
+private fun CategoryChip(text: String, selected: Boolean, onClick: () -> Unit) {
+    FilterChip(
+        selected = selected,
+        onClick = onClick,
+        label = { Text(text) },
+        shape = CircleShape,
+    )
 }
 
 /** 胶囊形搜索框 */

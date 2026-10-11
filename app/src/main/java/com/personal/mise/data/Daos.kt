@@ -9,8 +9,28 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface RecipeDao {
-    @Query("SELECT * FROM recipe WHERE deleted = 0 AND title LIKE '%' || :query || '%' ORDER BY createdAt DESC")
+    @Query(
+        """
+        SELECT * FROM recipe WHERE deleted = 0
+          AND (title LIKE '%' || :query || '%' OR category LIKE '%' || :query || '%'
+               OR subcategory LIKE '%' || :query || '%' OR tags LIKE '%' || :query || '%')
+        ORDER BY createdAt DESC
+        """
+    )
     fun search(query: String): Flow<List<Recipe>>
+
+    /** 每个大类、小类组合用了几次，排序交给 Categories.tree */
+    @Query(
+        """
+        SELECT category, subcategory, COUNT(*) AS count FROM recipe
+        WHERE deleted = 0 AND category IS NOT NULL AND category != ''
+        GROUP BY category, subcategory
+        """
+    )
+    fun observeCategoryCounts(): Flow<List<CategoryCount>>
+
+    @Query("SELECT tags FROM recipe WHERE deleted = 0 AND tags != ''")
+    fun observeTagStrings(): Flow<List<String>>
 
     @Query("SELECT * FROM recipe WHERE id = :id AND deleted = 0")
     fun observe(id: Long): Flow<Recipe?>
