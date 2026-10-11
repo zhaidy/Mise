@@ -45,6 +45,7 @@ import com.personal.mise.ui.edit.RecipeEditScreen
 import com.personal.mise.ui.history.HistoryScreen
 import com.personal.mise.ui.list.RecipeListScreen
 import com.personal.mise.ui.prep.PrepListScreen
+import com.personal.mise.ui.shopping.ShoppingListScreen
 import com.personal.mise.ui.today.TodayScreen
 import kotlinx.coroutines.flow.MutableStateFlow
 
@@ -58,6 +59,7 @@ object Routes {
     const val RECIPES = "recipes"
     const val TODAY = "today"
     const val PREP = "prep"
+    const val SHOPPING = "shopping"
     const val HISTORY = "history"
     fun detail(id: Long) = "detail/$id"
     fun edit(id: Long) = "edit/$id"
@@ -150,6 +152,7 @@ fun MiseRoot(navRequests: MutableStateFlow<NavRequest?>) {
                 TodayScreen(
                     onOpenRecipe = { nav.navigate(Routes.detail(it)) },
                     onPrep = { nav.navigate(Routes.PREP) },
+                    onShopping = { nav.navigate(Routes.SHOPPING) },
                     onCook = { nav.navigate(Routes.cooking()) },
                 )
             }
@@ -206,6 +209,9 @@ fun MiseRoot(navRequests: MutableStateFlow<NavRequest?>) {
                     recipeId = entry.arguments?.getLong("id") ?: 0L,
                     onBack = { nav.popBackStack() },
                 )
+            }
+            composable(Routes.SHOPPING) {
+                ShoppingListScreen(onBack = { nav.popBackStack() })
             }
             composable(Routes.PREP) {
                 PrepListScreen(
