@@ -19,6 +19,8 @@ abstract class OpenAiCompatibleClient(
     private val endpoint: String,
     private val settings: AiSettings,
     private val http: AiHttp,
+    /** 记每个模型今天成功用了几次，显示在 AI 设置里；查得到余额的服务商不用记 */
+    private val usage: AiUsage? = null,
 ) : AiProviderClient {
     /** 是否用 JSON 模式（response_format: json_object），服务商支持才开 */
     protected abstract val jsonMode: Boolean
@@ -40,7 +42,9 @@ abstract class OpenAiCompatibleClient(
             .build()
         val reply = http.execute(request, provider.label)
         if (!reply.isSuccessful) throw error(reply.code, errorDetail(reply.body))
-        AiReply(replyJson(provider.label, reply.body), modelDisplayName(replyModel(reply.body, model)))
+        val json = replyJson(provider.label, reply.body)
+        usage?.recordSuccess(model)
+        AiReply(json, modelDisplayName(replyModel(reply.body, model)))
     }
 
     companion object {

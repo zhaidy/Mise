@@ -69,12 +69,12 @@ fun AiKeyDialog(confirmLabel: String, onDismiss: () -> Unit, onConfirm: () -> Un
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 AiKeyFields(provider, { provider = it }, key, { keys = keys + (provider to it) })
-                if (provider == AiProvider.DEEPSEEK && key.isNotBlank()) DeepSeekBalance(key.trim())
                 Spacer(Modifier.height(12.dp))
                 ModelOrderFields(
                     order = order,
                     enabled = enabled,
                     hasKey = { keys.getValue(it).isNotBlank() },
+                    deepSeekKey = keys.getValue(AiProvider.DEEPSEEK).trim(),
                     onOrderChange = { order = it },
                     onEnabledChange = { enabled = it },
                 )
@@ -111,15 +111,17 @@ private fun ModelOrderFields(
     order: List<String>,
     enabled: List<String>,
     hasKey: (AiProvider) -> Boolean,
+    deepSeekKey: String,
     onOrderChange: (List<String>) -> Unit,
     onEnabledChange: (List<String>) -> Unit,
 ) {
-    val usage = rememberApp().geminiUsage
+    val usage = rememberApp().aiUsage
     val now = remember { System.currentTimeMillis() }
+    val deepSeekBalance = deepSeekBalance(deepSeekKey)
     Text("AI 模型", style = MaterialTheme.typography.bodyMedium)
     Text(
         "勾选的模型从上往下试，额度用完、余额不足或连不上就换下一个；没填 Key 的会跳过。按住左侧把手拖动调整顺序；加入了共享厨房的话，厨房里的人共用这张表。" +
-            "Google 查不到 Gemini 的剩余额度，次数是这台手机今天用的",
+            "Gemini 和 Agnes 查不到剩余额度，次数是这台手机今天用的；DeepSeek 显示账户余额",
         style = MaterialTheme.typography.bodySmall,
     )
     val models = order.mapNotNull(AiModel::fromKey)
@@ -132,8 +134,8 @@ private fun ModelOrderFields(
             val checked = id in enabled
             val note = when {
                 !hasKey(model.provider) -> "还没填 ${model.provider.label} Key，会跳过"
-                model.provider == AiProvider.GEMINI -> geminiUsageText(usage.exhaustedUntil(model.id, now), usage.count(model.id, now))
-                else -> null
+                model.provider == AiProvider.DEEPSEEK -> deepSeekBalance
+                else -> usageText(usage.exhaustedUntil(model.id, now), usage.count(model.id, now))
             }
             Row(
                 Modifier.background(
@@ -166,22 +168,23 @@ private fun ModelOrderFields(
     }
 }
 
-/** 模型今天的用量：额度用完了就说几点重置，否则说用了几次；还没用过返回 null */
-private fun geminiUsageText(exhaustedUntil: Long?, count: Int): String? = when {
+/** 模型今天的用量：额度用完了就说几点重置，否则说用了几次 */
+private fun usageText(exhaustedUntil: Long?, count: Int): String = when {
     exhaustedUntil != null -> {
         val reset = Instant.ofEpochMilli(exhaustedUntil).atZone(ZoneId.systemDefault())
         "今天额度用完了，${reset.format(DateTimeFormatter.ofPattern("HH:mm"))} 重置"
     }
     count > 0 -> "今天用了 $count 次"
-    else -> null
+    else -> "今天还没用过"
 }
 
-/** DeepSeek 账户余额，打开设置或改了 Key 时查一次 */
+/** DeepSeek 账户余额，打开设置或改了 Key 时查一次；没填 Key 返回 null */
 @Composable
-private fun DeepSeekBalance(key: String) {
+private fun deepSeekBalance(key: String): String? {
     val app = rememberApp()
     var text by remember(key) { mutableStateOf("正在查余额…") }
     LaunchedEffect(key) {
+        if (key.isBlank()) return@LaunchedEffect
         // 正在输入 Key 时等停下来再查
         delay(600)
         text = try {
@@ -192,8 +195,7 @@ private fun DeepSeekBalance(key: String) {
             "查不到余额：${e.message ?: e.javaClass.simpleName}"
         }
     }
-    Spacer(Modifier.height(4.dp))
-    Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    return text.takeIf { key.isNotBlank() }
 }
 
 /** 选 AI 服务商 + 填 Key 的输入框，AI 设置和「AI 整理笔记」共用 */
