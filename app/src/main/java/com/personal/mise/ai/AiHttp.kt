@@ -47,7 +47,7 @@ class AiHttp(
             call(client, request)
         } catch (e: IOException) {
             if (!isConnectFailure(e) || !settings.cellularFallback || cellular.isDefaultCellular) {
-                throw ImportException("连接 $name 失败：${networkErrorDetail(e)}")
+                throw AiNetworkException("连接 $name 失败：${networkErrorDetail(e)}")
             }
             val reply = try {
                 cellular.use { network ->
@@ -60,8 +60,8 @@ class AiHttp(
                     call(viaCellular, request)
                 }
             } catch (e2: IOException) {
-                throw ImportException("连接 $name 失败，改用移动数据也没连上：${networkErrorDetail(e2)}")
-            } ?: throw ImportException("连接 $name 失败，也没有可用的移动数据：${networkErrorDetail(e)}")
+                throw AiNetworkException("连接 $name 失败，改用移动数据也没连上：${networkErrorDetail(e2)}")
+            } ?: throw AiNetworkException("连接 $name 失败，也没有可用的移动数据：${networkErrorDetail(e)}")
             onCellularUsed()
             reply
         }
@@ -92,6 +92,9 @@ class AiHttp(
         }
     }
 }
+
+/** 网络出错：连不上、DNS 查不到、等回复超时；服务器回了错误码不算 */
+class AiNetworkException(message: String) : ImportException(message)
 
 /** 在 Wi-Fi 连着的时候，单独借用一条移动数据网络 */
 class CellularNetwork(context: Context) {

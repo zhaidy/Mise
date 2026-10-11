@@ -35,7 +35,7 @@ fun modelDisplayName(id: String): String {
 
 /**
  * 按设置里选的服务商转给对应的客户端，每次调用时才读设置，切换后立即生效。
- * 选的是 Gemini 且勾选的模型都用完时，按设置改用 DeepSeek。
+ * 选的是 Gemini 且勾选的模型都用完、或者连不上 Gemini 时，按设置改用 DeepSeek。
  * 每次成功后用 [onModelUsed] 告诉界面这次用的是哪个模型。
  */
 class SwitchableAiClient(
@@ -49,11 +49,17 @@ class SwitchableAiClient(
         val reply = when (settings.provider) {
             AiProvider.GEMINI -> try {
                 gemini.generate(prompt, schema, images)
-            } catch (e: GeminiQuotaException) {
+            } catch (e: ImportException) {
+                // 额度用完，或者连不上 Google（比如所在网络到 Google 不通）
+                val reason = when (e) {
+                    is GeminiQuotaException -> "Gemini 免费额度用完了"
+                    is AiNetworkException -> "连不上 Gemini"
+                    else -> throw e
+                }
                 if (!settings.deepSeekFallback) throw e
                 if (settings.key(AiProvider.DEEPSEEK).isBlank()) throw ImportException("${e.message}。在 AI 设置里填好 DeepSeek Key 后会自动改用 DeepSeek")
                 val fallback = deepseek.generate(prompt, schema, images)
-                onModelUsed("Gemini 免费额度用完了，这次用的是 ${fallback.model}")
+                onModelUsed("$reason，这次用的是 ${fallback.model}")
                 return fallback.json
             }
             AiProvider.DEEPSEEK -> deepseek.generate(prompt, schema, images)

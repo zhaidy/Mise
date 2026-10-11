@@ -77,7 +77,7 @@ class AiSettings(context: Context) {
             prefs.edit().putString(GEMINI_MODELS, value.joinToString(",")).apply()
         }
 
-    /** Gemini 勾选的模型都用完后，是否改用 DeepSeek（需要填了 DeepSeek Key） */
+    /** Gemini 勾选的模型都用完或连不上时，是否改用 DeepSeek（需要填了 DeepSeek Key） */
     var deepSeekFallback: Boolean
         get() = prefs.getBoolean(DEEPSEEK_FALLBACK, true)
         set(value) {
