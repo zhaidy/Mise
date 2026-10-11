@@ -112,7 +112,7 @@ class EditorViewModel(
                 }
                 fill(draft)
                 loadState = LoadState.Ready
-                // 导入的菜谱里有「适量」或没写用量的，有 Key 就顺手让 AI 估一下
+                // 导入的菜谱里有「适量」、没写用量或不是按克写的，有 Key 就顺手让 AI 估一下用量和克重
                 if (importText != null && hasGeminiKey && canEstimate) aiEstimateAmounts()
                 // 下厨房链接导入的步骤常常几件事挤在一步里，有 Key 就自动用 AI 拆一下（笔记整理时 AI 已经分好步了）
                 if (importText != null && !aiNote && hasGeminiKey && steps.any { it.text.isNotBlank() }) aiSplitSteps(auto = true)
@@ -197,11 +197,14 @@ class EditorViewModel(
         app.aiSettings.geminiKey = key
     }
 
-    /** 有「适量」、「少许」或没写用量的用料 */
+    /** 有「适量」、「少许」、没写用量或不是按克写的用料 */
     val canEstimate: Boolean
-        get() = ingredients.any { GeminiAmountEstimator.needsEstimate(it.name, it.amount) }
+        get() = ingredients.any { GeminiAmountEstimator.needsWork(it.name, it.amount) }
 
-    /** 让 Gemini 给「适量」或没写用量的用料估一个具体用量，标上「（估算）」；估算期间改过的用量不覆盖 */
+    /**
+     * 让 Gemini 给「适量」或没写用量的用料估一个具体用量，标上「（估算）」；
+     * 不是按克写的用量后面补上「≈X克」。估算期间改过的用量不覆盖。
+     */
     fun aiEstimateAmounts() {
         if (estimating) return
         estimating = true
@@ -215,16 +218,20 @@ class EditorViewModel(
                     snapshot.map { it.name to it.amount },
                     steps.map { it.text },
                 )
-                var filled = 0
+                var estimated = 0
+                var grams = 0
                 result.forEach { (i, amount) ->
                     val old = snapshot[i]
                     val index = ingredients.indexOfFirst { it.key == old.key }
                     if (index >= 0 && ingredients[index].amount == old.amount) {
                         ingredients[index] = ingredients[index].copy(amount = amount)
-                        filled++
+                        if (GeminiAmountEstimator.needsEstimate(old.name, old.amount)) estimated++ else grams++
                     }
                 }
-                estimateMessage = "AI 估算了 $filled 样用料的用量，标了「估算」，可以按口味再改"
+                estimateMessage = if (estimated + grams == 0) "估算期间用量改过了，没有覆盖" else listOfNotNull(
+                    "估算了 $estimated 样用料的用量，标了「估算」".takeIf { estimated > 0 },
+                    "给 $grams 样用料补了大概克重（≈）".takeIf { grams > 0 },
+                ).joinToString("，", prefix = "AI ", postfix = "，可以再改")
             } catch (e: ImportException) {
                 estimateMessage = e.message
             } catch (e: Exception) {

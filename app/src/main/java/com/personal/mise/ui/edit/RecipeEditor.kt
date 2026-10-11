@@ -63,7 +63,7 @@ fun RecipeEditor(
         if (uri != null && key != null) vm.pickStepImage(key, uri)
         pickingStepKey = null
     }
-    // 填完 Key 后要接着做的 AI 操作：split 拆分步骤、estimate 估算用量
+    // 填完 Key 后要接着做的 AI 操作：split 拆分步骤、estimate 估算用量和克重
     var askingKeyFor by rememberSaveable { mutableStateOf<String?>(null) }
     val imageOnly = PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
 
@@ -123,7 +123,7 @@ fun RecipeEditor(
                     TextButton(
                         enabled = !vm.estimating && vm.canEstimate,
                         onClick = { if (vm.hasGeminiKey) vm.aiEstimateAmounts() else askingKeyFor = "estimate" },
-                    ) { Text("AI 估算「适量」用量") }
+                    ) { Text("AI 估算用量和克重") }
                     if (vm.estimating) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                 }
                 vm.estimateMessage?.let {
