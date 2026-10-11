@@ -71,13 +71,15 @@ class RecipeImporter(
         val url = UrlExtractor.firstUrl(sharedText) ?: throw ImportException("没有在文字里找到链接")
         if (XiaohongshuParser.isNoteUrl(url)) return@withContext importXiaohongshu(url)
 
-        // 先直接抓；被防爬虫拦住（429、验证页）时改用 WebView 打开，让它跑完验证
+        // 先直接抓；被防爬虫拦住（429、验证页）时先试 MIP 页面，再用 WebView 打开，让它跑完验证
         val direct = runCatching { fetchAndParse(url, MOBILE_UA) }
+        val urlRecipeId = XiachufangParser.recipeId(url)
         val (finalUrl, firstParsed) = direct.getOrNull()?.takeUnless { it.second.isEmpty }
+            ?: urlRecipeId?.let { fetchMip(it) }
             ?: loadInBrowser(url)
             ?: direct.getOrThrow()
         var parsed = firstParsed
-        val recipeId = XiachufangParser.recipeId(finalUrl) ?: XiachufangParser.recipeId(url)
+        val recipeId = XiachufangParser.recipeId(finalUrl) ?: urlRecipeId
 
         // 手机版页面解析不全、或者步骤一张图都没有（多半是步骤退回了不带图的 JSON-LD）时，
         // 用电脑版页面再试一次（电脑版结构已经验证过）
@@ -151,6 +153,15 @@ class RecipeImporter(
         if (note.imageUrls.size > MAX_XHS_IMAGES) warnings += "笔记图片太多，AI 只看了前 $MAX_XHS_IMAGES 张"
         return ImportResult(result.draft.copy(coverImage = saved.firstOrNull()), warnings, aiOrganized = true)
     }
+
+    /** 给百度用的 MIP 页面，主站限流时一般还能打开 */
+    private fun fetchMip(recipeId: String): Pair<String, ParsedRecipe>? =
+        XiachufangParser.mipUrls(recipeId).firstNotNullOfOrNull { mipUrl ->
+            runCatching {
+                val (finalUrl, html) = fetchPage(mipUrl, MOBILE_UA)
+                finalUrl to XiachufangParser.parse(html, finalUrl)
+            }.getOrNull()?.takeUnless { it.second.isEmpty }
+        }
 
     private suspend fun loadInBrowser(url: String): Pair<String, ParsedRecipe>? {
         val (finalUrl, html) = runCatching {

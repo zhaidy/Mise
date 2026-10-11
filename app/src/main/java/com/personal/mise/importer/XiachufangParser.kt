@@ -31,6 +31,12 @@ data class ParsedRecipe(
  * - 用料 `div.ings tr`，`td.name` + `td.unit`，`tr.delimiter` 是分组标题
  * - 步骤 `div.steps ol li`，`p.text` + `img`
  *
+ * 下厨房对直接请求限流（HTTP 429）时，给百度用的 MIP 页面（hanwuji.xiachufang.com）通常还能打开，结构不同：
+ * - 标题 `h1.recipe-name`
+ * - 封面 `div.recipe-cover mip-img`（服务器返回的是 `<mip-img src>`，浏览器里才换成 img）
+ * - 用料 `div.recipe-ingredient a.ing-line`，`.ing-name` + `.ing-amount`
+ * - 步骤 `div.recipe-steps div.step`，`p.step-text` + `mip-img`
+ *
  * 页面里的 JSON-LD 只有短标题、裁切过的小封面、拼在一起的用料和步骤文字（没有步骤图），
  * 所以优先用 HTML，每一项解析不到时再退回 JSON-LD 和 og 标签。
  */
@@ -42,15 +48,26 @@ object XiachufangParser {
 
     fun desktopUrl(recipeId: String) = "https://www.xiachufang.com/recipe/$recipeId/"
 
+    /** MIP 页面地址：mip.xiachufang.com 会跳到 hanwuji.xiachufang.com，先试后者 */
+    fun mipUrls(recipeId: String) = listOf(
+        "https://hanwuji.xiachufang.com/recipe/$recipeId/",
+        "https://mip.xiachufang.com/recipe/$recipeId/",
+    )
+
+    private val trailingPunct = Regex("[，,、。；;：:\\s]+$")
+
     fun parse(html: String, pageUrl: String): ParsedRecipe {
         val doc = Jsoup.parse(html, pageUrl)
         val ld = jsonLdRecipe(doc)
 
         val title = doc.selectFirst("h1.page-title")?.text()?.trim()?.takeIf { it.isNotEmpty() }
+            ?: doc.selectFirst("h1.recipe-name")?.text()?.trim()?.takeIf { it.isNotEmpty() }
             ?: ld?.optString("name")?.trim()?.takeIf { it.isNotEmpty() }
             ?: doc.selectFirst("meta[property=og:title]")?.attr("content")?.trim()?.takeIf { it.isNotEmpty() }
 
-        val cover = doc.selectFirst("div.cover img")?.let { imageUrl(it) }
+        // MIP 页面的封面容器也带 cover class，要先匹配，否则会拿到浏览器替换出来的 img
+        val cover = doc.selectFirst("div.recipe-cover mip-img, div.recipe-cover img")?.let { imageUrl(it) }
+            ?: doc.selectFirst("div.cover img")?.let { imageUrl(it) }
             ?: ld?.let { jsonImage(it) }?.let { cleanImageUrl(it, doc.location()) }
             ?: doc.selectFirst("meta[property=og:image]")?.attr("content")?.takeIf { it.isNotBlank() }
                 ?.let { cleanImageUrl(it, doc.location()) }
@@ -60,7 +77,12 @@ object XiachufangParser {
             val unit = row.selectFirst("td.unit")?.text()?.trim().orEmpty()
             if (name.isEmpty()) null else name to unit
         }
-        val ingredients = htmlIngredients.ifEmpty {
+        val mipIngredients = doc.select("div.recipe-ingredient .ing-line").mapNotNull { line ->
+            val name = line.selectFirst(".ing-name")?.text()?.trim().orEmpty().replace(trailingPunct, "")
+            val amount = line.selectFirst(".ing-amount")?.text()?.trim().orEmpty()
+            if (name.isEmpty()) null else name to amount
+        }
+        val ingredients = htmlIngredients.ifEmpty { mipIngredients }.ifEmpty {
             ld?.optJSONArray("recipeIngredient")?.strings()?.map { splitIngredient(it) }.orEmpty()
         }
 
@@ -69,7 +91,12 @@ object XiachufangParser {
             val img = li.selectFirst("img")?.let { imageUrl(it) }
             if (text.isEmpty() && img == null) null else ParsedStep(text, img)
         }
-        val steps = attachAltStepImages(doc, htmlSteps.ifEmpty { ld?.let { jsonSteps(it) }.orEmpty() })
+        val mipSteps = doc.select("div.recipe-steps div.step").mapNotNull { div ->
+            val text = div.selectFirst("p.step-text")?.text()?.trim().orEmpty()
+            val img = div.selectFirst("mip-img, img")?.let { imageUrl(it) }
+            if (text.isEmpty() && img == null) null else ParsedStep(text, img)
+        }
+        val steps = attachAltStepImages(doc, htmlSteps.ifEmpty { mipSteps }.ifEmpty { ld?.let { jsonSteps(it) }.orEmpty() })
 
         val servings = ld?.opt("recipeYield")?.let { yield ->
             when (yield) {
