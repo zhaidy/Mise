@@ -312,7 +312,7 @@ fun RecipeDetailScreen(
                 data.bowls.forEach { bowl ->
                     item(key = "bowl-${bowl.bowl.id}") {
                         val stepIndex = data.steps.indexOfFirst { it.id == bowl.bowl.stepId }
-                        BowlCard(bowl, if (stepIndex >= 0) StepPhase.bowlStepLabel(stepIndex, cookStart) else null, factor)
+                        BowlCard(bowl, if (stepIndex >= 0) StepPhase.bowlStepLabel(stepIndex, cookStart, data.steps[stepIndex].text) else null, factor)
                     }
                 }
             }
