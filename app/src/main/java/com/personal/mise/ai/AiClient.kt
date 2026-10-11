@@ -1,5 +1,6 @@
 package com.personal.mise.ai
 
+import com.personal.mise.importer.ImportException
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -9,19 +10,30 @@ interface AiClient {
     suspend fun generate(prompt: String, schema: JSONObject, images: List<ByteArray> = emptyList()): JSONObject
 }
 
-/** 按设置里选的服务商转给对应的客户端，每次调用时才读设置，切换后立即生效 */
+/**
+ * 按设置里选的服务商转给对应的客户端，每次调用时才读设置，切换后立即生效。
+ * 选的是 Gemini 且勾选的模型都用完时，按设置改用 DeepSeek。
+ */
 class SwitchableAiClient(
     private val settings: AiSettings,
     private val gemini: AiClient,
     private val claude: AiClient,
     private val deepseek: AiClient,
+    /** 改用 DeepSeek 时调用，用来提示一下 */
+    private val onDeepSeekFallback: () -> Unit = {},
 ) : AiClient {
     override suspend fun generate(prompt: String, schema: JSONObject, images: List<ByteArray>): JSONObject =
         when (settings.provider) {
-            AiProvider.GEMINI -> gemini
-            AiProvider.CLAUDE -> claude
-            AiProvider.DEEPSEEK -> deepseek
-        }.generate(prompt, schema, images)
+            AiProvider.GEMINI -> try {
+                gemini.generate(prompt, schema, images)
+            } catch (e: GeminiQuotaException) {
+                if (!settings.deepSeekFallback) throw e
+                if (settings.key(AiProvider.DEEPSEEK).isBlank()) throw ImportException("${e.message}。在 AI 设置里填好 DeepSeek Key 后会自动改用 DeepSeek")
+                deepseek.generate(prompt, schema, images).also { onDeepSeekFallback() }
+            }
+            AiProvider.CLAUDE -> claude.generate(prompt, schema, images)
+            AiProvider.DEEPSEEK -> deepseek.generate(prompt, schema, images)
+        }
 }
 
 /**

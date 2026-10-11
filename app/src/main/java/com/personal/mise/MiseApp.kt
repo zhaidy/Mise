@@ -67,6 +67,11 @@ class MiseApp : Application() {
             GeminiClient(aiSettings, AiHttp(aiSettings, cellular, readTimeoutSeconds = 90, onCellularUsed = onCellularUsed)),
             ClaudeClient(aiSettings, AiHttp(aiSettings, cellular, readTimeoutSeconds = 120, onCellularUsed = onCellularUsed)),
             DeepSeekClient(aiSettings, AiHttp(aiSettings, cellular, readTimeoutSeconds = 120, onCellularUsed = onCellularUsed)),
+            onDeepSeekFallback = {
+                Handler(Looper.getMainLooper()).post {
+                    Toast.makeText(this, "Gemini 免费额度用完了，这次用的是 DeepSeek", Toast.LENGTH_SHORT).show()
+                }
+            },
         )
     }
     val stepSplitter: AiStepSplitter by lazy { AiStepSplitter(ai) }
