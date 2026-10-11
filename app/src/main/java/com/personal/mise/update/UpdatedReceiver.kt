@@ -6,7 +6,6 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.os.Build
-import android.provider.Settings
 import com.personal.mise.MainActivity
 
 /**
@@ -24,18 +23,12 @@ class UpdatedReceiver : BroadcastReceiver() {
     }
 
     /**
-     * Android 10+ 不允许后台直接 startActivity：有“显示在其他应用上层”权限时可以直接打开；
-     * 否则定一个马上就响的闹钟（setAlarmClock）去打开，部分系统上管用，尽力而为
+     * Android 10+ 不允许后台直接 startActivity，定一个马上就响的闹钟（setAlarmClock）去打开，
+     * 部分系统上管用，尽力而为。不用“显示在其他应用上层”权限：它和“安装应用”放一起
+     * 像恶意软件，会让 Play 保护机制更不信任 Mise
      */
     private fun relaunch(context: Context) {
         val launch = Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        if (Settings.canDrawOverlays(context)) {
-            try {
-                context.startActivity(launch)
-                return
-            } catch (_: RuntimeException) {
-            }
-        }
         val am = context.getSystemService(AlarmManager::class.java)
         if (Build.VERSION.SDK_INT >= 31 && !am.canScheduleExactAlarms()) return
         val open = PendingIntent.getActivity(
