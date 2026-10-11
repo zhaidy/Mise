@@ -28,8 +28,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SelectableDates
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
@@ -83,11 +81,9 @@ fun PlanScreen(
     val days = DayText.days(today, shown)
     val byDate = plans.groupBy { it.date }
     val weekCount = DayText.days(today, DAYS_STEP).sumOf { byDate[it].orEmpty().size }
-    val snackbar = remember { SnackbarHostState() }
     var calendarView by rememberSavedView("plan_calendar")
 
     Scaffold(
-        snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             MiseHeader("做菜计划", eyebrow = if (weekCount == 0) "这周还没排菜" else "接下来 7 天排了 $weekCount 道菜") {
                 ViewSwitch(calendarView, onChange = { calendarView = it }, labels = "列表" to "日历")
@@ -112,7 +108,6 @@ fun PlanScreen(
                     PlanDayCard(
                         date = date,
                         rows = rows,
-                        snackbar = snackbar,
                         onOpenRecipe = onOpenRecipe,
                         onPrep = onPrep,
                         onShopping = onShopping,
@@ -140,7 +135,6 @@ fun PlanScreen(
                 PlanDayCard(
                     date = date,
                     rows = byDate[date].orEmpty(),
-                    snackbar = snackbar,
                     onOpenRecipe = onOpenRecipe,
                     onPrep = onPrep,
                     onShopping = onShopping,
@@ -156,12 +150,11 @@ fun PlanScreen(
     }
 }
 
-/** 一天的计划卡片：日期、排的菜，下面是备料、买菜和放进今日菜单 */
+/** 一天的计划卡片：日期、排的菜，下面是备料、买菜；今天的还能去今日菜单 */
 @Composable
 fun PlanDayCard(
     date: String,
     rows: List<PlanRow>,
-    snackbar: SnackbarHostState,
     onOpenRecipe: (Long) -> Unit,
     onPrep: (date: String) -> Unit,
     onShopping: (from: String, days: Int) -> Unit,
@@ -216,12 +209,7 @@ fun PlanDayCard(
                     TextButton(onClick = { onPrep(date) }) { Text("备料") }
                     TextButton(onClick = { onShopping(date, 1) }) { Text("买菜") }
                     if (isToday) {
-                        TextButton(onClick = {
-                            scope.launch {
-                                val added = app.repository.planToToday(date)
-                                if (added > 0) onToday() else snackbar.showSnackbar("都已经在今日菜单里了")
-                            }
-                        }) { Text("放进今日菜单") }
+                        TextButton(onClick = onToday) { Text("去今日菜单") }
                     }
                 }
             }
@@ -258,10 +246,11 @@ private fun PlanRecipeRow(row: PlanRow, onClick: (() -> Unit)?, onRemove: () -> 
             RecipeCover(row.title, row.coverImage, Modifier.size(40.dp).clip(RoundedCornerShape(12.dp)), initialSize = 18.sp)
             Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
                 Text(row.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                val meta = when {
-                    onClick == null -> "菜谱已删除"
-                    row.calories != null -> CalorieText.format(row.calories)
-                    else -> null
+                val meta = if (onClick == null) {
+                    "菜谱已删除"
+                } else {
+                    listOfNotNull("做完了".takeIf { row.done }, row.calories?.let(CalorieText::format))
+                        .joinToString(" · ").ifEmpty { null }
                 }
                 meta?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             }

@@ -105,14 +105,6 @@ class MiseApp : Application() {
     val scales = mutableStateMapOf<Long, Double>()
     fun scaleOf(recipeId: Long): Double = scales[recipeId] ?: 1.0
 
-    /** 加进今日菜单原先不会排进计划：升级后把今日菜单里已有的菜补进今天的计划，只做一次 */
-    private suspend fun backfillTodayPlan() {
-        val prefs = getSharedPreferences("migrations", MODE_PRIVATE)
-        if (prefs.getBoolean(TODAY_PLAN_BACKFILLED, false)) return
-        repository.todayToPlan()
-        prefs.edit().putBoolean(TODAY_PLAN_BACKFILLED, true).apply()
-    }
-
     override fun onCreate() {
         super.onCreate()
         images = ImageStore(this)
@@ -122,10 +114,5 @@ class MiseApp : Application() {
         kitchen = KitchenSync(this, repository, images, aiSettings, appScope).also { it.start() }
         Notifications.createChannels(this)
         appScope.launch { updater.cleanup() }
-        appScope.launch { backfillTodayPlan() }
-    }
-
-    private companion object {
-        const val TODAY_PLAN_BACKFILLED = "today_plan_backfilled"
     }
 }

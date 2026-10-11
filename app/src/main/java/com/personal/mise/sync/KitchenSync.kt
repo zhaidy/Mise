@@ -42,8 +42,8 @@ import java.security.SecureRandom
 /**
  * 共享厨房：同一个厨房里的手机共用一份菜谱。
  *
- * 云端是 kitchens/{邀请码}/recipes/{uid}（每道菜一个文档）、kitchens/{邀请码}/today/{uid}（今日菜单）、
- * kitchens/{邀请码}/history/{菜谱 uid_日期}（做菜记录）、kitchens/{邀请码}/plan/{菜谱 uid_日期}（做菜计划）、kitchens/{邀请码}/images/{文件名}（图片）
+ * 云端是 kitchens/{邀请码}/recipes/{uid}（每道菜一个文档）、
+ * kitchens/{邀请码}/history/{菜谱 uid_日期}（做菜记录）、kitchens/{邀请码}/plan/{菜谱 uid_日期}（做菜计划，今日菜单就是今天的计划）、kitchens/{邀请码}/images/{文件名}（图片）
  * kitchens/{邀请码}/aiKeys/{服务商}（AI 的 API Key）和 kitchens/{邀请码}/aiSettings/models（用哪些 AI 模型、什么顺序）。本地和云端任何一边变了，
  * 就逐条比较 updatedAt，新的覆盖旧的。Firestore 自带离线缓存，没网时的改动联网后补传。
  */
@@ -148,7 +148,7 @@ class KitchenSync(
         }
     }
 
-    /** 成员人数、菜谱、今日菜单、做菜记录、做菜计划、图片、AI Key、AI 模型列表各自同步，任何一个出错就整体重来 */
+    /** 成员人数、菜谱、做菜记录、做菜计划、图片、AI Key、AI 模型列表各自同步，任何一个出错就整体重来 */
     private suspend fun sync(code: String, kitchen: DocumentReference) {
         coroutineScope {
             launch {
@@ -164,16 +164,6 @@ class KitchenSync(
                     updatedAt = { it.updatedAt },
                     apply = { repository.applyRemote(it) },
                     load = { uid -> repository.loadForSync(uid)?.toMap() },
-                )
-            }
-            launch {
-                syncCollection<SyncedTodayEntry>(
-                    collection = kitchen.collection(TODAY),
-                    localStamps = repository.observeTodayStamps(),
-                    parse = { uid, data -> SyncedTodayEntry.fromMap(uid, data) },
-                    updatedAt = { it.updatedAt },
-                    apply = { repository.applyRemoteToday(it) },
-                    load = { uid -> repository.loadTodayForSync(uid)?.toMap() },
                 )
             }
             launch {
@@ -339,7 +329,6 @@ class KitchenSync(
         const val KEY_CODE = "code"
         const val KITCHENS = "kitchens"
         const val RECIPES = "recipes"
-        const val TODAY = "today"
         const val IMAGES = "images"
         const val HISTORY = "history"
         const val PLAN = "plan"

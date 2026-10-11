@@ -5,13 +5,11 @@ import com.personal.mise.bowl.SauceBowlGenerator
 import com.personal.mise.image.ImageStore
 import com.personal.mise.sync.SyncedPlanEntry
 import com.personal.mise.sync.SyncedRecipe
-import com.personal.mise.sync.SyncedTodayEntry
 import com.personal.mise.sync.TodayKeys
 import com.personal.mise.util.DayText
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
@@ -66,7 +64,6 @@ class RecipeRepository(
     private val images: ImageStore,
 ) {
     private val dao = db.recipeDao()
-    private val todayDao = db.todayDao()
     private val cookLogDao = db.cookLogDao()
     private val planDao = db.mealPlanDao()
 
@@ -185,7 +182,6 @@ class RecipeRepository(
     suspend fun delete(id: Long) {
         val paths = imagesOf(id)
         db.withTransaction {
-            todayDao.markRemoved(id, System.currentTimeMillis())
             dao.deleteBowls(id)
             dao.deleteIngredients(id)
             dao.deleteSteps(id)
@@ -316,10 +312,7 @@ class RecipeRepository(
             dao.deleteBowls(recipeId)
             dao.deleteIngredients(recipeId)
             dao.deleteSteps(recipeId)
-            if (remote.deleted) {
-                todayDao.markRemoved(recipeId, System.currentTimeMillis())
-                return@withTransaction recipeId
-            }
+            if (remote.deleted) return@withTransaction recipeId
             val ingredientIds = remote.ingredients.mapIndexed { index, g ->
                 dao.insertIngredient(Ingredient(recipeId = recipeId, name = g.name, amountText = g.amountText, kind = g.kind, order = index))
             }
@@ -341,96 +334,69 @@ class RecipeRepository(
         (oldImages - imagesOf(id)).forEach { images.delete(it) }
     }
 
-    // 今日菜单
+    // 今日菜单：就是今天的计划
 
-    fun observeToday(): Flow<List<TodayRow>> = todayDao.observe()
+    /** 过了半夜自动换成新一天的 */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun observeToday(): Flow<List<TodayRow>> = DayText.observeToday().flatMapLatest { planDao.observeDay(it) }
 
-    suspend fun isInToday(recipeId: Long): Boolean = todayDao.get(recipeId)?.removed == false
-
-    /** 加入今日菜单，同时排进今天的计划；已经在菜单里返回 false */
-    suspend fun addToToday(recipeId: Long): Boolean = db.withTransaction {
-        addToPlan(recipeId, DayText.today())
-        if (isInToday(recipeId)) return@withTransaction false
-        todayDao.upsert(TodayMenu(recipeId = recipeId, order = todayDao.maxOrder() + 1))
-        true
+    private suspend fun todayPlanOf(recipeId: Long): MealPlan? {
+        val recipe = dao.get(recipeId) ?: return null
+        return planDao.get(MealPlan.uidOf(recipe.uid, DayText.today()))?.takeIf { !it.deleted }
     }
 
-    /** 今日菜单里的菜都排进今天的计划；有计划之前加进今日菜单的菜靠这个补上 */
-    suspend fun todayToPlan() = db.withTransaction {
-        val today = DayText.today()
-        todayDao.observe().first().forEach { addToPlan(it.recipeId, today) }
+    suspend fun isInToday(recipeId: Long): Boolean = todayPlanOf(recipeId) != null
+
+    /** 加入今日菜单就是排进今天的计划；已经在菜单里返回 false */
+    suspend fun addToToday(recipeId: Long): Boolean = addToPlan(recipeId, DayText.today())
+
+    suspend fun removeFromToday(recipeId: Long) {
+        todayPlanOf(recipeId)?.let { planDao.markDeleted(it.uid, System.currentTimeMillis()) }
     }
 
-    suspend fun removeFromToday(recipeId: Long) = todayDao.markRemoved(recipeId, System.currentTimeMillis())
+    suspend fun clearToday() = planDao.markDayDeleted(DayText.today(), System.currentTimeMillis())
 
-    suspend fun clearToday() = todayDao.markAllRemoved(System.currentTimeMillis())
-
-    suspend fun reorderToday(recipeIds: List<Long>) = db.withTransaction {
+    /** 按给的顺序重排今天的菜，参数是计划的 uid */
+    suspend fun reorderToday(uids: List<String>) = db.withTransaction {
         val now = System.currentTimeMillis()
-        recipeIds.forEachIndexed { index, id -> todayDao.setOrder(id, index, now) }
+        uids.forEachIndexed { index, uid -> planDao.setOrder(uid, index, now) }
     }
 
     /** 今日菜单里这道菜做到第几步；不在菜单里为 null */
-    suspend fun currentStepOf(recipeId: Long): Int? = todayDao.get(recipeId)?.takeIf { !it.removed }?.currentStep
+    suspend fun currentStepOf(recipeId: Long): Int? = todayPlanOf(recipeId)?.currentStep
 
-    suspend fun setCurrentStep(recipeId: Long, step: Int) =
-        todayDao.setCurrentStep(recipeId, step, System.currentTimeMillis())
-
-    suspend fun setChecked(recipeId: Long, checked: Set<String>) =
-        todayDao.setChecked(recipeId, checked.sorted().joinToString(","), System.currentTimeMillis())
+    suspend fun setCurrentStep(recipeId: Long, step: Int) {
+        todayPlanOf(recipeId)?.let { planDao.setCurrentStep(it.uid, step, System.currentTimeMillis()) }
+    }
 
     /** 标成做完时顺手记一笔今天做过；取消做完时把今天这笔也撤掉 */
     suspend fun setTodayDone(recipeId: Long, done: Boolean) = db.withTransaction {
-        todayDao.setDone(recipeId, done, System.currentTimeMillis())
+        val plan = todayPlanOf(recipeId) ?: return@withTransaction
+        planDao.setDone(plan.uid, done, System.currentTimeMillis())
         if (done) {
             logCooked(recipeId)
         } else {
-            val recipe = dao.get(recipeId) ?: return@withTransaction
-            val uid = CookLog.uidOf(recipe.uid, DayText.today())
+            val uid = CookLog.uidOf(plan.recipeUid, DayText.today())
             if (cookLogDao.get(uid)?.deleted == false) deleteCookLog(uid)
         }
     }
 
-    // 今日菜单同步
-
-    fun observeTodayStamps(): Flow<List<RecipeStamp>> = todayDao.observeStamps()
-
-    /** 要上传的样子；勾选项换成按下标的写法，对方手机才认得 */
-    suspend fun loadTodayForSync(uid: String): SyncedTodayEntry? {
-        val recipe = dao.getByUid(uid) ?: return null
-        val entry = todayDao.get(recipe.id) ?: return null
-        val full = loadFull(recipe.id)
-        return SyncedTodayEntry(
-            uid = uid,
-            order = entry.order,
-            currentStep = entry.currentStep,
-            checked = parseChecked(entry.bowlsChecked)
-                .mapNotNull { TodayKeys.toPortable(it, full?.ingredients.orEmpty().map { g -> g.id }, full?.bowls.orEmpty().map { b -> b.bowl.id }) }
-                .sorted(),
-            updatedAt = entry.updatedAt,
-            removed = entry.removed,
-            done = entry.done,
-        )
-    }
-
-    /** 用云端的版本替换本地这一项；这道菜还没同步过来时什么也不做 */
-    suspend fun applyRemoteToday(remote: SyncedTodayEntry) {
-        val recipe = dao.getByUid(remote.uid) ?: return
-        val full = loadFull(recipe.id)
-        val checked = remote.checked.mapNotNull {
-            TodayKeys.fromPortable(it, full?.ingredients.orEmpty().map { g -> g.id }, full?.bowls.orEmpty().map { b -> b.bowl.id })
-        }
-        todayDao.upsert(
-            TodayMenu(
-                recipeId = recipe.id,
-                order = remote.order,
-                currentStep = remote.currentStep,
-                bowlsChecked = checked.sorted().joinToString(","),
-                updatedAt = remote.updatedAt,
-                removed = remote.removed || recipe.deleted,
-                done = remote.done,
+    /**
+     * 把之前排的菜挪到今天：原来那天的移出，备料勾选和做到第几步一起带过来。
+     * 今天已经排了的只把原来那条移出
+     */
+    suspend fun moveToToday(uids: List<String>) = db.withTransaction {
+        val today = DayText.today()
+        val now = System.currentTimeMillis()
+        uids.forEach { uid ->
+            val plan = planDao.get(uid)?.takeIf { !it.deleted && it.date != today } ?: return@forEach
+            planDao.markDeleted(uid, now)
+            val todayUid = MealPlan.uidOf(plan.recipeUid, today)
+            if (planDao.get(todayUid)?.deleted == false) return@forEach
+            planDao.upsert(
+                plan.copy(uid = todayUid, date = today, order = planDao.maxOrder(today) + 1, done = false, updatedAt = now)
             )
-        )
+        }
     }
 
     // 做菜记录
@@ -481,7 +447,7 @@ class RecipeRepository(
         val recipe = dao.get(recipeId) ?: return@withTransaction false
         val uid = MealPlan.uidOf(recipe.uid, date)
         if (planDao.get(uid)?.deleted == false) return@withTransaction false
-        planDao.upsert(MealPlan(uid = uid, recipeUid = recipe.uid, title = recipe.title, date = date))
+        planDao.upsert(MealPlan(uid = uid, recipeUid = recipe.uid, title = recipe.title, date = date, order = planDao.maxOrder(date) + 1))
         true
     }
 
@@ -489,21 +455,6 @@ class RecipeRepository(
 
     suspend fun setPlanChecked(uid: String, checked: Set<String>) =
         planDao.setChecked(uid, checked.sorted().joinToString(","), System.currentTimeMillis())
-
-    /**
-     * 把这天计划的菜都放进今日菜单，返回新放进去的道数。
-     * 提前备料勾过的项目一起带过去，备料清单里接着勾。
-     */
-    suspend fun planToToday(date: String): Int = db.withTransaction {
-        var added = 0
-        planDao.onDate(date).forEach { plan ->
-            val recipe = dao.getByUid(plan.recipeUid)?.takeIf { !it.deleted } ?: return@forEach
-            if (isInToday(recipe.id)) return@forEach
-            todayDao.upsert(TodayMenu(recipeId = recipe.id, order = todayDao.maxOrder() + 1, bowlsChecked = plan.checked))
-            added++
-        }
-        added
-    }
 
     fun observePlanStamps(): Flow<List<RecipeStamp>> = planDao.observeStamps()
 
@@ -519,13 +470,20 @@ class RecipeRepository(
             checked = parseChecked(plan.checked)
                 .mapNotNull { TodayKeys.toPortable(it, full?.ingredients.orEmpty().map { g -> g.id }, full?.bowls.orEmpty().map { b -> b.bowl.id }) }
                 .sorted(),
+            order = plan.order,
+            currentStep = plan.currentStep,
+            done = plan.done,
             updatedAt = plan.updatedAt,
             deleted = plan.deleted,
         )
     }
 
-    /** 用云端的版本替换本地这一条；这道菜还没同步过来时勾选项先丢掉 */
+    /**
+     * 用云端的版本替换本地这一条；这道菜还没同步过来时勾选项先丢掉。
+     * 旧版本传上来的没有顺序、步骤和做完，这几样留着本地的
+     */
     suspend fun applyRemotePlan(remote: SyncedPlanEntry) {
+        val local = planDao.get(remote.uid)
         val full = dao.getByUid(remote.recipeUid)?.let { loadFull(it.id) }
         val checked = remote.checked.mapNotNull {
             TodayKeys.fromPortable(it, full?.ingredients.orEmpty().map { g -> g.id }, full?.bowls.orEmpty().map { b -> b.bowl.id })
@@ -537,6 +495,9 @@ class RecipeRepository(
                 title = remote.title,
                 date = remote.date,
                 checked = checked.sorted().joinToString(","),
+                order = remote.order ?: local?.order ?: 0,
+                currentStep = remote.currentStep ?: local?.currentStep ?: 0,
+                done = remote.done ?: local?.done ?: false,
                 updatedAt = remote.updatedAt,
                 deleted = remote.deleted,
             )

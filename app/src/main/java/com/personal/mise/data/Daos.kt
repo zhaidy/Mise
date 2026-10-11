@@ -186,56 +186,6 @@ interface RecipeDao {
 }
 
 @Dao
-interface TodayDao {
-    @Query(
-        """
-        SELECT t.recipeId AS recipeId, t.sortOrder AS position, t.currentStep AS currentStep,
-               t.bowlsChecked AS bowlsChecked, r.title AS title, r.coverImage AS coverImage,
-               r.calories AS calories, t.done AS done,
-               (SELECT COUNT(*) FROM step s WHERE s.recipeId = t.recipeId) AS stepCount
-        FROM today_menu t JOIN recipe r ON r.id = t.recipeId
-        WHERE t.removed = 0
-        ORDER BY t.sortOrder, t.recipeId
-        """
-    )
-    fun observe(): Flow<List<TodayRow>>
-
-    /** 包括已移出的 */
-    @Query("SELECT * FROM today_menu WHERE recipeId = :recipeId")
-    suspend fun get(recipeId: Long): TodayMenu?
-
-    /** 包括已移出的，同步时比较两边谁新 */
-    @Query("SELECT r.uid AS uid, t.updatedAt AS updatedAt FROM today_menu t JOIN recipe r ON r.id = t.recipeId")
-    fun observeStamps(): Flow<List<RecipeStamp>>
-
-    @Query("SELECT COALESCE(MAX(sortOrder), -1) FROM today_menu WHERE removed = 0")
-    suspend fun maxOrder(): Int
-
-    @Upsert
-    suspend fun upsert(entry: TodayMenu)
-
-    @Query("UPDATE today_menu SET removed = 1, updatedAt = :now WHERE recipeId = :recipeId AND removed = 0")
-    suspend fun markRemoved(recipeId: Long, now: Long)
-
-    @Query("UPDATE today_menu SET removed = 1, updatedAt = :now WHERE removed = 0")
-    suspend fun markAllRemoved(now: Long)
-
-    // 下面几个值没变就不写，免得每次打开页面都算一次改动、触发同步
-
-    @Query("UPDATE today_menu SET sortOrder = :order, updatedAt = :now WHERE recipeId = :recipeId AND sortOrder != :order")
-    suspend fun setOrder(recipeId: Long, order: Int, now: Long)
-
-    @Query("UPDATE today_menu SET currentStep = :step, updatedAt = :now WHERE recipeId = :recipeId AND currentStep != :step")
-    suspend fun setCurrentStep(recipeId: Long, step: Int, now: Long)
-
-    @Query("UPDATE today_menu SET bowlsChecked = :checked, updatedAt = :now WHERE recipeId = :recipeId AND bowlsChecked != :checked")
-    suspend fun setChecked(recipeId: Long, checked: String, now: Long)
-
-    @Query("UPDATE today_menu SET done = :done, updatedAt = :now WHERE recipeId = :recipeId AND done != :done")
-    suspend fun setDone(recipeId: Long, done: Boolean, now: Long)
-}
-
-@Dao
 interface CookLogDao {
     /** 菜谱还在就用现在的菜名 */
     @Query(
@@ -278,13 +228,27 @@ interface MealPlanDao {
     @Query(
         """
         SELECT p.uid AS uid, p.date AS date, COALESCE(r.title, p.title) AS title, p.checked AS checked,
-               r.id AS recipeId, r.coverImage AS coverImage, r.calories AS calories
+               p.done AS done, r.id AS recipeId, r.coverImage AS coverImage, r.calories AS calories
         FROM meal_plan p LEFT JOIN recipe r ON r.uid = p.recipeUid AND r.deleted = 0
         WHERE p.deleted = 0
-        ORDER BY p.date, p.uid
+        ORDER BY p.date, p.sortOrder, p.uid
         """
     )
     fun observeAll(): Flow<List<PlanRow>>
+
+    /** 这天的今日菜单：菜谱删了的不算 */
+    @Query(
+        """
+        SELECT p.uid AS uid, r.id AS recipeId, p.sortOrder AS position, p.currentStep AS currentStep,
+               p.checked AS checked, r.title AS title, r.coverImage AS coverImage,
+               r.calories AS calories, p.done AS done,
+               (SELECT COUNT(*) FROM step s WHERE s.recipeId = r.id) AS stepCount
+        FROM meal_plan p JOIN recipe r ON r.uid = p.recipeUid AND r.deleted = 0
+        WHERE p.deleted = 0 AND p.date = :date
+        ORDER BY p.sortOrder, p.uid
+        """
+    )
+    fun observeDay(date: String): Flow<List<TodayRow>>
 
     /** 这道菜排在哪些日子 */
     @Query("SELECT date FROM meal_plan WHERE recipeUid = :recipeUid AND deleted = 0 ORDER BY date")
@@ -294,8 +258,11 @@ interface MealPlanDao {
     @Query("SELECT * FROM meal_plan WHERE uid = :uid")
     suspend fun get(uid: String): MealPlan?
 
-    @Query("SELECT * FROM meal_plan WHERE date = :date AND deleted = 0 ORDER BY uid")
+    @Query("SELECT * FROM meal_plan WHERE date = :date AND deleted = 0 ORDER BY sortOrder, uid")
     suspend fun onDate(date: String): List<MealPlan>
+
+    @Query("SELECT COALESCE(MAX(sortOrder), -1) FROM meal_plan WHERE date = :date AND deleted = 0")
+    suspend fun maxOrder(date: String): Int
 
     /** 包括已移出的，同步时比较两边谁新 */
     @Query("SELECT uid, updatedAt FROM meal_plan")
@@ -307,6 +274,20 @@ interface MealPlanDao {
     @Query("UPDATE meal_plan SET deleted = 1, updatedAt = :now WHERE uid = :uid AND deleted = 0")
     suspend fun markDeleted(uid: String, now: Long)
 
+    @Query("UPDATE meal_plan SET deleted = 1, updatedAt = :now WHERE date = :date AND deleted = 0")
+    suspend fun markDayDeleted(date: String, now: Long)
+
+    // 下面几个值没变就不写，免得每次打开页面都算一次改动、触发同步
+
     @Query("UPDATE meal_plan SET checked = :checked, updatedAt = :now WHERE uid = :uid AND checked != :checked")
     suspend fun setChecked(uid: String, checked: String, now: Long)
+
+    @Query("UPDATE meal_plan SET sortOrder = :order, updatedAt = :now WHERE uid = :uid AND sortOrder != :order")
+    suspend fun setOrder(uid: String, order: Int, now: Long)
+
+    @Query("UPDATE meal_plan SET currentStep = :step, updatedAt = :now WHERE uid = :uid AND currentStep != :step")
+    suspend fun setCurrentStep(uid: String, step: Int, now: Long)
+
+    @Query("UPDATE meal_plan SET done = :done, updatedAt = :now WHERE uid = :uid AND done != :done")
+    suspend fun setDone(uid: String, done: Boolean, now: Long)
 }
