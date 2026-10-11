@@ -4,6 +4,8 @@ import com.personal.mise.ui.common.FieldShape
 import com.personal.mise.ui.common.miseFieldColors
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -70,6 +72,7 @@ fun AiKeyDialog(confirmLabel: String, onDismiss: () -> Unit, onConfirm: () -> Un
 }
 
 /** 选 AI 服务商 + 填 Key 的输入框，AI 设置和「AI 整理笔记」共用 */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun AiKeyFields(
     provider: AiProvider,
@@ -79,7 +82,7 @@ fun AiKeyFields(
     modifier: Modifier = Modifier,
 ) {
     Column(modifier) {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             AiProvider.entries.forEach {
                 FilterChip(selected = it == provider, onClick = { onProviderChange(it) }, label = { Text(it.label) })
             }

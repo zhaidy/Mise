@@ -15,6 +15,7 @@ import com.personal.mise.ai.AiSettings
 import com.personal.mise.ai.AiStepSplitter
 import com.personal.mise.ai.CellularNetwork
 import com.personal.mise.ai.ClaudeClient
+import com.personal.mise.ai.DeepSeekClient
 import com.personal.mise.ai.GeminiClient
 import com.personal.mise.ai.SwitchableAiClient
 import com.personal.mise.backup.BackupManager
@@ -65,6 +66,7 @@ class MiseApp : Application() {
             aiSettings,
             GeminiClient(aiSettings, AiHttp(aiSettings, cellular, readTimeoutSeconds = 90, onCellularUsed = onCellularUsed)),
             ClaudeClient(aiSettings, AiHttp(aiSettings, cellular, readTimeoutSeconds = 120, onCellularUsed = onCellularUsed)),
+            DeepSeekClient(aiSettings, AiHttp(aiSettings, cellular, readTimeoutSeconds = 120, onCellularUsed = onCellularUsed)),
         )
     }
     val stepSplitter: AiStepSplitter by lazy { AiStepSplitter(ai) }
