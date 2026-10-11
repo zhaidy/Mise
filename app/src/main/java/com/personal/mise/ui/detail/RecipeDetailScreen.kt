@@ -213,6 +213,9 @@ fun RecipeDetailScreen(
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                             itemVerticalAlignment = Alignment.CenterVertically,
                         ) {
+                            data.recipe.category?.takeIf { it.isNotBlank() }?.let {
+                                InfoPill(it, container = MaterialTheme.colorScheme.secondaryContainer, content = MaterialTheme.colorScheme.onSecondaryContainer)
+                            }
                             data.recipe.servings?.takeIf { it.isNotBlank() }?.let { InfoPill(it) }
                             if (data.steps.isNotEmpty()) InfoPill("${data.steps.size} 步")
                             Surface(

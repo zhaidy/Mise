@@ -27,6 +27,8 @@ data class Recipe(
     val deleted: Boolean = false,
     /** 整道菜（按菜谱原文的份量）大约多少千卡，AI 估算或手填；空表示还没算 */
     val calories: Int? = null,
+    /** 分类，如「家常菜」「汤」；空表示未分类 */
+    val category: String? = null,
 )
 
 @Entity(

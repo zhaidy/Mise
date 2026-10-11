@@ -35,6 +35,8 @@ data class RecipeDraft(
     val servings: String? = null,
     /** 整道菜的千卡 */
     val calories: Int? = null,
+    /** 分类，空表示未分类 */
+    val category: String? = null,
     val ingredients: List<IngredientDraft> = emptyList(),
     val steps: List<StepDraft> = emptyList(),
 )
@@ -55,6 +57,8 @@ class RecipeRepository(
     private val cookLogDao = db.cookLogDao()
 
     fun search(query: String): Flow<List<Recipe>> = dao.search(query.trim())
+
+    fun observeCategories(): Flow<List<String>> = dao.observeCategories()
 
     fun observeFull(id: Long): Flow<RecipeFull?> = combine(
         dao.observe(id),
@@ -88,6 +92,7 @@ class RecipeRepository(
             sourceUrl = full.recipe.sourceUrl,
             servings = full.recipe.servings,
             calories = full.recipe.calories,
+            category = full.recipe.category,
             ingredients = full.ingredients.map { IngredientDraft(it.id, it.name, it.amountText, it.kind) },
             steps = full.steps.map { StepDraft(it.id, it.text, it.image, it.timerSeconds) },
         )
@@ -105,6 +110,7 @@ class RecipeRepository(
                         sourceUrl = draft.sourceUrl,
                         servings = draft.servings?.takeIf { it.isNotBlank() },
                         calories = draft.calories,
+                        category = draft.category?.trim()?.takeIf { it.isNotEmpty() },
                     )
                 )
             } else {
@@ -116,6 +122,7 @@ class RecipeRepository(
                         sourceUrl = draft.sourceUrl,
                         servings = draft.servings?.takeIf { it.isNotBlank() },
                         calories = draft.calories,
+                        category = draft.category?.trim()?.takeIf { it.isNotEmpty() },
                         updatedAt = System.currentTimeMillis(),
                     )
                 )
@@ -241,6 +248,7 @@ class RecipeRepository(
                 updatedAt = remote.updatedAt,
                 deleted = remote.deleted,
                 calories = remote.calories,
+                category = remote.category,
             )
             val recipeId = if (existing == null) dao.insert(row) else { dao.update(row); existing.id }
 

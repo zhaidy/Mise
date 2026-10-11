@@ -9,6 +9,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -38,6 +40,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -135,6 +138,8 @@ fun RecipeEditor(
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                 )
+                Spacer(Modifier.height(8.dp))
+                CategoryField(vm)
                 Spacer(Modifier.height(8.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     OutlinedTextField(
@@ -327,4 +332,35 @@ fun RecipeEditor(
 @Composable
 private fun EditorSection(title: String, hint: String) {
     SectionHeader(title, Modifier.padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 4.dp), hint = hint)
+}
+
+/** 分类：可以直接输入新的，也可以点下面已有的分类；再点一次选中的就清空 */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun CategoryField(vm: EditorViewModel) {
+    val categories by vm.categories.collectAsStateWithLifecycle(emptyList())
+    OutlinedTextField(
+        shape = FieldShape,
+        colors = miseFieldColors(),
+        value = vm.category,
+        onValueChange = { vm.category = it },
+        label = { Text("分类（可不填，如 家常菜、汤、早餐）") },
+        modifier = Modifier.fillMaxWidth(),
+        singleLine = true,
+    )
+    if (categories.isNotEmpty()) {
+        FlowRow(
+            Modifier.padding(top = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            categories.forEach { name ->
+                val selected = vm.category.trim() == name
+                FilterChip(
+                    selected = selected,
+                    onClick = { vm.category = if (selected) "" else name },
+                    label = { Text(name) },
+                )
+            }
+        }
+    }
 }

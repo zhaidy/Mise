@@ -83,6 +83,10 @@ class EditorViewModel(
 
     var title by mutableStateOf("")
     var servings by mutableStateOf("")
+    /** 分类，空表示未分类 */
+    var category by mutableStateOf("")
+    /** 已有的分类，编辑时点一下就能选 */
+    val categories = app.repository.observeCategories()
     /** 整道菜的千卡，空表示还没算 */
     var calories by mutableStateOf("")
         private set
@@ -151,6 +155,7 @@ class EditorViewModel(
     private fun fill(draft: RecipeDraft) {
         title = draft.title
         servings = draft.servings.orEmpty()
+        category = draft.category.orEmpty()
         cover = draft.coverImage
         sourceUrl = draft.sourceUrl
         ingredients.clear()
@@ -418,6 +423,7 @@ class EditorViewModel(
         sourceUrl = sourceUrl,
         servings = servings,
         calories = calories.toIntOrNull()?.takeIf { it > 0 },
+        category = category,
         ingredients = ingredients.map { IngredientDraft(it.id, it.name, it.amount, it.kind) },
         steps = steps.map { row ->
             val seconds = row.timerMinutes.toDoubleOrNull()?.let { (it * 60).toInt() }?.takeIf { it > 0 }

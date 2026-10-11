@@ -27,6 +27,9 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.FilterChip
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.ui.graphics.Color
@@ -104,7 +107,22 @@ fun RecipeListScreen(
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
     var query by rememberSaveable { mutableStateOf("") }
-    val recipes by remember(query) { app.repository.search(query) }.collectAsStateWithLifecycle(emptyList())
+    val found by remember(query) { app.repository.search(query) }.collectAsStateWithLifecycle(emptyList())
+    // 还没读出来时是 null，免得把转屏前选的分类当成不存在
+    val loadedCategories by remember { app.repository.observeCategories() }.collectAsStateWithLifecycle(null)
+    val categories = loadedCategories.orEmpty()
+    // null 是全部，UNCATEGORIZED 是没分类的
+    var category by rememberSaveable { mutableStateOf<String?>(null) }
+    // 选中的分类被改名或删光了，就回到全部
+    LaunchedEffect(loadedCategories) {
+        val known = loadedCategories ?: return@LaunchedEffect
+        if (category != null && category != UNCATEGORIZED && category !in known) category = null
+    }
+    val recipes = when (category) {
+        null -> found
+        UNCATEGORIZED -> found.filter { it.category.isNullOrBlank() }
+        else -> found.filter { it.category == category }
+    }
     var menuOpen by remember { mutableStateOf(false) }
     var pasteOpen by remember { mutableStateOf(false) }
     var noteOpen by remember { mutableStateOf(false) }
@@ -215,9 +233,18 @@ fun RecipeListScreen(
                         }
                     }
                     SearchField(query, { query = it })
+                    if (categories.isNotEmpty()) {
+                        CategoryChips(categories, category, { category = it })
+                    }
                     if (recipes.isNotEmpty()) {
+                        val heading = when {
+                            query.isNotEmpty() -> "搜索结果"
+                            category == UNCATEGORIZED -> "未分类"
+                            category != null -> category!!
+                            else -> "我的菜谱"
+                        }
                         Row(verticalAlignment = Alignment.Bottom) {
-                            Text(if (query.isEmpty()) "我的菜谱" else "搜索结果", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+                            Text(heading, style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
                             Text(
                                 "共 ${recipes.size} 道 · 长按加入今日",
                                 style = MaterialTheme.typography.bodySmall,
@@ -229,7 +256,9 @@ fun RecipeListScreen(
             }
             if (recipes.isEmpty()) {
                 item(key = "empty", span = { full }) {
-                    if (query.isEmpty()) {
+                    if (found.isNotEmpty()) {
+                        EmptyState("类", "这个分类下没有菜谱", "换个分类看看，或者点「全部」", Modifier.padding(top = 24.dp))
+                    } else if (query.isEmpty()) {
                         EmptyState(
                             "谱",
                             "还没有菜谱",
@@ -386,6 +415,31 @@ private fun RecipeCard(recipe: Recipe, onClick: () -> Unit, onLongClick: () -> U
             }
         }
     }
+}
+
+private const val UNCATEGORIZED = "\u0000未分类"
+
+/** 按分类筛选：全部、各个分类、未分类，横着滑 */
+@Composable
+private fun CategoryChips(categories: List<String>, selected: String?, onSelect: (String?) -> Unit) {
+    LazyRow(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        item(key = "all") { CategoryChip("全部", selected == null) { onSelect(null) } }
+        items(categories, key = { it }) { name -> CategoryChip(name, selected == name) { onSelect(name) } }
+        item(key = "none") { CategoryChip("未分类", selected == UNCATEGORIZED) { onSelect(UNCATEGORIZED) } }
+    }
+}
+
+@Composable
+private fun CategoryChip(text: String, selected: Boolean, onClick: () -> Unit) {
+    FilterChip(
+        selected = selected,
+        onClick = onClick,
+        label = { Text(text) },
+        shape = CircleShape,
+    )
 }
 
 /** 胶囊形搜索框 */
