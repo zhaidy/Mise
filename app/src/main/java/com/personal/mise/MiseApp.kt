@@ -10,6 +10,7 @@ import com.personal.mise.ai.AiRecipeOrganizer
 import com.personal.mise.ai.AiSettings
 import com.personal.mise.ai.AiStepSplitter
 import com.personal.mise.ai.ClaudeClient
+import com.personal.mise.ai.DeepSeekClient
 import com.personal.mise.ai.GeminiClient
 import com.personal.mise.ai.SwitchableAiClient
 import com.personal.mise.backup.BackupManager
@@ -46,7 +47,7 @@ class MiseApp : Application() {
     val updater: UpdateChecker by lazy { UpdateChecker(this) }
     val backup: BackupManager by lazy { BackupManager(this, database) }
     val pantry: Pantry by lazy { Pantry(this) }
-    private val ai: AiClient by lazy { SwitchableAiClient(aiSettings, GeminiClient(aiSettings), ClaudeClient(aiSettings)) }
+    private val ai: AiClient by lazy { SwitchableAiClient(aiSettings, GeminiClient(aiSettings), ClaudeClient(aiSettings), DeepSeekClient(aiSettings)) }
     val stepSplitter: AiStepSplitter by lazy { AiStepSplitter(ai) }
     val noteOrganizer: AiRecipeOrganizer by lazy { AiRecipeOrganizer(ai) }
     val bowlOrganizer: AiBowlOrganizer by lazy { AiBowlOrganizer(ai) }

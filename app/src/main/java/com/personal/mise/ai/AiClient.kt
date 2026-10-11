@@ -3,7 +3,7 @@ package com.personal.mise.ai
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** 让大模型按 JSON Schema 返回 JSON；Gemini 和 Claude 各有一个实现 */
+/** 让大模型按 JSON Schema 返回 JSON；Gemini、Claude、DeepSeek 各有一个实现 */
 interface AiClient {
     /** 返回模型回复里的 JSON 对象，出错时抛 ImportException；images 是一起发给模型看的 JPEG 图片 */
     suspend fun generate(prompt: String, schema: JSONObject, images: List<ByteArray> = emptyList()): JSONObject
@@ -14,11 +14,13 @@ class SwitchableAiClient(
     private val settings: AiSettings,
     private val gemini: AiClient,
     private val claude: AiClient,
+    private val deepseek: AiClient,
 ) : AiClient {
     override suspend fun generate(prompt: String, schema: JSONObject, images: List<ByteArray>): JSONObject =
         when (settings.provider) {
             AiProvider.GEMINI -> gemini
             AiProvider.CLAUDE -> claude
+            AiProvider.DEEPSEEK -> deepseek
         }.generate(prompt, schema, images)
 }
 
