@@ -16,6 +16,7 @@ data class SyncedRecipe(
     val updatedAt: Long,
     val deleted: Boolean,
     val bowlsManual: Boolean,
+    val calories: Int?,
     val ingredients: List<SyncedIngredient>,
     val steps: List<SyncedStep>,
     val bowls: List<SyncedBowl>,
@@ -30,6 +31,7 @@ data class SyncedRecipe(
         "updatedAt" to updatedAt,
         "deleted" to deleted,
         "bowlsManual" to bowlsManual,
+        "calories" to calories,
         "ingredients" to ingredients.map { mapOf("name" to it.name, "amountText" to it.amountText, "kind" to it.kind) },
         "steps" to steps.map { mapOf("text" to it.text, "image" to it.image, "timerSeconds" to it.timerSeconds) },
         "bowls" to bowls.map { bowl ->
@@ -58,6 +60,7 @@ data class SyncedRecipe(
                 updatedAt = r.updatedAt,
                 deleted = r.deleted,
                 bowlsManual = r.bowlsManual,
+                calories = r.calories,
                 ingredients = full.ingredients.map { SyncedIngredient(it.name, it.amountText, it.kind) },
                 steps = full.steps.map { SyncedStep(it.text, it.image, it.timerSeconds) },
                 bowls = full.bowls.map { b ->
@@ -101,6 +104,8 @@ data class SyncedRecipe(
                 updatedAt = (data["updatedAt"] as Number).toLong(),
                 deleted = data["deleted"] as Boolean,
                 bowlsManual = data["bowlsManual"] as Boolean,
+                // 旧版本写的文档没有这一项
+                calories = (data["calories"] as Number?)?.toInt(),
                 ingredients = ingredients,
                 steps = steps,
                 bowls = bowls,

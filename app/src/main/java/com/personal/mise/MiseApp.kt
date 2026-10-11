@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.compose.runtime.mutableStateMapOf
 import com.personal.mise.ai.AiAmountEstimator
 import com.personal.mise.ai.AiBowlOrganizer
+import com.personal.mise.ai.AiCalorieEstimator
 import com.personal.mise.ai.AiClient
 import com.personal.mise.ai.AiRecipeOrganizer
 import com.personal.mise.ai.AiSettings
@@ -46,6 +47,7 @@ class MiseApp : Application() {
     val noteOrganizer: AiRecipeOrganizer by lazy { AiRecipeOrganizer(ai) }
     val bowlOrganizer: AiBowlOrganizer by lazy { AiBowlOrganizer(ai) }
     val amountEstimator: AiAmountEstimator by lazy { AiAmountEstimator(ai) }
+    val calorieEstimator: AiCalorieEstimator by lazy { AiCalorieEstimator(ai) }
 
     /** 每道菜当前的用量倍率，只在本次运行里有效；详情、备料、做菜页共用 */
     val scales = mutableStateMapOf<Long, Double>()

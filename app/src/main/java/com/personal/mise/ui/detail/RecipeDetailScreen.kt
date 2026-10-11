@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -23,6 +24,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
@@ -63,8 +65,11 @@ import com.personal.mise.data.Ingredient
 import com.personal.mise.data.IngredientKind
 import com.personal.mise.ui.common.LocalImage
 import com.personal.mise.ui.common.hasImage
+import com.personal.mise.importer.ImportException
 import com.personal.mise.ui.common.rememberApp
+import com.personal.mise.ui.edit.AiKeyDialog
 import com.personal.mise.util.AmountScaler
+import com.personal.mise.util.CalorieText
 import com.personal.mise.util.DayText
 import com.personal.mise.util.TimeText
 import com.personal.mise.util.UnitText
@@ -86,9 +91,30 @@ fun RecipeDetailScreen(
     val full by remember(recipeId) { app.repository.observeFull(recipeId) }.collectAsStateWithLifecycle(null)
     var confirmDelete by remember { mutableStateOf(false) }
     var scaleOpen by remember { mutableStateOf(false) }
+    var estimatingCalories by remember { mutableStateOf(false) }
+    var askingKey by remember { mutableStateOf(false) }
     var logOpen by remember { mutableStateOf(false) }
     val cookDates by remember(recipeId) { app.repository.observeCookDates(recipeId) }.collectAsStateWithLifecycle(emptyList())
     val factor = app.scaleOf(recipeId)
+
+    fun estimateCalories() {
+        val current = full ?: return
+        if (estimatingCalories) return
+        estimatingCalories = true
+        scope.launch {
+            val message = try {
+                val kcal = app.calorieEstimator.estimate(current)
+                app.repository.setCalories(recipeId, kcal)
+                "AI 估算整道菜约 $kcal 千卡"
+            } catch (e: ImportException) {
+                e.message ?: "AI 估算热量失败"
+            } catch (e: Exception) {
+                "AI 估算热量失败：${e.message ?: e.javaClass.simpleName}"
+            }
+            estimatingCalories = false
+            snackbar.showSnackbar(message)
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -144,6 +170,24 @@ fun RecipeDetailScreen(
                 }
                 data.recipe.servings?.let {
                     Text("份量：$it", Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+                }
+                Row(
+                    Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    val kcal = data.recipe.calories
+                    Text(
+                        if (kcal == null) "热量：还没算" else "热量：${CalorieText.describe(kcal, data.recipe.servings, factor)}",
+                        Modifier.weight(1f),
+                        color = if (kcal == null) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
+                    )
+                    if (estimatingCalories) {
+                        CircularProgressIndicator(Modifier.padding(12.dp).size(20.dp), strokeWidth = 2.dp)
+                    } else if (data.ingredients.isNotEmpty()) {
+                        TextButton(onClick = { if (app.aiSettings.hasKey) estimateCalories() else askingKey = true }) {
+                            Text(if (kcal == null) "AI 估算" else "重新估算")
+                        }
+                    }
                 }
             }
             item {
@@ -228,6 +272,17 @@ fun RecipeDetailScreen(
                 }
             }
         }
+    }
+
+    if (askingKey) {
+        AiKeyDialog(
+            confirmLabel = "保存并估算",
+            onDismiss = { askingKey = false },
+            onConfirm = {
+                askingKey = false
+                estimateCalories()
+            },
+        )
     }
 
     if (scaleOpen) {

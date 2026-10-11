@@ -22,6 +22,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -46,8 +47,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.personal.mise.data.TodayRow
+import com.personal.mise.importer.ImportException
 import com.personal.mise.ui.common.LocalImage
 import com.personal.mise.ui.common.rememberApp
+import com.personal.mise.ui.edit.AiKeyDialog
+import com.personal.mise.util.CalorieText
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
@@ -65,6 +70,37 @@ fun TodayScreen(
     var items by remember { mutableStateOf(rows) }
     LaunchedEffect(rows) { items = rows }
     var confirmClear by remember { mutableStateOf(false) }
+    var estimating by remember { mutableStateOf(false) }
+    var calorieMessage by remember { mutableStateOf<String?>(null) }
+    var askingKey by remember { mutableStateOf(false) }
+
+    /** 让 AI 把还没算热量的菜逐道估一下 */
+    fun estimateMissing() {
+        if (estimating) return
+        val missing = items.filter { it.calories == null }
+        estimating = true
+        calorieMessage = null
+        scope.launch {
+            var done = 0
+            var error: String? = null
+            missing.forEach { row ->
+                try {
+                    val full = app.repository.loadFull(row.recipeId) ?: return@forEach
+                    if (full.ingredients.isEmpty()) return@forEach
+                    app.repository.setCalories(row.recipeId, app.calorieEstimator.estimate(full))
+                    done++
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: ImportException) {
+                    error = e.message
+                } catch (e: Exception) {
+                    error = e.message ?: e.javaClass.simpleName
+                }
+            }
+            estimating = false
+            calorieMessage = error?.let { "估算了 $done 道，有的没成功：$it" }
+        }
+    }
 
     val listState = rememberLazyListState()
     val reorderState = rememberReorderableLazyListState(listState) { from, to ->
@@ -113,10 +149,20 @@ fun TodayScreen(
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
+                item(key = "calories") {
+                    CaloriesSummary(
+                        rows = items,
+                        factorOf = app::scaleOf,
+                        estimating = estimating,
+                        message = calorieMessage,
+                        onEstimate = { if (app.aiSettings.hasKey) estimateMissing() else askingKey = true },
+                    )
+                }
                 items(items, key = { it.recipeId }) { row ->
                     ReorderableItem(reorderState, key = row.recipeId) { isDragging ->
                         TodayCard(
                             row = row,
+                            factor = app.scaleOf(row.recipeId),
                             dragging = isDragging,
                             onClick = { onOpenRecipe(row.recipeId) },
                             onRemove = { scope.launch { app.repository.removeFromToday(row.recipeId) } },
@@ -126,6 +172,17 @@ fun TodayScreen(
                 }
             }
         }
+    }
+
+    if (askingKey) {
+        AiKeyDialog(
+            confirmLabel = "保存并估算",
+            onDismiss = { askingKey = false },
+            onConfirm = {
+                askingKey = false
+                estimateMissing()
+            },
+        )
     }
 
     if (confirmClear) {
@@ -144,9 +201,49 @@ fun TodayScreen(
     }
 }
 
+/** 今日菜单一共多少千卡；按每道菜现在的换算倍率算 */
+@Composable
+private fun CaloriesSummary(
+    rows: List<TodayRow>,
+    factorOf: (Long) -> Double,
+    estimating: Boolean,
+    message: String?,
+    onEstimate: () -> Unit,
+) {
+    val known = rows.filter { it.calories != null }
+    val missing = rows.size - known.size
+    val total = known.sumOf { CalorieText.scaled(it.calories!!, factorOf(it.recipeId)) }
+    Card(
+        Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
+    ) {
+        Row(Modifier.padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    if (known.isEmpty()) "今日热量：还没算" else "今日共${CalorieText.format(total)}",
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                val detail = when {
+                    missing == 0 -> "${rows.size} 道菜，整道菜的热量加起来"
+                    known.isEmpty() -> "可以让 AI 按用料估算每道菜的热量"
+                    else -> "还有 $missing 道菜没算热量，没算进去"
+                }
+                Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                message?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+            }
+            if (estimating) {
+                CircularProgressIndicator(Modifier.padding(12.dp).size(20.dp), strokeWidth = 2.dp)
+            } else if (missing > 0) {
+                TextButton(onClick = onEstimate) { Text("AI 估算") }
+            }
+        }
+    }
+}
+
 @Composable
 private fun TodayCard(
     row: TodayRow,
+    factor: Double,
     dragging: Boolean,
     onClick: () -> Unit,
     onRemove: () -> Unit,
@@ -165,6 +262,13 @@ private fun TodayCard(
                 Text(row.title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 val progress = if (row.stepCount == 0) "没有步骤" else "进度 ${(row.currentStep + 1).coerceAtMost(row.stepCount)}/${row.stepCount}"
                 Text(progress, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                row.calories?.let {
+                    Text(
+                        CalorieText.describe(it, null, factor),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
             IconButton(onClick = onRemove) { Icon(Icons.Filled.Close, contentDescription = "移出今日菜单") }
         }
