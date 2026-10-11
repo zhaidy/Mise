@@ -38,6 +38,7 @@ fun KitchenDialog(onDismiss: () -> Unit) {
     val scope = rememberCoroutineScope()
     val code by app.kitchen.kitchenCode.collectAsStateWithLifecycle()
     val syncError by app.kitchen.error.collectAsStateWithLifecycle()
+    val memberCount by app.kitchen.memberCount.collectAsStateWithLifecycle()
     var input by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
@@ -94,6 +95,7 @@ fun KitchenDialog(onDismiss: () -> Unit) {
                             message = "已复制"
                         }) { Text("复制") }
                     }
+                    memberCount?.let { Text("已有 $it 人加入", color = MaterialTheme.colorScheme.onSurfaceVariant) }
                     syncError?.let { Text("同步出错：$it", color = MaterialTheme.colorScheme.error) }
                     TextButton(enabled = !busy, onClick = { confirmLeave = true }) { Text("退出共享") }
                 }
