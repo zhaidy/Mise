@@ -22,6 +22,23 @@ class SwitchableAiClient(
         }.generate(prompt, schema, images)
 }
 
+/**
+ * 网络出错时的说明：OkHttp 只在最外层写 "Failed to connect to …"，
+ * 真正原因（拒绝连接、网络不可达、超时）在 cause 和 suppressed 里，一起列出来方便排查。
+ */
+fun networkErrorDetail(e: Throwable): String {
+    val seen = mutableSetOf<Throwable>()
+    val parts = mutableListOf<String>()
+    fun walk(t: Throwable?) {
+        if (t == null || !seen.add(t)) return
+        parts += t.message?.takeIf { it.isNotBlank() }?.let { "${t.javaClass.simpleName}: $it" } ?: t.javaClass.simpleName
+        t.suppressed.forEach { walk(it) }
+        walk(t.cause)
+    }
+    walk(e)
+    return parts.distinct().joinToString("\n")
+}
+
 /** 标准 JSON Schema 的小工具；Claude 直接用，Gemini 由 [GeminiClient.toGeminiSchema] 转成它自己的格式 */
 object AiSchema {
     fun obj(vararg props: Pair<String, JSONObject>, required: List<String> = emptyList()): JSONObject =
