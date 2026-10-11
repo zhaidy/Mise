@@ -26,7 +26,7 @@ class BackupManager(private val context: Context, private val db: MiseDatabase) 
         val sqlite = db.openHelper.writableDatabase
         // 把 WAL 里的改动写回主文件，拷贝 mise.db 一个文件就够了
         sqlite.query("PRAGMA wal_checkpoint(TRUNCATE)").use { it.moveToFirst() }
-        val count = sqlite.query("SELECT COUNT(*) FROM recipe").use { if (it.moveToFirst()) it.getInt(0) else 0 }
+        val count = sqlite.query("SELECT COUNT(*) FROM recipe WHERE deleted = 0").use { if (it.moveToFirst()) it.getInt(0) else 0 }
 
         val out = context.contentResolver.openOutputStream(uri) ?: error("无法写入所选文件")
         ZipOutputStream(out.buffered()).use { zip ->
@@ -67,7 +67,9 @@ class BackupManager(private val context: Context, private val db: MiseDatabase) 
             val header = stagedDb.inputStream().use { it.readNBytesCompat(SQLITE_HEADER.size) }
             require(header.contentEquals(SQLITE_HEADER)) { "备份里的数据库已损坏" }
             val (version, count) = SQLiteDatabase.openDatabase(stagedDb.path, null, SQLiteDatabase.OPEN_READONLY).use { sqlite ->
-                sqlite.version to sqlite.rawQuery("SELECT COUNT(*) FROM recipe", null)
+                // v1 的备份还没有删除标记，恢复后打开时会自动迁移
+                val where = if (sqlite.version >= 2) " WHERE deleted = 0" else ""
+                sqlite.version to sqlite.rawQuery("SELECT COUNT(*) FROM recipe$where", null)
                     .use { if (it.moveToFirst()) it.getInt(0) else 0 }
             }
             require(version >= 1) { "不是 Mise 的备份文件" }

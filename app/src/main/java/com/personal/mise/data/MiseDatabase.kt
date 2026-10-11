@@ -4,6 +4,9 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
+import java.util.UUID
 
 @Database(
     entities = [
@@ -22,10 +25,29 @@ abstract class MiseDatabase : RoomDatabase() {
     abstract fun todayDao(): TodayDao
 
     companion object {
-        const val VERSION = 1
+        const val VERSION = 2
         const val NAME = "mise.db"
 
         fun create(context: Context): MiseDatabase =
-            Room.databaseBuilder(context, MiseDatabase::class.java, NAME).build()
+            Room.databaseBuilder(context, MiseDatabase::class.java, NAME)
+                .addMigrations(MIGRATION_1_2)
+                .build()
+    }
+}
+
+/** v2：菜谱加 uid / updatedAt / deleted，为多设备同步做准备 */
+val MIGRATION_1_2 = object : Migration(1, 2) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE recipe ADD COLUMN uid TEXT NOT NULL DEFAULT ''")
+        db.execSQL("ALTER TABLE recipe ADD COLUMN updatedAt INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE recipe ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("UPDATE recipe SET updatedAt = createdAt")
+        val ids = db.query("SELECT id FROM recipe").use { c ->
+            buildList { while (c.moveToNext()) add(c.getLong(0)) }
+        }
+        ids.forEach { id ->
+            db.execSQL("UPDATE recipe SET uid = ? WHERE id = ?", arrayOf<Any>(UUID.randomUUID().toString(), id))
+        }
+        db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_recipe_uid ON recipe (uid)")
     }
 }

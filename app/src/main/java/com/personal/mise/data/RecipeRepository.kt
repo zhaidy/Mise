@@ -103,6 +103,7 @@ class RecipeRepository(
                         coverImage = draft.coverImage,
                         sourceUrl = draft.sourceUrl,
                         servings = draft.servings?.takeIf { it.isNotBlank() },
+                        updatedAt = System.currentTimeMillis(),
                     )
                 )
                 draft.id
@@ -134,7 +135,13 @@ class RecipeRepository(
 
     suspend fun delete(id: Long) {
         val paths = imagesOf(id)
-        dao.delete(id)
+        db.withTransaction {
+            todayDao.remove(id)
+            dao.deleteBowls(id)
+            dao.deleteIngredients(id)
+            dao.deleteSteps(id)
+            dao.markDeleted(id, System.currentTimeMillis())
+        }
         paths.forEach { images.delete(it) }
     }
 
@@ -149,6 +156,7 @@ class RecipeRepository(
     suspend fun regenerateBowls(recipeId: Long) = db.withTransaction {
         generateBowls(recipeId)
         dao.setBowlsManual(recipeId, false)
+        dao.touch(recipeId, System.currentTimeMillis())
     }
 
     private suspend fun generateBowls(recipeId: Long) {
@@ -178,6 +186,7 @@ class RecipeRepository(
             }
         }
         dao.setBowlsManual(recipeId, true)
+        dao.touch(recipeId, System.currentTimeMillis())
     }
 
     // 今日菜单
