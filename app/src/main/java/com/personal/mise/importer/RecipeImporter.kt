@@ -21,7 +21,12 @@ import okhttp3.Request
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 
-class ImportException(message: String) : Exception(message)
+open class ImportException(message: String) : Exception(message)
+
+/** 网站返回了错误状态码 */
+class HttpStatusException(val code: Int) : ImportException(
+    if (code == 429) "网站暂时限制了访问（HTTP 429），过几分钟再试" else "打开链接失败（HTTP $code）",
+)
 
 /** aiOrganized：内容已经是 AI 整理过的（步骤已经分好，不用再拆） */
 data class ImportResult(val draft: RecipeDraft, val warnings: List<String>, val aiOrganized: Boolean = false)
@@ -30,7 +35,11 @@ data class ImportResult(val draft: RecipeDraft, val warnings: List<String>, val 
  * 在手机上直接抓取下厨房网页、解析内容、把图片下载到本地。
  * 小红书笔记排版随意，抓到标题、正文和配图后交给 AI 整理。
  */
-class RecipeImporter(private val images: ImageStore, private val organizer: AiRecipeOrganizer) {
+class RecipeImporter(
+    private val images: ImageStore,
+    private val organizer: AiRecipeOrganizer,
+    private val browser: WebPageLoader,
+) {
 
     // 下厨房有防爬虫验证：第一次访问只下发 cookie（或返回验证页），带上 cookie 再访问才是正常页面。
     // 没有 cookie jar 时每次请求都是「第一次」，就会出现要手动重试好几次才成功的情况。
@@ -62,7 +71,11 @@ class RecipeImporter(private val images: ImageStore, private val organizer: AiRe
         val url = UrlExtractor.firstUrl(sharedText) ?: throw ImportException("没有在文字里找到链接")
         if (XiaohongshuParser.isNoteUrl(url)) return@withContext importXiaohongshu(url)
 
-        val (finalUrl, firstParsed) = fetchAndParse(url, MOBILE_UA)
+        // 先直接抓；被防爬虫拦住（429、验证页）时改用 WebView 打开，让它跑完验证
+        val direct = runCatching { fetchAndParse(url, MOBILE_UA) }
+        val (finalUrl, firstParsed) = direct.getOrNull()?.takeUnless { it.second.isEmpty }
+            ?: loadInBrowser(url)
+            ?: direct.getOrThrow()
         var parsed = firstParsed
         val recipeId = XiachufangParser.recipeId(finalUrl) ?: XiachufangParser.recipeId(url)
 
@@ -139,6 +152,15 @@ class RecipeImporter(private val images: ImageStore, private val organizer: AiRe
         return ImportResult(result.draft.copy(coverImage = saved.firstOrNull()), warnings, aiOrganized = true)
     }
 
+    private suspend fun loadInBrowser(url: String): Pair<String, ParsedRecipe>? {
+        val (finalUrl, html) = runCatching {
+            browser.load(url) { pageUrl, html ->
+                withContext(Dispatchers.Default) { !XiachufangParser.parse(html, pageUrl).isEmpty }
+            }
+        }.getOrNull() ?: return null
+        return finalUrl to XiachufangParser.parse(html, finalUrl)
+    }
+
     /** 抓页面并解析；解析不出东西（多半是防爬虫验证页）时带着拿到的 cookie 自动重试几次 */
     private suspend fun fetchAndParse(url: String, userAgent: String): Pair<String, ParsedRecipe> {
         var result: Pair<String, ParsedRecipe>? = null
@@ -147,7 +169,9 @@ class RecipeImporter(private val images: ImageStore, private val organizer: AiRe
             val (finalUrl, html) = try {
                 fetchPage(url, userAgent)
             } catch (e: ImportException) {
-                if (attempt == PAGE_ATTEMPTS - 1) throw e else continue
+                // 429/403 是被限流或拦截了，马上重试只会更糟
+                if (attempt == PAGE_ATTEMPTS - 1 || e is HttpStatusException && e.code in BLOCKED_CODES) throw e
+                continue
             }
             val parsed = XiachufangParser.parse(html, finalUrl)
             result = finalUrl to parsed
@@ -165,7 +189,7 @@ class RecipeImporter(private val images: ImageStore, private val organizer: AiRe
             .build()
         try {
             client.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) throw ImportException("打开链接失败（HTTP ${response.code}）")
+                if (!response.isSuccessful) throw HttpStatusException(response.code)
                 return response.request.url.toString() to response.body.string()
             }
         } catch (e: IOException) {
@@ -191,6 +215,7 @@ class RecipeImporter(private val images: ImageStore, private val organizer: AiRe
     companion object {
         private const val PAGE_ATTEMPTS = 3
         private const val RETRY_DELAY_MS = 800L
+        private val BLOCKED_CODES = setOf(403, 429)
         private const val XCF_REFERER = "https://www.xiachufang.com/"
         private const val XHS_REFERER = "https://www.xiaohongshu.com/"
 
