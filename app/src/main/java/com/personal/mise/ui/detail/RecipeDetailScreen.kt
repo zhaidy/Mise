@@ -58,6 +58,7 @@ import com.personal.mise.data.BowlFull
 import com.personal.mise.data.Ingredient
 import com.personal.mise.data.IngredientKind
 import com.personal.mise.ui.common.LocalImage
+import com.personal.mise.ui.common.hasImage
 import com.personal.mise.ui.common.rememberApp
 import com.personal.mise.util.AmountScaler
 import com.personal.mise.util.TimeText
@@ -130,7 +131,7 @@ fun RecipeDetailScreen(
         LazyColumn(Modifier.padding(padding).fillMaxSize()) {
             item {
                 // 大多数菜谱没有封面：没图就不占位，有图也只用一条矮横幅
-                if (!data.recipe.coverImage.isNullOrBlank()) {
+                if (app.hasImage(data.recipe.coverImage)) {
                     LocalImage(data.recipe.coverImage, Modifier.fillMaxWidth().aspectRatio(16f / 9f))
                 }
                 data.recipe.servings?.let {
@@ -187,7 +188,7 @@ fun RecipeDetailScreen(
                     step.timerSeconds?.let {
                         Text("计时 ${TimeText.describe(it)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary)
                     }
-                    if (step.image != null) {
+                    if (app.hasImage(step.image)) {
                         Spacer(Modifier.height(8.dp))
                         LocalImage(step.image, Modifier.fillMaxWidth().aspectRatio(4f / 3f).clip(RoundedCornerShape(12.dp)))
                     }

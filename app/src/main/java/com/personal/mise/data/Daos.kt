@@ -18,6 +18,14 @@ interface RecipeDao {
     @Query("SELECT * FROM recipe WHERE id = :id AND deleted = 0")
     suspend fun get(id: Long): Recipe?
 
+    /** 包括已删除的，同步时用 */
+    @Query("SELECT * FROM recipe WHERE uid = :uid")
+    suspend fun getByUid(uid: String): Recipe?
+
+    /** 包括已删除的，同步时比较两边谁新 */
+    @Query("SELECT uid, updatedAt FROM recipe")
+    fun observeStamps(): Flow<List<RecipeStamp>>
+
     @Insert
     suspend fun insert(recipe: Recipe): Long
 

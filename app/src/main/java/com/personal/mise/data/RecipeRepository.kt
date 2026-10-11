@@ -3,6 +3,7 @@ package com.personal.mise.data
 import androidx.room.withTransaction
 import com.personal.mise.bowl.SauceBowlGenerator
 import com.personal.mise.image.ImageStore
+import com.personal.mise.sync.SyncedRecipe
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 
@@ -187,6 +188,70 @@ class RecipeRepository(
         }
         dao.setBowlsManual(recipeId, true)
         dao.touch(recipeId, System.currentTimeMillis())
+    }
+
+    // 同步
+
+    fun observeStamps(): Flow<List<RecipeStamp>> = dao.observeStamps()
+
+    /** 要上传的样子；已删除的菜谱只有标记，没有内容 */
+    suspend fun loadForSync(uid: String): SyncedRecipe? {
+        val recipe = dao.getByUid(uid) ?: return null
+        val items = dao.getBowlItems(recipe.id)
+        val full = RecipeFull(
+            recipe,
+            dao.getIngredients(recipe.id),
+            dao.getSteps(recipe.id),
+            dao.getBowls(recipe.id).map { b -> BowlFull(b, items.filter { it.bowlId == b.id }) },
+        )
+        return SyncedRecipe.from(full)
+    }
+
+    /** 用云端的版本整个替换本地这道菜（按 uid 对应），本地 id 不变 */
+    suspend fun applyRemote(remote: SyncedRecipe) {
+        val oldImages = dao.getByUid(remote.uid)?.let { imagesOf(it.id) } ?: emptySet()
+        val id = db.withTransaction {
+            val existing = dao.getByUid(remote.uid)
+            val row = Recipe(
+                id = existing?.id ?: 0,
+                title = remote.title,
+                coverImage = remote.coverImage,
+                sourceUrl = remote.sourceUrl,
+                servings = remote.servings,
+                createdAt = remote.createdAt,
+                bowlsManual = remote.bowlsManual,
+                uid = remote.uid,
+                updatedAt = remote.updatedAt,
+                deleted = remote.deleted,
+            )
+            val recipeId = if (existing == null) dao.insert(row) else { dao.update(row); existing.id }
+
+            dao.deleteBowls(recipeId)
+            dao.deleteIngredients(recipeId)
+            dao.deleteSteps(recipeId)
+            if (remote.deleted) {
+                todayDao.remove(recipeId)
+                return@withTransaction recipeId
+            }
+            val ingredientIds = remote.ingredients.mapIndexed { index, g ->
+                dao.insertIngredient(Ingredient(recipeId = recipeId, name = g.name, amountText = g.amountText, kind = g.kind, order = index))
+            }
+            val stepIds = remote.steps.mapIndexed { index, s ->
+                dao.insertStep(Step(recipeId = recipeId, order = index, text = s.text, image = s.image, timerSeconds = s.timerSeconds))
+            }
+            remote.bowls.forEachIndexed { index, bowl ->
+                val bowlId = dao.insertBowl(
+                    SauceBowl(recipeId = recipeId, label = bowl.label, stepId = bowl.stepIndex?.let { stepIds.getOrNull(it) }, order = index)
+                )
+                bowl.items.forEach { item ->
+                    ingredientIds.getOrNull(item.ingredientIndex)?.let {
+                        dao.insertBowlItem(SauceBowlItem(bowlId = bowlId, ingredientId = it, amountText = item.amountText))
+                    }
+                }
+            }
+            recipeId
+        }
+        (oldImages - imagesOf(id)).forEach { images.delete(it) }
     }
 
     // 今日菜单

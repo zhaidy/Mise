@@ -12,10 +12,14 @@ import com.personal.mise.backup.BackupManager
 import com.personal.mise.data.MiseDatabase
 import com.personal.mise.data.RecipeRepository
 import com.personal.mise.image.ImageStore
+import com.personal.mise.sync.KitchenSync
 import com.personal.mise.importer.RecipeImporter
 import com.personal.mise.timer.Notifications
 import com.personal.mise.timer.TimerManager
 import com.personal.mise.update.UpdateChecker
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 
 class MiseApp : Application() {
     lateinit var database: MiseDatabase
@@ -26,6 +30,10 @@ class MiseApp : Application() {
         private set
     lateinit var timers: TimerManager
         private set
+    lateinit var kitchen: KitchenSync
+        private set
+    /** 跟着进程走的后台任务，比如同步 */
+    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     val importer: RecipeImporter by lazy { RecipeImporter(images) }
     val aiSettings: AiSettings by lazy { AiSettings(this) }
     val updater: UpdateChecker by lazy { UpdateChecker(this) }
@@ -46,6 +54,7 @@ class MiseApp : Application() {
         database = MiseDatabase.create(this)
         repository = RecipeRepository(database, images)
         timers = TimerManager(this)
+        kitchen = KitchenSync(this, repository, appScope).also { it.start() }
         Notifications.createChannels(this)
     }
 }
