@@ -142,6 +142,8 @@ data class TodayMenu(
     val updatedAt: Long = System.currentTimeMillis(),
     /** 移出菜单只做标记，好让移出也能同步到别的设备 */
     val removed: Boolean = false,
+    /** 这道菜今天做完了；可以随时取消 */
+    val done: Boolean = false,
 )
 
 /**
@@ -235,6 +237,7 @@ data class TodayRow(
     val coverImage: String?,
     val stepCount: Int,
     val calories: Int?,
+    val done: Boolean,
 )
 
 data class RecipeStamp(val uid: String, val updatedAt: Long)

@@ -9,6 +9,7 @@ data class SyncedTodayEntry(
     val checked: List<String>,
     val updatedAt: Long,
     val removed: Boolean,
+    val done: Boolean = false,
 ) {
     fun toMap(): Map<String, Any?> = mapOf(
         "order" to order,
@@ -16,6 +17,7 @@ data class SyncedTodayEntry(
         "checked" to checked,
         "updatedAt" to updatedAt,
         "removed" to removed,
+        "done" to done,
     )
 
     companion object {
@@ -28,6 +30,8 @@ data class SyncedTodayEntry(
                 checked = (data["checked"] as List<*>).map { it as String },
                 updatedAt = (data["updatedAt"] as Number).toLong(),
                 removed = data["removed"] as Boolean,
+                // 旧版本没有这个字段
+                done = data["done"] as? Boolean ?: false,
             )
         }.getOrNull()
     }

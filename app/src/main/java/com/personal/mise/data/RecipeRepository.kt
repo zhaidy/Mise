@@ -371,6 +371,18 @@ class RecipeRepository(
     suspend fun setChecked(recipeId: Long, checked: Set<String>) =
         todayDao.setChecked(recipeId, checked.sorted().joinToString(","), System.currentTimeMillis())
 
+    /** 标成做完时顺手记一笔今天做过；取消做完时把今天这笔也撤掉 */
+    suspend fun setTodayDone(recipeId: Long, done: Boolean) = db.withTransaction {
+        todayDao.setDone(recipeId, done, System.currentTimeMillis())
+        if (done) {
+            logCooked(recipeId)
+        } else {
+            val recipe = dao.get(recipeId) ?: return@withTransaction
+            val uid = CookLog.uidOf(recipe.uid, DayText.today())
+            if (cookLogDao.get(uid)?.deleted == false) deleteCookLog(uid)
+        }
+    }
+
     // 今日菜单同步
 
     fun observeTodayStamps(): Flow<List<RecipeStamp>> = todayDao.observeStamps()
@@ -389,6 +401,7 @@ class RecipeRepository(
                 .sorted(),
             updatedAt = entry.updatedAt,
             removed = entry.removed,
+            done = entry.done,
         )
     }
 
@@ -407,6 +420,7 @@ class RecipeRepository(
                 bowlsChecked = checked.sorted().joinToString(","),
                 updatedAt = remote.updatedAt,
                 removed = remote.removed || recipe.deleted,
+                done = remote.done,
             )
         )
     }
