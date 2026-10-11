@@ -6,11 +6,13 @@ import android.os.Looper
 import android.os.SystemClock
 import android.widget.Toast
 import androidx.compose.runtime.mutableStateMapOf
+import com.personal.mise.ai.AgnesClient
 import com.personal.mise.ai.AiAmountEstimator
 import com.personal.mise.ai.AiBowlOrganizer
 import com.personal.mise.ai.AiCalorieEstimator
 import com.personal.mise.ai.AiClient
 import com.personal.mise.ai.AiHttp
+import com.personal.mise.ai.AiProvider
 import com.personal.mise.ai.AiRecipeOrganizer
 import com.personal.mise.ai.AiSettings
 import com.personal.mise.ai.AiStepSplitter
@@ -71,8 +73,11 @@ class MiseApp : Application() {
     private val ai: AiClient by lazy {
         SwitchableAiClient(
             aiSettings,
-            GeminiClient(aiSettings, geminiUsage, AiHttp(aiSettings, cellular, readTimeoutSeconds = 90, onCellularUsed = onCellularUsed)),
-            deepSeek,
+            mapOf(
+                AiProvider.GEMINI to GeminiClient(aiSettings, geminiUsage, AiHttp(aiSettings, cellular, readTimeoutSeconds = 90, onCellularUsed = onCellularUsed)),
+                AiProvider.AGNES to AgnesClient(aiSettings, AiHttp(aiSettings, cellular, readTimeoutSeconds = 120, onCellularUsed = onCellularUsed)),
+                AiProvider.DEEPSEEK to deepSeek,
+            ),
             onModelUsed = ::showModelUsed,
         )
     }

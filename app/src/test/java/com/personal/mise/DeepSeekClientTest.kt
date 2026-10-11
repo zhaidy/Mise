@@ -2,9 +2,11 @@ package com.personal.mise
 
 import com.personal.mise.ai.AiSchema
 import com.personal.mise.ai.DeepSeekClient
+import com.personal.mise.ai.OpenAiCompatibleClient
 import com.personal.mise.importer.ImportException
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -14,7 +16,8 @@ class DeepSeekClientTest {
     @Test
     fun `用 JSON 模式并把 schema 写进系统提示`() {
         val schema = AiSchema.obj("steps" to AiSchema.array(AiSchema.stepSchema), required = listOf("steps"))
-        val body = DeepSeekClient.requestBody("拆分步骤", schema)
+        val body = OpenAiCompatibleClient.requestBody("deepseek-flash", "拆分步骤", schema)
+        assertEquals("deepseek-flash", body.getString("model"))
         assertEquals("json_object", body.getJSONObject("response_format").getString("type"))
         val messages = body.getJSONArray("messages")
         val system = messages.getJSONObject(0)
@@ -27,7 +30,7 @@ class DeepSeekClientTest {
 
     @Test
     fun `图片放在文字前面`() {
-        val body = DeepSeekClient.requestBody("看图整理", AiSchema.obj(), listOf(byteArrayOf(1, 2, 3)))
+        val body = OpenAiCompatibleClient.requestBody("agnes-2.5-flash", "看图整理", AiSchema.obj(), listOf(byteArrayOf(1, 2, 3)))
         val parts = body.getJSONArray("messages").getJSONObject(1).getJSONArray("content")
         assertEquals(2, parts.length())
         assertEquals("image_url", parts.getJSONObject(0).getString("type"))
@@ -39,10 +42,24 @@ class DeepSeekClientTest {
     fun `取出回复里的 JSON`() {
         fun reply(content: String, finish: String = "stop") =
             """{"choices":[{"finish_reason":"$finish","message":{"role":"assistant","content":${JSONObject.quote(content)}}}]}"""
-        assertEquals(0, DeepSeekClient.replyJson(reply("""{"steps":[]}""")).getJSONArray("steps").length())
-        assertThrows(ImportException::class.java) { DeepSeekClient.replyJson("{}") }
-        assertThrows(ImportException::class.java) { DeepSeekClient.replyJson(reply("不是 JSON")) }
-        assertThrows(ImportException::class.java) { DeepSeekClient.replyJson(reply("""{"steps":[""", finish = "length")) }
+        assertEquals(0, OpenAiCompatibleClient.replyJson("DeepSeek", reply("""{"steps":[]}""")).getJSONArray("steps").length())
+        assertThrows(ImportException::class.java) { OpenAiCompatibleClient.replyJson("DeepSeek", "{}") }
+        assertThrows(ImportException::class.java) { OpenAiCompatibleClient.replyJson("DeepSeek", reply("不是 JSON")) }
+        assertThrows(ImportException::class.java) { OpenAiCompatibleClient.replyJson("DeepSeek", reply("""{"steps":[""", finish = "length")) }
+    }
+
+    @Test
+    fun `不开 JSON 模式时不带 response_format`() {
+        val body = OpenAiCompatibleClient.requestBody("agnes-2.5-flash", "拆分步骤", AiSchema.obj(), jsonMode = false)
+        assertFalse(body.has("response_format"))
+        assertTrue(body.getJSONArray("messages").getJSONObject(0).getString("content").contains("JSON"))
+    }
+
+    @Test
+    fun `回复外面包了一层代码块也能取出 JSON`() {
+        val content = "```json\n{\"steps\":[1,2]}\n```"
+        val body = """{"choices":[{"finish_reason":"stop","message":{"content":${JSONObject.quote(content)}}}]}"""
+        assertEquals(2, OpenAiCompatibleClient.replyJson("Agnes", body).getJSONArray("steps").length())
     }
 
     @Test

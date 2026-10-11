@@ -10,9 +10,29 @@ import kotlinx.coroutines.flow.update
 enum class AiProvider(val label: String, val keyHelp: String) {
     GEMINI("Gemini", "在 aistudio.google.com 免费申请"),
     DEEPSEEK("DeepSeek", "在 platform.deepseek.com 申请，预付费，余额用完就停、不会自动扣费"),
+    AGNES("Agnes", "在 platform.agnes-ai.com 申请"),
 }
 
-/** 用哪家的 AI 和各家的 API Key，存在本机，不会跟菜谱一起导出；加入共享厨房时 Key 会同步给厨房里的人 */
+/** 一个可选的模型：哪一家、API 名、显示名 */
+data class AiModel(val provider: AiProvider, val id: String, val label: String) {
+    /** 存在设置里的名字，比如 GEMINI:gemini-3.8-flash */
+    val key: String get() = "${provider.name}:$id"
+
+    companion object {
+        /** 所有可选的模型，也是默认的尝试顺序 */
+        val ALL: List<AiModel> =
+            GeminiClient.MODELS.map { (id, label) -> AiModel(AiProvider.GEMINI, id, label) } +
+                AgnesClient.MODELS.map { (id, label) -> AiModel(AiProvider.AGNES, id, label) } +
+                DeepSeekClient.MODELS.map { (id, label) -> AiModel(AiProvider.DEEPSEEK, id, label) }
+
+        /** 默认勾选的：Gemini 全部、Agnes 和 DeepSeek 各一个；没填 Key 的会跳过，默认勾上也不碍事 */
+        val DEFAULT: List<AiModel> = ALL.filter { it.provider == AiProvider.GEMINI || it == ALL.first { m -> m.provider == it.provider } }
+
+        fun fromKey(key: String): AiModel? = ALL.firstOrNull { it.key == key }
+    }
+}
+
+/** 用哪些 AI 模型、什么顺序，和各家的 API Key，存在本机，不会跟菜谱一起导出；加入共享厨房时 Key 会同步给厨房里的人 */
 class AiSettings(context: Context) {
     private val prefs = context.getSharedPreferences("ai", Context.MODE_PRIVATE)
     private val keysChanged = MutableStateFlow(0)
@@ -21,12 +41,6 @@ class AiSettings(context: Context) {
         // 以前支持过 Claude，去掉后把本机存的 Claude Key 也删掉
         if (prefs.contains(OLD_CLAUDE_KEY)) prefs.edit().remove(OLD_CLAUDE_KEY).remove(OLD_CLAUDE_KEY + UPDATED_AT_SUFFIX).apply()
     }
-
-    var provider: AiProvider
-        get() = prefs.getString(PROVIDER, null)?.let { name -> AiProvider.entries.firstOrNull { it.name == name } } ?: AiProvider.GEMINI
-        set(value) {
-            prefs.edit().putString(PROVIDER, value.name).apply()
-        }
 
     fun key(provider: AiProvider): String = prefs.getString(keyName(provider), "").orEmpty()
 
@@ -66,38 +80,59 @@ class AiSettings(context: Context) {
             prefs.edit().putBoolean(CELLULAR_FALLBACK, value).apply()
         }
 
-    /** 用 Gemini 时依次尝试的模型（API 名），前一个额度用完就换下一个 */
-    var geminiModels: List<String>
+    /** 勾选的模型，按顺序尝试：前一个额度用完、余额不足、连不上就换下一个；没填 Key 的跳过 */
+    var models: List<AiModel>
         get() {
-            val known = GeminiClient.MODELS.map { it.first }
-            val saved = prefs.getString(GEMINI_MODELS, null) ?: return known
-            return saved.split(',').filter { it in known }.ifEmpty { known }
+            val saved = prefs.getString(MODELS, null) ?: return migratedModels()
+            return saved.split(',').mapNotNull(AiModel::fromKey).ifEmpty { AiModel.DEFAULT }
         }
         set(value) {
-            prefs.edit().putString(GEMINI_MODELS, value.joinToString(",")).apply()
+            prefs.edit().putString(MODELS, value.joinToString(",") { it.key }).apply()
         }
 
-    /** Gemini 勾选的模型都用完或连不上时，是否改用 DeepSeek（需要填了 DeepSeek Key） */
-    var deepSeekFallback: Boolean
-        get() = prefs.getBoolean(DEEPSEEK_FALLBACK, true)
-        set(value) {
-            prefs.edit().putBoolean(DEEPSEEK_FALLBACK, value).apply()
+    /**
+     * 还没存过模型列表时，从以前的设置推出来：以前选的是 DeepSeek 就只用 DeepSeek；
+     * 选的是 Gemini 就用勾选的 Gemini 模型，打开了「改用 DeepSeek」的再把 DeepSeek 排在最后。
+     */
+    private fun migratedModels(): List<AiModel> {
+        val gemini = prefs.getString(OLD_GEMINI_MODELS, null)
+            ?.split(',')?.mapNotNull { AiModel.fromKey("${AiProvider.GEMINI.name}:$it") }
+            ?.ifEmpty { null }
+            ?: AiModel.DEFAULT.filter { it.provider == AiProvider.GEMINI }
+        val agnes = AiModel.DEFAULT.filter { it.provider == AiProvider.AGNES }
+        val deepSeek = AiModel.DEFAULT.filter { it.provider == AiProvider.DEEPSEEK }
+        return when {
+            prefs.getString(OLD_PROVIDER, null) == AiProvider.DEEPSEEK.name -> deepSeek + agnes
+            prefs.getBoolean(OLD_DEEPSEEK_FALLBACK, true) -> gemini + agnes + deepSeek
+            else -> gemini + agnes
         }
+    }
 
-    /** 当前选的 AI 有没有填 Key */
-    val hasKey: Boolean get() = key(provider).isNotBlank()
+    /** 刚填了某家的 Key 但它的模型一个都没勾时，把它的第一个模型勾上，免得填了 Key 也用不上 */
+    fun enableProvider(provider: AiProvider) {
+        val current = models
+        if (current.none { it.provider == provider }) models = current + AiModel.ALL.first { it.provider == provider }
+    }
+
+    /** 勾选的模型里第一个填了 Key、会先去用的；一个都没有时是 null */
+    val firstUsable: AiModel? get() = models.firstOrNull { key(it.provider).isNotBlank() }
+
+    /** 有没有能用的模型（勾选了且填了 Key） */
+    val hasKey: Boolean get() = firstUsable != null
 
     private companion object {
-        const val PROVIDER = "provider"
         const val CELLULAR_FALLBACK = "cellular_fallback"
-        const val GEMINI_MODELS = "gemini_models"
-        const val DEEPSEEK_FALLBACK = "deepseek_fallback"
+        const val MODELS = "models"
+        const val OLD_PROVIDER = "provider"
+        const val OLD_GEMINI_MODELS = "gemini_models"
+        const val OLD_DEEPSEEK_FALLBACK = "deepseek_fallback"
         const val UPDATED_AT_SUFFIX = "_updated_at"
         const val OLD_CLAUDE_KEY = "claude_key"
 
         fun keyName(provider: AiProvider) = when (provider) {
             AiProvider.GEMINI -> "gemini_key"
             AiProvider.DEEPSEEK -> "deepseek_key"
+            AiProvider.AGNES -> "agnes_key"
         }
     }
 }
