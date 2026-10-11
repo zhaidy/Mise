@@ -39,6 +39,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.personal.mise.ui.common.MiseHeader
+import com.personal.mise.ui.common.OutlinePillButton
+import com.personal.mise.ui.common.PillButton
 import com.personal.mise.ui.common.rememberApp
 import kotlinx.coroutines.launch
 
@@ -70,7 +73,8 @@ fun ImportScreen(sharedText: String, aiNote: Boolean, onDone: (savedId: Long?) -
         header = {
             if (vm.warnings.isNotEmpty()) {
                 Card(
-                    Modifier.fillMaxWidth().padding(16.dp),
+                    Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
+                    shape = MaterialTheme.shapes.large,
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
                 ) {
                     Column(Modifier.padding(16.dp)) {
@@ -84,7 +88,7 @@ fun ImportScreen(sharedText: String, aiNote: Boolean, onDone: (savedId: Long?) -
             } else {
                 Text(
                     if (vm.aiImport) "AI 已整理完成，请对照原文检查用料和步骤再保存" else "已解析完成，检查一下再保存",
-                    Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp),
+                    Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
@@ -116,35 +120,34 @@ private fun EditorScaffold(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(title) },
-                navigationIcon = {
-                    IconButton(onClick = { if (vm.loadState == LoadState.Ready) confirmDiscard = true else discard() }) {
-                        Icon(Icons.Filled.Close, contentDescription = "放弃")
-                    }
-                },
-                actions = {
-                    if (vm.loadState == LoadState.Ready) {
-                        TextButton(
-                            enabled = !vm.saving,
-                            onClick = {
-                                vm.save(
-                                    onSaved = { onDone(it) },
-                                    onError = { msg -> scope.launch { snackbar.showSnackbar(msg) } },
-                                )
-                            },
-                        ) { Text(saveLabel) }
-                    }
-                },
-            )
+            MiseHeader(
+                title,
+                onBack = { if (vm.loadState == LoadState.Ready) confirmDiscard = true else discard() },
+                backIcon = Icons.Filled.Close,
+                backDescription = "放弃",
+            ) {
+                if (vm.loadState == LoadState.Ready) {
+                    PillButton(
+                        saveLabel,
+                        enabled = !vm.saving,
+                        height = 44.dp,
+                        onClick = {
+                            vm.save(
+                                onSaved = { onDone(it) },
+                                onError = { msg -> scope.launch { snackbar.showSnackbar(msg) } },
+                            )
+                        },
+                    )
+                }
+            }
         },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
         when (val state = vm.loadState) {
             LoadState.Loading -> Box(Modifier.padding(padding).fillMaxSize(), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    CircularProgressIndicator()
-                    Spacer(Modifier.height(16.dp))
+                    CircularProgressIndicator(strokeCap = androidx.compose.ui.graphics.StrokeCap.Round)
+                    Spacer(Modifier.height(20.dp))
                     Text(
                         when {
                             vm.aiNote -> "AI 正在整理菜谱，大约需要十几秒…"
@@ -157,12 +160,12 @@ private fun EditorScaffold(
             }
             is LoadState.Failed -> Box(Modifier.padding(padding).fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(state.message, style = MaterialTheme.typography.titleMedium)
+                    Text(state.message, style = MaterialTheme.typography.titleLarge, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
                     Spacer(Modifier.height(24.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        OutlinedButton(onClick = { discard() }) { Text("返回") }
-                        if (state.needsKey) Button(onClick = { askingKey = true }) { Text("填写 Key") }
-                        else Button(onClick = vm::load) { Text("重试") }
+                        OutlinePillButton("返回", onClick = { discard() }, height = 48.dp)
+                        if (state.needsKey) PillButton("填写 Key", onClick = { askingKey = true }, height = 48.dp)
+                        else PillButton("重试", onClick = vm::load, height = 48.dp)
                     }
                 }
             }

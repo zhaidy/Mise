@@ -33,6 +33,18 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.personal.mise.data.RecipeFull
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.runtime.key
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import com.personal.mise.ui.common.CheckRow
+import com.personal.mise.ui.common.CircleIconButton
+import com.personal.mise.ui.common.EmptyState
+import com.personal.mise.ui.common.MiseHeader
+import com.personal.mise.ui.common.MiseIcons
+import com.personal.mise.ui.common.SoftCard
 import com.personal.mise.ui.common.rememberApp
 import com.personal.mise.util.AmountScaler
 import com.personal.mise.util.ShoppingList
@@ -65,94 +77,106 @@ fun ShoppingListScreen(onBack: () -> Unit) {
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("购物清单") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回") }
-                },
-                actions = {
-                    if (toBuy.isNotEmpty()) {
-                        IconButton(onClick = {
+            MiseHeader("购物清单", onBack = onBack) {
+                if (toBuy.isNotEmpty()) {
+                    CircleIconButton(
+                        MiseIcons.Share,
+                        "发送要买的",
+                        onClick = {
                             val send = Intent(Intent.ACTION_SEND)
                                 .setType("text/plain")
                                 .putExtra(Intent.EXTRA_TEXT, ShoppingList.shareText(toBuy))
                             context.startActivity(Intent.createChooser(send, "发送购物清单"))
-                        }) { Icon(Icons.Filled.Share, contentDescription = "发送要买的") }
-                    }
-                },
-            )
+                        },
+                    )
+                }
+            }
         },
     ) { padding ->
         if (items.isEmpty()) {
-            Box(Modifier.padding(padding).fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
-                Text(
-                    if (rows.isEmpty()) "今日菜单是空的" else "今日的菜还没有填用料",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+            EmptyState(
+                "购",
+                if (rows.isEmpty()) "今日菜单是空的" else "还没有用料",
+                if (rows.isEmpty()) "先在菜谱里挑几道菜加入今日菜单。" else "今日的菜还没有填用料。",
+                Modifier.padding(padding),
+            )
             return@Scaffold
         }
-        LazyColumn(Modifier.padding(padding).fillMaxSize()) {
+        LazyColumn(
+            Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(
+                start = 20.dp,
+                end = 20.dp,
+                top = padding.calculateTopPadding() + 4.dp,
+                bottom = padding.calculateBottomPadding() + 24.dp,
+            ),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
             item(key = "hint") {
                 Text(
                     if (toBuy.isEmpty()) "都有了，不用买" else "要买 ${toBuy.size} 样。家里有的勾上，会挪到下面，下次也记得。",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(16.dp),
                 )
             }
             if (toBuy.isNotEmpty()) {
-                item(key = "head-buy") { SectionHeader("要买") }
-                items(toBuy, key = { "buy-${it.key}" }) { item ->
-                    ShoppingRow(item, owned = false) { app.pantry.toggle(item.key) }
+                item(key = "buy") {
+                    ShoppingGroup("要买", MaterialTheme.colorScheme.primary) {
+                        toBuy.forEach { item ->
+                            key(item.key) { ShoppingRow(item, owned = false, accent = MaterialTheme.colorScheme.primary) { app.pantry.toggle(item.key) } }
+                        }
+                    }
                 }
             }
             if (owned.isNotEmpty()) {
-                item(key = "head-have") {
-                    Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Box(Modifier.weight(1f)) { SectionHeader("家里有") }
-                        TextButton(
-                            onClick = { app.pantry.clear(owned.map { it.key }) },
-                            modifier = Modifier.padding(end = 8.dp),
-                        ) { Text("全部取消") }
+                item(key = "have") {
+                    ShoppingGroup(
+                        "家里有",
+                        MaterialTheme.colorScheme.secondary,
+                        action = { TextButton(onClick = { app.pantry.clear(owned.map { it.key }) }) { Text("全部取消") } },
+                    ) {
+                        owned.forEach { item ->
+                            key(item.key) { ShoppingRow(item, owned = true, accent = MaterialTheme.colorScheme.secondary) { app.pantry.toggle(item.key) } }
+                        }
                     }
                 }
-                items(owned, key = { "have-${it.key}" }) { item ->
-                    ShoppingRow(item, owned = true) { app.pantry.toggle(item.key) }
-                }
             }
         }
     }
 }
 
+/** 一组清单：卡片里一个小标题，下面是勾选行 */
 @Composable
-private fun SectionHeader(text: String) {
-    Text(
-        text,
-        style = MaterialTheme.typography.labelLarge,
-        color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(start = 16.dp, top = 8.dp, bottom = 4.dp),
+private fun ShoppingGroup(
+    title: String,
+    accent: Color,
+    action: @Composable () -> Unit = {},
+    content: @Composable () -> Unit,
+) {
+    SoftCard(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp)) {
+            Row(Modifier.fillMaxWidth().heightIn(min = 40.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    title,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = accent,
+                    modifier = Modifier.weight(1f),
+                )
+                action()
+            }
+            content()
+        }
+    }
+}
+
+@Composable
+private fun ShoppingRow(item: ShoppingList.Item, owned: Boolean, accent: Color, onToggle: () -> Unit) {
+    CheckRow(
+        title = item.name + if (item.seasoning) "（调料）" else "",
+        detail = item.detail,
+        checked = owned,
+        onToggle = onToggle,
+        accent = accent,
     )
-}
-
-@Composable
-private fun ShoppingRow(item: ShoppingList.Item, owned: Boolean, onToggle: () -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().clickable(onClick = onToggle).padding(horizontal = 8.dp, vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Checkbox(checked = owned, onCheckedChange = { onToggle() })
-        Column(Modifier.weight(1f)) {
-            Text(
-                item.name + if (item.seasoning) "（调料）" else "",
-                style = MaterialTheme.typography.bodyLarge,
-                textDecoration = if (owned) TextDecoration.LineThrough else null,
-                color = if (owned) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
-            )
-            if (item.detail.isNotBlank()) {
-                Text(item.detail, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
-    }
-    HorizontalDivider(Modifier.padding(start = 56.dp))
 }
