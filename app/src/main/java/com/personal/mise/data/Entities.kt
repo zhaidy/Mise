@@ -35,6 +35,8 @@ data class Recipe(
     val tags: String = "",
     /** 从英文网站导入、翻译成中文的菜谱留着原文（RecipeText 的 JSON），详情页可以切过去看；空表示没翻译过 */
     val original: String? = null,
+    /** 自己的批注，如「盐少放一半」「火开大点」；打开这道菜时显示在最上面，空表示没写 */
+    val note: String? = null,
 )
 
 @Entity(

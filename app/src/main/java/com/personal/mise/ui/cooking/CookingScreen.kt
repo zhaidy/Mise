@@ -88,6 +88,7 @@ import com.personal.mise.ui.common.CircleIconButton
 import com.personal.mise.ui.common.EmptyState
 import com.personal.mise.ui.common.FieldShape
 import com.personal.mise.ui.common.InfoPill
+import com.personal.mise.ui.common.NoteBanner
 import com.personal.mise.ui.common.LocalImage
 import com.personal.mise.ui.common.MiseIcons
 import com.personal.mise.ui.common.OutlinePillButton
@@ -310,6 +311,7 @@ private fun RecipePager(
                     jumpTo = null
                 }
             }
+            data.recipe.note?.let { NoteBanner(it, Modifier.padding(start = 20.dp, end = 20.dp, top = 8.dp)) }
             HorizontalPager(state = pagerState, modifier = Modifier.weight(1f).fillMaxWidth()) { page ->
                 val step = steps[page]
                 StepPage(
@@ -373,14 +375,21 @@ private fun RecipePager(
 /** 「做菜 / 菜谱」切换：做菜是一步一页，菜谱是整份用料和全部步骤；备料清单也用它切到菜谱 */
 @Composable
 internal fun ModeSwitch(showRecipe: Boolean, onChange: (Boolean) -> Unit, mainLabel: String = "做菜") {
+    ModeTabs(listOf(mainLabel, "菜谱"), if (showRecipe) 1 else 0, { onChange(it == 1) })
+}
+
+/** 几个选项平分一条胶囊，选中的那格深色；备料清单用它切「按菜 / 切配 / 菜谱」 */
+@Composable
+internal fun ModeTabs(labels: List<String>, selected: Int, onSelect: (Int) -> Unit) {
     Surface(
         shape = CircleShape,
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
         modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp),
     ) {
         Row(Modifier.padding(4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            ModeOption(mainLabel, selected = !showRecipe, onClick = { onChange(false) }, modifier = Modifier.weight(1f))
-            ModeOption("菜谱", selected = showRecipe, onClick = { onChange(true) }, modifier = Modifier.weight(1f))
+            labels.forEachIndexed { index, label ->
+                ModeOption(label, selected = index == selected, onClick = { onSelect(index) }, modifier = Modifier.weight(1f))
+            }
         }
     }
 }
@@ -537,13 +546,17 @@ private fun RecipeInfo(data: RecipeFull, factor: Double) {
         if (data.steps.isNotEmpty()) add("${data.steps.size} 步")
         data.recipe.calories?.let { add(CalorieText.describe(it, data.recipe.servings, factor)) }
     }
-    if (pills.isEmpty()) return
-    FlowRow(
-        Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 12.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        pills.forEach { InfoPill(it) }
+    Column {
+        data.recipe.note?.let { NoteBanner(it, Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp)) }
+        if (pills.isNotEmpty()) {
+            FlowRow(
+                Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                pills.forEach { InfoPill(it) }
+            }
+        }
     }
 }
 

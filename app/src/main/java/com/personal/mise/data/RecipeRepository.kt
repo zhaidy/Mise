@@ -221,6 +221,10 @@ class RecipeRepository(
     /** 只改热量，不动用料和调料碗；会同步到别的手机 */
     suspend fun setCalories(id: Long, calories: Int?) = dao.setCalories(id, calories, System.currentTimeMillis())
 
+    /** 只改批注；空白就是删掉。会同步到别的手机 */
+    suspend fun setNote(id: Long, note: String) =
+        dao.setNote(id, note.trim().takeIf { it.isNotEmpty() }, System.currentTimeMillis())
+
     private suspend fun imagesOf(id: Long): Set<String> {
         val recipe = dao.get(id) ?: return emptySet()
         return (listOf(recipe.coverImage) + dao.getSteps(id).map { it.image }).filterNotNull().toSet()
@@ -305,6 +309,7 @@ class RecipeRepository(
                 subcategory = remote.subcategory,
                 tags = RecipeTags.format(remote.tags),
                 original = remote.original,
+                note = remote.note,
             )
             val recipeId = if (existing == null) dao.insert(row) else { dao.update(row); existing.id }
 

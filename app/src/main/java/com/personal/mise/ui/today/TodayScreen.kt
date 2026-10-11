@@ -236,6 +236,9 @@ fun TodayScreen(
                         onEstimate = { if (app.aiSettings.hasKey) estimateMissing() else askingKey = true },
                     )
                 }
+                if (items.count { !it.done && it.stepCount > 0 } >= 2) {
+                    item(key = "timeline") { TimelineCard(items) }
+                }
                 items(items, key = { it.recipeId }) { row ->
                     ReorderableItem(reorderState, key = row.recipeId) { isDragging ->
                         TodayCard(

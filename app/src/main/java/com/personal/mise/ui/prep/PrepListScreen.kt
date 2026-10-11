@@ -71,9 +71,10 @@ import com.personal.mise.data.IngredientKind
 import com.personal.mise.data.RecipeFull
 import com.personal.mise.data.parseChecked
 import com.personal.mise.ui.common.rememberApp
-import com.personal.mise.ui.cooking.ModeSwitch
+import com.personal.mise.ui.cooking.ModeTabs
 import com.personal.mise.ui.cooking.recipeOverviewItems
 import com.personal.mise.util.AmountScaler
+import com.personal.mise.util.CutPlan
 import com.personal.mise.util.DayText
 import com.personal.mise.util.StepPhase
 import com.personal.mise.util.UnitText
@@ -91,16 +92,34 @@ private data class PrepSection(val name: String, val items: List<PrepItem>)
  */
 private data class PrepSource(val key: String, val recipeId: Long, val title: String, val checked: String)
 
-private data class PrepRecipe(val row: PrepSource, val sections: List<PrepSection>) {
-    val allKeys: List<String> get() = sections.flatMap { s -> s.items.map { it.key } }
+private data class PrepRecipe(val row: PrepSource, val sections: List<PrepSection>, val cut: CutPlan.Recipe) {
+    val allKeys: List<String> = sections.flatMap { s -> s.items.map { it.key } }
+
+    /**
+     * 切配汇总里勾的那一项：备料清单里有这样用料就勾同一项，两边一起勾上；
+     * 进了调料碗的用料（如蒜末）在清单里没有自己的一项，单记一个「c」，不算进进度
+     */
+    fun cutKey(ingredientId: Long): String = "i$ingredientId".takeIf { it in allKeys } ?: "c$ingredientId"
+
+    /** 勾选里认得的项目，菜谱改过以后已经没有的项丢掉 */
+    fun known(checked: Set<String>): Set<String> =
+        checked.filter { it in allKeys || (it.startsWith("c") && cut.ingredients.any { g -> "c${g.id}" == it }) }.toSet()
 }
 
-/** 一道菜的备料项：主料、调料碗、没进调料碗的其他调料 */
+/** 一道菜的备料项：主料、调料碗、没进调料碗的其他调料；用料后面写上步骤里认出来的切法 */
 private fun buildPrep(row: PrepSource, full: RecipeFull, factor: Double): PrepRecipe {
     fun amount(text: String) = UnitText.display(AmountScaler.scale(text, factor))
+    val cut = CutPlan.Recipe(
+        row.key,
+        row.title,
+        full.ingredients.map { CutPlan.Ingredient(it.id, it.name, amount(it.amountText)) },
+        full.steps.map { it.text },
+    )
+    val methods = CutPlan.methodsById(cut)
+    fun detail(id: Long, text: String) = listOfNotNull(amount(text).takeIf { it.isNotBlank() }, methods[id]).joinToString(" · ")
     val inBowls = full.bowls.flatMap { b -> b.items.map { it.ingredientId } }.toSet()
     val mains = full.ingredients.filter { it.kind != IngredientKind.SEASONING && it.id !in inBowls }
-        .map { PrepItem("i${it.id}", it.name, amount(it.amountText)) }
+        .map { PrepItem("i${it.id}", it.name, detail(it.id, it.amountText)) }
     val cookStart = StepPhase.cookStart(full.steps.map { it.text })
     val bowls = full.bowls.map { b ->
         val stepIndex = full.steps.indexOfFirst { it.id == b.bowl.stepId }
@@ -108,11 +127,12 @@ private fun buildPrep(row: PrepSource, full: RecipeFull, factor: Double): PrepRe
         PrepItem("b${b.bowl.id}", b.bowl.label + if (stepIndex >= 0) "（${StepPhase.bowlStepLabel(stepIndex, cookStart, full.steps[stepIndex].text)}）" else "", detail)
     }
     val others = full.ingredients.filter { it.kind == IngredientKind.SEASONING && it.id !in inBowls }
-        .map { PrepItem("i${it.id}", it.name, amount(it.amountText)) }
+        .map { PrepItem("i${it.id}", it.name, detail(it.id, it.amountText)) }
     return PrepRecipe(
         row,
         listOf(PrepSection("备菜", mains), PrepSection("调料碗", bowls), PrepSection("其他调料", others))
             .filter { it.items.isNotEmpty() },
+        cut,
     )
 }
 
@@ -135,8 +155,8 @@ fun PrepListScreen(planDate: String?, onBack: () -> Unit, onCook: () -> Unit) {
         else combine(ids.map { app.repository.observeFull(it) }) { it.toList() }
     }.collectAsStateWithLifecycle(emptyList())
     var showDone by remember { mutableStateOf(false) }
-    // 切到整份菜谱，对照原始用料和步骤，看调料碗有没有配错
-    var showRecipe by rememberSaveable { mutableStateOf(false) }
+    // 0 按菜备料；1 切配汇总，几道菜要切的合在一起；2 整份菜谱，对照原始用料和步骤，看调料碗有没有配错
+    var mode by rememberSaveable { mutableStateOf(0) }
 
     val recipes = rows.mapNotNull { row ->
         fulls.firstOrNull { it?.recipe?.id == row.recipeId }?.let { buildPrep(row, it, app.scaleOf(row.recipeId)) }
@@ -149,15 +169,41 @@ fun PrepListScreen(planDate: String?, onBack: () -> Unit, onCook: () -> Unit) {
         if (planDate == null) onCook() else scope.launch { app.repository.planToToday(planDate); onCook() }
     }
 
-    fun toggle(recipe: PrepRecipe, key: String) {
-        val current = parseChecked(recipe.row.checked).filter { it in recipe.allKeys }.toSet()
-        val next = if (key in current) current - key else current + key
-        val willBeDone = done - current.size + next.size
+    fun save(recipe: PrepRecipe, next: Set<String>) {
         scope.launch {
             if (planDate == null) app.repository.setChecked(recipe.row.recipeId, next)
             else app.repository.setPlanChecked(recipe.row.key, next)
         }
+    }
+
+    fun toggle(recipe: PrepRecipe, key: String) {
+        val current = recipe.known(parseChecked(recipe.row.checked))
+        val next = if (key in current) current - key else current + key
+        val willBeDone = done - current.count { it in recipe.allKeys } + next.count { it in recipe.allKeys }
+        save(recipe, next)
         if (willBeDone == total && total > 0 && key !in current) showDone = true
+    }
+
+    val cutItems = remember(recipes.map { it.cut }) { CutPlan.build(recipes.map { it.cut }) }
+
+    fun cutChecked(item: CutPlan.Item): Boolean = item.cuts.all { c ->
+        val recipe = recipes.first { it.row.key == c.recipeKey }
+        recipe.cutKey(c.ingredientId) in parseChecked(recipe.row.checked)
+    }
+
+    /** 切配汇总里勾一样，几道菜里的这样用料一起勾上或取消 */
+    fun toggleCut(item: CutPlan.Item) {
+        val on = !cutChecked(item)
+        var willBeDone = done
+        item.cuts.groupBy { it.recipeKey }.forEach { (key, cuts) ->
+            val recipe = recipes.first { it.row.key == key }
+            val current = recipe.known(parseChecked(recipe.row.checked))
+            val keys = cuts.map { recipe.cutKey(it.ingredientId) }.toSet()
+            val next = if (on) current + keys else current - keys
+            willBeDone += next.count { it in recipe.allKeys } - current.count { it in recipe.allKeys }
+            save(recipe, next)
+        }
+        if (on && willBeDone == total && total > 0) showDone = true
     }
 
     Scaffold(
@@ -175,9 +221,13 @@ fun PrepListScreen(planDate: String?, onBack: () -> Unit, onCook: () -> Unit) {
             return@Scaffold
         }
         Column(Modifier.fillMaxSize().padding(top = padding.calculateTopPadding())) {
-            ModeSwitch(showRecipe, { showRecipe = it }, mainLabel = "备料")
-            if (showRecipe) {
+            ModeTabs(listOf("按菜", "切配", "菜谱"), mode, { mode = it })
+            if (mode == 2) {
                 RecipesOverview(recipes, fulls, Modifier.weight(1f), bottom = padding.calculateBottomPadding())
+                return@Column
+            }
+            if (mode == 1) {
+                CutList(cutItems, ::cutChecked, ::toggleCut, Modifier.weight(1f), bottom = padding.calculateBottomPadding())
                 return@Column
             }
             LazyColumn(
@@ -255,6 +305,51 @@ fun PrepListScreen(planDate: String?, onBack: () -> Unit, onCook: () -> Unit) {
             },
             dismissButton = { if (canCook) TextButton(onClick = { showDone = false }) { Text("再看看") } },
         )
+    }
+}
+
+/** 切配汇总：几道菜要切的用料合在一起，如「葱：切段 2根、切末 1根」，一次切完 */
+@Composable
+private fun CutList(
+    items: List<CutPlan.Item>,
+    checked: (CutPlan.Item) -> Boolean,
+    onToggle: (CutPlan.Item) -> Unit,
+    modifier: Modifier,
+    bottom: Dp,
+) {
+    if (items.isEmpty()) {
+        EmptyState("刀", "没认出要切的", "步骤里写明「切段」「切丝」「剁碎」这类切法，这里就会把几道菜要切的合在一起。", modifier)
+        return
+    }
+    LazyColumn(
+        modifier.fillMaxWidth(),
+        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 8.dp, bottom = bottom + 16.dp),
+    ) {
+        item(key = "cut-hint") {
+            Text(
+                "从步骤里认出的切法，几道菜的同一样用料合在一起，一次切完。勾上的在「按菜」里也会勾上。",
+                Modifier.padding(bottom = 8.dp),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        item(key = "cut-card") {
+            SoftCard(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                    items.forEach { item ->
+                        // 只有一道菜用时，菜名写在后面就够；几道菜用时先写合计，再分菜列
+                        val detail = if (item.cuts.size == 1) item.detail[0] else item.summary + "\n" + item.detail.joinToString("、")
+                        CheckRow(
+                            title = item.name,
+                            detail = detail,
+                            checked = checked(item),
+                            onToggle = { onToggle(item) },
+                            accent = MaterialTheme.colorScheme.secondary,
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 
