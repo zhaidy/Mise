@@ -2,6 +2,7 @@ package com.personal.mise.ui.edit
 
 import com.personal.mise.ui.common.FieldShape
 import com.personal.mise.ui.common.miseFieldColors
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -10,10 +11,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilterChip
@@ -27,6 +27,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -37,12 +38,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.personal.mise.ai.AiModel
 import com.personal.mise.ai.AiProvider
+import com.personal.mise.ui.common.MiseIcons
 import com.personal.mise.ui.common.rememberApp
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
+import sh.calvin.reorderable.ReorderableColumn
 
 /**
  * 填各家 AI 的 API Key，选用哪些模型、按什么顺序；已经填过的 Key 会带出来。
@@ -115,39 +118,50 @@ private fun ModelOrderFields(
     val now = remember { System.currentTimeMillis() }
     Text("AI 模型", style = MaterialTheme.typography.bodyMedium)
     Text(
-        "勾选的模型从上往下试，额度用完、余额不足或连不上就换下一个；没填 Key 的会跳过。点箭头调整顺序。" +
+        "勾选的模型从上往下试，额度用完、余额不足或连不上就换下一个；没填 Key 的会跳过。按住左侧把手拖动调整顺序。" +
             "Google 查不到 Gemini 的剩余额度，次数是这台手机今天用的",
         style = MaterialTheme.typography.bodySmall,
     )
-    order.forEachIndexed { i, id ->
-        val model = AiModel.fromKey(id) ?: return@forEachIndexed
-        val checked = id in enabled
-        val note = when {
-            !hasKey(model.provider) -> "还没填 ${model.provider.label} Key，会跳过"
-            model.provider == AiProvider.GEMINI -> geminiUsageText(usage.exhaustedUntil(model.id, now), usage.count(model.id, now))
-            else -> null
-        }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Checkbox(
-                checked = checked,
-                // 至少留一个
-                enabled = !checked || enabled.size > 1,
-                onCheckedChange = { onEnabledChange(if (it) enabled + id else enabled - id) },
-            )
-            Column(Modifier.weight(1f)) {
-                Text(
-                    model.label,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = if (hasKey(model.provider)) Color.Unspecified else MaterialTheme.colorScheme.onSurfaceVariant,
+    val models = order.mapNotNull(AiModel::fromKey)
+    ReorderableColumn(
+        list = models,
+        onSettle = { from, to -> onOrderChange(models.map { it.key }.toMutableList().apply { add(to, removeAt(from)) }) },
+    ) { _, model, isDragging ->
+        key(model.key) {
+            val id = model.key
+            val checked = id in enabled
+            val note = when {
+                !hasKey(model.provider) -> "还没填 ${model.provider.label} Key，会跳过"
+                model.provider == AiProvider.GEMINI -> geminiUsageText(usage.exhaustedUntil(model.id, now), usage.count(model.id, now))
+                else -> null
+            }
+            Row(
+                Modifier.background(
+                    if (isDragging) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent,
+                    MaterialTheme.shapes.small,
+                ),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconButton(onClick = {}, modifier = Modifier.draggableHandle().size(width = 32.dp, height = 48.dp)) {
+                    Icon(MiseIcons.DragDots, contentDescription = "拖动排序", tint = MaterialTheme.colorScheme.outline)
+                }
+                Checkbox(
+                    checked = checked,
+                    // 至少留一个
+                    enabled = !checked || enabled.size > 1,
+                    onCheckedChange = { onEnabledChange(if (it) enabled + id else enabled - id) },
                 )
-                note?.let {
-                    Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        model.label,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (hasKey(model.provider)) Color.Unspecified else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    note?.let {
+                        Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                 }
             }
-            IconButton(
-                enabled = i > 0,
-                onClick = { onOrderChange(order.toMutableList().apply { add(i - 1, removeAt(i)) }) },
-            ) { Icon(Icons.Filled.KeyboardArrowUp, contentDescription = "上移") }
         }
     }
 }
