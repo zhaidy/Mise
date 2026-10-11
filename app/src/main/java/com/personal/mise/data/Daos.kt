@@ -59,7 +59,7 @@ interface RecipeDao {
     suspend fun update(recipe: Recipe)
 
     /** 只留下 uid 和删除标记，内容由调用方另行清掉 */
-    @Query("UPDATE recipe SET deleted = 1, coverImage = NULL, original = NULL, updatedAt = :now WHERE id = :id")
+    @Query("UPDATE recipe SET deleted = 1, coverImage = NULL, original = NULL, note = NULL, updatedAt = :now WHERE id = :id")
     suspend fun markDeleted(id: Long, now: Long)
 
     @Query("UPDATE recipe SET updatedAt = :now WHERE id = :id")
@@ -67,6 +67,9 @@ interface RecipeDao {
 
     @Query("UPDATE recipe SET calories = :calories, updatedAt = :now WHERE id = :id AND deleted = 0")
     suspend fun setCalories(id: Long, calories: Int?, now: Long)
+
+    @Query("UPDATE recipe SET note = :note, updatedAt = :now WHERE id = :id AND deleted = 0")
+    suspend fun setNote(id: Long, note: String?, now: Long)
 
     @Query("UPDATE recipe SET category = :category, subcategory = :subcategory, tags = :tags, updatedAt = :now WHERE id = :id AND deleted = 0")
     suspend fun setClassification(id: Long, category: String?, subcategory: String?, tags: String, now: Long)

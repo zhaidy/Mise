@@ -76,6 +76,13 @@ class SyncedRecipeTest {
     }
 
     @Test
+    fun `批注跟着同步，旧文档没有时为空`() {
+        val map = SyncedRecipe.from(full.copy(recipe = full.recipe.copy(note = "盐少放一半"))).toMap()
+        assertEquals("盐少放一半", SyncedRecipe.fromMap("u-1", firestoreLike(map))?.note)
+        assertNull(SyncedRecipe.fromMap("u-1", firestoreLike(map - "note"))?.note)
+    }
+
+    @Test
     fun `旧版本的文档没有分类`() {
         val map = SyncedRecipe.from(full).toMap()
         assertEquals("家常菜", SyncedRecipe.fromMap("u-1", firestoreLike(map))?.category)

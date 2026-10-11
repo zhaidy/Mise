@@ -91,6 +91,8 @@ import com.personal.mise.ui.common.BottomActionBar
 import com.personal.mise.ui.common.CircleIconButton
 import com.personal.mise.ui.common.FieldShape
 import com.personal.mise.ui.common.InfoPill
+import com.personal.mise.ui.common.NoteBanner
+import com.personal.mise.ui.common.NoteDialog
 import com.personal.mise.ui.common.LocalImage
 import com.personal.mise.ui.common.MiseIcons
 import com.personal.mise.ui.common.OutlinePillButton
@@ -141,6 +143,7 @@ fun RecipeDetailScreen(
     var planOpen by remember { mutableStateOf(false) }
     var classifyOpen by remember { mutableStateOf(false) }
     var shareOpen by remember { mutableStateOf(false) }
+    var noteOpen by remember { mutableStateOf(false) }
     /** 翻译过的菜谱切到原文看 */
     var showOriginal by remember { mutableStateOf(false) }
     val cookDates by remember(recipeId) { app.repository.observeCookDates(recipeId) }.collectAsStateWithLifecycle(emptyList())
@@ -237,6 +240,7 @@ fun RecipeDetailScreen(
                         verticalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
                         Text(originalShown?.title?.takeIf { it.isNotBlank() } ?: data.recipe.title, style = MaterialTheme.typography.headlineMedium)
+                        data.recipe.note?.let { NoteBanner(it, onEdit = { noteOpen = true }) }
                         FlowRow(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -251,6 +255,9 @@ fun RecipeDetailScreen(
                             data.recipe.tagList.forEach { InfoPill("#$it", classify, content = MaterialTheme.colorScheme.primary) }
                             if (data.recipe.category.isNullOrBlank() && data.recipe.tagList.isEmpty()) {
                                 InfoPill("＋ 分类/标签", classify, content = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            if (data.recipe.note == null) {
+                                InfoPill("＋ 批注", Modifier.clip(CircleShape).clickable { noteOpen = true }, content = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                             data.recipe.servings?.takeIf { it.isNotBlank() }?.let { InfoPill(it) }
                             if (data.steps.isNotEmpty()) InfoPill("${data.steps.size} 步")
@@ -431,6 +438,17 @@ fun RecipeDetailScreen(
             onConfirm = {
                 askingKey = false
                 estimateCalories()
+            },
+        )
+    }
+
+    if (noteOpen) {
+        NoteDialog(
+            current = full?.recipe?.note,
+            onDismiss = { noteOpen = false },
+            onSave = {
+                noteOpen = false
+                scope.launch { app.repository.setNote(recipeId, it) }
             },
         )
     }
