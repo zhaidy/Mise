@@ -10,6 +10,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
+import java.util.Base64
 import java.util.concurrent.TimeUnit
 
 /** 调用 Claude Messages API，用 output_config.format 要求按 JSON Schema 返回。 */
@@ -20,7 +21,7 @@ class ClaudeClient(private val settings: AiSettings) : AiClient {
         .readTimeout(120, TimeUnit.SECONDS)
         .build()
 
-    override suspend fun generate(prompt: String, schema: JSONObject): JSONObject = withContext(Dispatchers.IO) {
+    override suspend fun generate(prompt: String, schema: JSONObject, images: List<ByteArray>): JSONObject = withContext(Dispatchers.IO) {
         val key = settings.key(AiProvider.CLAUDE)
         if (key.isBlank()) throw ImportException(NO_KEY)
 
@@ -30,7 +31,7 @@ class ClaudeClient(private val settings: AiSettings) : AiClient {
             .header("anthropic-version", API_VERSION)
             // 被安全分类器拒绝时，由服务端自动换一个模型重试
             .header("anthropic-beta", "server-side-fallback-2026-07-01")
-            .post(requestBody(prompt, schema).toString().toRequestBody("application/json".toMediaType()))
+            .post(requestBody(prompt, schema, images).toString().toRequestBody("application/json".toMediaType()))
             .build()
         val body = try {
             client.newCall(request).execute().use { response ->
@@ -51,10 +52,10 @@ class ClaudeClient(private val settings: AiSettings) : AiClient {
         private const val API_VERSION = "2023-06-01"
         private const val MODEL = "claude-opus-5-5"
 
-        fun requestBody(prompt: String, schema: JSONObject): JSONObject = JSONObject()
+        fun requestBody(prompt: String, schema: JSONObject, images: List<ByteArray> = emptyList()): JSONObject = JSONObject()
             .put("model", MODEL)
             .put("max_tokens", 16000)
-            .put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", prompt)))
+            .put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", content(prompt, images))))
             .put(
                 "output_config",
                 JSONObject()
@@ -62,6 +63,22 @@ class ClaudeClient(private val settings: AiSettings) : AiClient {
                     .put("format", JSONObject().put("type", "json_schema").put("schema", schema)),
             )
             .put("fallbacks", "default")
+
+        /** 没有图片时 content 直接是文字；有图片时图片放在前面，文字放最后 */
+        private fun content(prompt: String, images: List<ByteArray>): Any {
+            if (images.isEmpty()) return prompt
+            val blocks = JSONArray()
+            images.forEach { bytes ->
+                blocks.put(
+                    JSONObject().put("type", "image").put(
+                        "source",
+                        JSONObject().put("type", "base64").put("media_type", "image/jpeg")
+                            .put("data", Base64.getEncoder().encodeToString(bytes)),
+                    ),
+                )
+            }
+            return blocks.put(JSONObject().put("type", "text").put("text", prompt))
+        }
 
         /** 从 Messages API 的响应里取出模型回复的 JSON 对象 */
         fun replyJson(body: String): JSONObject {

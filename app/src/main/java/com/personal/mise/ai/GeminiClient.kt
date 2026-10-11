@@ -10,6 +10,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
+import java.util.Base64
 import java.util.concurrent.TimeUnit
 
 /** 调用 Gemini，要求按 responseSchema 返回 JSON。 */
@@ -20,14 +21,14 @@ class GeminiClient(private val settings: AiSettings) : AiClient {
         .readTimeout(90, TimeUnit.SECONDS)
         .build()
 
-    override suspend fun generate(prompt: String, schema: JSONObject): JSONObject = withContext(Dispatchers.IO) {
+    override suspend fun generate(prompt: String, schema: JSONObject, images: List<ByteArray>): JSONObject = withContext(Dispatchers.IO) {
         val key = settings.key(AiProvider.GEMINI)
         if (key.isBlank()) throw ImportException(NO_KEY)
 
         val request = Request.Builder()
             .url("$ENDPOINT/$MODEL:generateContent")
             .header("x-goog-api-key", key)
-            .post(requestBody(prompt, schema).toString().toRequestBody("application/json".toMediaType()))
+            .post(requestBody(prompt, schema, images).toString().toRequestBody("application/json".toMediaType()))
             .build()
         val body = try {
             client.newCall(request).execute().use { response ->
@@ -47,8 +48,8 @@ class GeminiClient(private val settings: AiSettings) : AiClient {
         private const val ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models"
         private const val MODEL = "gemini-3.8-flash"
 
-        fun requestBody(prompt: String, schema: JSONObject): JSONObject = JSONObject()
-            .put("contents", JSONArray().put(JSONObject().put("parts", JSONArray().put(JSONObject().put("text", prompt)))))
+        fun requestBody(prompt: String, schema: JSONObject, images: List<ByteArray> = emptyList()): JSONObject = JSONObject()
+            .put("contents", JSONArray().put(JSONObject().put("parts", parts(prompt, images))))
             .put(
                 "generationConfig",
                 JSONObject()
@@ -56,6 +57,20 @@ class GeminiClient(private val settings: AiSettings) : AiClient {
                     .put("responseMimeType", "application/json")
                     .put("responseSchema", toGeminiSchema(schema)),
             )
+
+        /** 图片在前、文字在后 */
+        private fun parts(prompt: String, images: List<ByteArray>): JSONArray {
+            val parts = JSONArray()
+            images.forEach { bytes ->
+                parts.put(
+                    JSONObject().put(
+                        "inlineData",
+                        JSONObject().put("mimeType", "image/jpeg").put("data", Base64.getEncoder().encodeToString(bytes)),
+                    ),
+                )
+            }
+            return parts.put(JSONObject().put("text", prompt))
+        }
 
         /**
          * [AiSchema] 写的是标准 JSON Schema，Gemini 的 responseSchema 是另一种写法：

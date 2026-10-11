@@ -1,5 +1,6 @@
 package com.personal.mise.importer
 
+import com.personal.mise.ai.AiRecipeOrganizer
 import com.personal.mise.bowl.SeasoningDictionary
 import com.personal.mise.data.IngredientDraft
 import com.personal.mise.data.IngredientKind
@@ -22,10 +23,14 @@ import java.util.concurrent.TimeUnit
 
 class ImportException(message: String) : Exception(message)
 
-data class ImportResult(val draft: RecipeDraft, val warnings: List<String>)
+/** aiOrganized：内容已经是 AI 整理过的（步骤已经分好，不用再拆） */
+data class ImportResult(val draft: RecipeDraft, val warnings: List<String>, val aiOrganized: Boolean = false)
 
-/** 在手机上直接抓取下厨房网页、解析内容、把图片下载到本地。 */
-class RecipeImporter(private val images: ImageStore) {
+/**
+ * 在手机上直接抓取下厨房网页、解析内容、把图片下载到本地。
+ * 小红书笔记排版随意，抓到标题、正文和配图后交给 AI 整理。
+ */
+class RecipeImporter(private val images: ImageStore, private val organizer: AiRecipeOrganizer) {
 
     // 下厨房有防爬虫验证：第一次访问只下发 cookie（或返回验证页），带上 cookie 再访问才是正常页面。
     // 没有 cookie jar 时每次请求都是「第一次」，就会出现要手动重试好几次才成功的情况。
@@ -55,6 +60,7 @@ class RecipeImporter(private val images: ImageStore) {
 
     suspend fun import(sharedText: String): ImportResult = withContext(Dispatchers.IO) {
         val url = UrlExtractor.firstUrl(sharedText) ?: throw ImportException("没有在文字里找到链接")
+        if (XiaohongshuParser.isNoteUrl(url)) return@withContext importXiaohongshu(url)
 
         val (finalUrl, firstParsed) = fetchAndParse(url, MOBILE_UA)
         var parsed = firstParsed
@@ -107,6 +113,32 @@ class RecipeImporter(private val images: ImageStore) {
         ImportResult(draft, warnings)
     }
 
+    private suspend fun importXiaohongshu(url: String): ImportResult {
+        val (finalUrl, html) = fetchPage(url, DESKTOP_UA)
+        val note = XiaohongshuParser.parse(html, finalUrl)
+        if (note.desc.isBlank() && note.imageUrls.isEmpty()) {
+            throw ImportException("没能打开这篇小红书笔记（可能需要登录或笔记已删除）。可以在小红书里复制笔记正文，用「AI 整理笔记」导入")
+        }
+
+        val urls = note.imageUrls.take(MAX_XHS_IMAGES)
+        val saved = coroutineScope { urls.map { async { download(it, XHS_REFERER) } }.awaitAll() }.filterNotNull()
+        // 第一张配图当封面，其余的只给 AI 看，整理完就删掉
+        val recipe = try {
+            organizer.organizeXhs(note.title, note.desc, saved.mapNotNull { runCatching { images.file(it).readBytes() }.getOrNull() })
+        } catch (e: Exception) {
+            saved.forEach { images.delete(it) }
+            throw e
+        }
+        saved.drop(1).forEach { images.delete(it) }
+
+        val result = AiRecipeOrganizer.toImportResult(recipe, url)
+        val warnings = result.warnings.toMutableList()
+        if (saved.size < urls.size) warnings += "有 ${urls.size - saved.size} 张配图下载失败，AI 没看到上面的内容"
+        if (saved.isEmpty() && urls.isNotEmpty()) warnings += "封面图下载失败"
+        if (note.imageUrls.size > MAX_XHS_IMAGES) warnings += "笔记图片太多，AI 只看了前 $MAX_XHS_IMAGES 张"
+        return ImportResult(result.draft.copy(coverImage = saved.firstOrNull()), warnings, aiOrganized = true)
+    }
+
     /** 抓页面并解析；解析不出东西（多半是防爬虫验证页）时带着拿到的 cookie 自动重试几次 */
     private suspend fun fetchAndParse(url: String, userAgent: String): Pair<String, ParsedRecipe> {
         var result: Pair<String, ParsedRecipe>? = null
@@ -143,11 +175,11 @@ class RecipeImporter(private val images: ImageStore) {
         }
     }
 
-    private suspend fun download(url: String): String? = runCatching {
+    private suspend fun download(url: String, referer: String = XCF_REFERER): String? = runCatching {
         val request = Request.Builder()
             .url(url)
             .header("User-Agent", MOBILE_UA)
-            .header("Referer", "https://www.xiachufang.com/")
+            .header("Referer", referer)
             .build()
         val bytes = client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) return@runCatching null
@@ -159,6 +191,11 @@ class RecipeImporter(private val images: ImageStore) {
     companion object {
         private const val PAGE_ATTEMPTS = 3
         private const val RETRY_DELAY_MS = 800L
+        private const val XCF_REFERER = "https://www.xiachufang.com/"
+        private const val XHS_REFERER = "https://www.xiaohongshu.com/"
+
+        /** 小红书一篇最多 18 张图，菜谱的用料步骤一般在前几张 */
+        private const val MAX_XHS_IMAGES = 9
         const val MOBILE_UA =
             "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36"
         const val DESKTOP_UA =

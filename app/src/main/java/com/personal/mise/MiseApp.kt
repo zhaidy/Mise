@@ -37,7 +37,7 @@ class MiseApp : Application() {
         private set
     /** 跟着进程走的后台任务，比如同步 */
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-    val importer: RecipeImporter by lazy { RecipeImporter(images) }
+    val importer: RecipeImporter by lazy { RecipeImporter(images, noteOrganizer) }
     val aiSettings: AiSettings by lazy { AiSettings(this) }
     val updater: UpdateChecker by lazy { UpdateChecker(this) }
     val backup: BackupManager by lazy { BackupManager(this, database) }
