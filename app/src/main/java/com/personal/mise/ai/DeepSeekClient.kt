@@ -14,9 +14,9 @@ import java.util.Base64
  * 调用 DeepSeek 的 OpenAI 格式接口。它只支持 JSON 模式（json_object），不认 JSON Schema，
  * 所以把 schema 写进系统提示，让模型照着返回。
  */
-class DeepSeekClient(private val settings: AiSettings, private val http: AiHttp) : AiClient {
+class DeepSeekClient(private val settings: AiSettings, private val http: AiHttp) : AiProviderClient {
 
-    override suspend fun generate(prompt: String, schema: JSONObject, images: List<ByteArray>): JSONObject = withContext(Dispatchers.IO) {
+    override suspend fun generate(prompt: String, schema: JSONObject, images: List<ByteArray>): AiReply = withContext(Dispatchers.IO) {
         val key = settings.key(AiProvider.DEEPSEEK)
         if (key.isBlank()) throw ImportException(NO_KEY)
 
@@ -27,7 +27,7 @@ class DeepSeekClient(private val settings: AiSettings, private val http: AiHttp)
             .build()
         val reply = http.execute(request, "DeepSeek")
         if (!reply.isSuccessful) throw ImportException(errorMessage(reply.code, reply.body))
-        replyJson(reply.body)
+        AiReply(replyJson(reply.body), modelDisplayName(replyModel(reply.body)))
     }
 
     companion object {
@@ -62,6 +62,10 @@ class DeepSeekClient(private val settings: AiSettings, private val http: AiHttp)
             }
             return parts.put(JSONObject().put("type", "text").put("text", prompt))
         }
+
+        /** 响应里写的实际模型，没有就用请求的模型 */
+        fun replyModel(body: String): String =
+            runCatching { JSONObject(body).optString("model") }.getOrNull()?.takeIf { it.isNotBlank() } ?: MODEL
 
         /** 从 chat/completions 的响应里取出模型回复的 JSON 对象 */
         fun replyJson(body: String): JSONObject {

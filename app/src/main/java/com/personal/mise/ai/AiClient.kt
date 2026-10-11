@@ -10,30 +10,59 @@ interface AiClient {
     suspend fun generate(prompt: String, schema: JSONObject, images: List<ByteArray> = emptyList()): JSONObject
 }
 
+/** 某一家服务商的回复：模型返回的 JSON 和实际用的模型（显示名） */
+class AiReply(val json: JSONObject, val model: String)
+
+/** 某一家服务商的客户端，回复里带上实际用的是哪个模型 */
+interface AiProviderClient {
+    suspend fun generate(prompt: String, schema: JSONObject, images: List<ByteArray> = emptyList()): AiReply
+}
+
+/** 把 API 返回的模型名变成好读的名字，比如 claude-opus-5-5 → Claude Opus 5.5、deepseek-flash → DeepSeek Flash */
+fun modelDisplayName(id: String): String {
+    val words = id.split('-').filter { it.isNotEmpty() && !(it.length == 8 && it.all(Char::isDigit)) }
+    val out = mutableListOf<String>()
+    for (w in words) {
+        val last = out.lastOrNull()
+        if (w.all(Char::isDigit) && last != null && last.first().isDigit() && '.' !in last) out[out.size - 1] = "$last.$w"
+        else out += when (w) {
+            "deepseek" -> "DeepSeek"
+            else -> w.replaceFirstChar { it.uppercase() }
+        }
+    }
+    return out.joinToString(" ").ifEmpty { id }
+}
+
 /**
  * 按设置里选的服务商转给对应的客户端，每次调用时才读设置，切换后立即生效。
  * 选的是 Gemini 且勾选的模型都用完时，按设置改用 DeepSeek。
+ * 每次成功后用 [onModelUsed] 告诉界面这次用的是哪个模型。
  */
 class SwitchableAiClient(
     private val settings: AiSettings,
-    private val gemini: AiClient,
-    private val claude: AiClient,
-    private val deepseek: AiClient,
-    /** 改用 DeepSeek 时调用，用来提示一下 */
-    private val onDeepSeekFallback: () -> Unit = {},
+    private val gemini: AiProviderClient,
+    private val claude: AiProviderClient,
+    private val deepseek: AiProviderClient,
+    /** 每次调用成功后调用，参数是给用户看的提示，比如「AI 模型：Gemini 3.8 Flash」 */
+    private val onModelUsed: (String) -> Unit = {},
 ) : AiClient {
-    override suspend fun generate(prompt: String, schema: JSONObject, images: List<ByteArray>): JSONObject =
-        when (settings.provider) {
+    override suspend fun generate(prompt: String, schema: JSONObject, images: List<ByteArray>): JSONObject {
+        val reply = when (settings.provider) {
             AiProvider.GEMINI -> try {
                 gemini.generate(prompt, schema, images)
             } catch (e: GeminiQuotaException) {
                 if (!settings.deepSeekFallback) throw e
                 if (settings.key(AiProvider.DEEPSEEK).isBlank()) throw ImportException("${e.message}。在 AI 设置里填好 DeepSeek Key 后会自动改用 DeepSeek")
-                deepseek.generate(prompt, schema, images).also { onDeepSeekFallback() }
+                val fallback = deepseek.generate(prompt, schema, images)
+                onModelUsed("Gemini 免费额度用完了，这次用的是 ${fallback.model}")
+                return fallback.json
             }
             AiProvider.CLAUDE -> claude.generate(prompt, schema, images)
             AiProvider.DEEPSEEK -> deepseek.generate(prompt, schema, images)
         }
+        onModelUsed("AI 模型：${reply.model}")
+        return reply.json
+    }
 }
 
 /**
