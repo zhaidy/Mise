@@ -15,8 +15,10 @@ android {
         minSdk = 26
         targetSdk = 36
         // CI 每次构建递增，应用内更新靠它判断有没有新版本
-        versionCode = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
-        versionName = "0.3.0"
+        val buildNumber = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
+        versionCode = buildNumber
+        // 显示用的版本号带上 build 号，和 Release 的「Mise build N」对得上
+        versionName = "0.3.$buildNumber"
     }
 
     // 固定签名：每次构建签名一致，新 APK 才能直接覆盖安装（数据保留）。
