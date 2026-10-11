@@ -17,7 +17,7 @@ import java.util.Base64
  * 免费额度用完（429）、模型下线（404）或太忙（500、503）时抛 [AiUnavailableException]，
  * 由 [SwitchableAiClient] 换下一个模型。当天额度用完的模型记下来，额度重置前不再去试。
  */
-class GeminiClient(private val settings: AiSettings, private val usage: GeminiUsage, private val http: AiHttp) : AiProviderClient {
+class GeminiClient(private val settings: AiSettings, private val usage: AiUsage, private val http: AiHttp) : AiProviderClient {
 
     override suspend fun generate(model: String, prompt: String, schema: JSONObject, images: List<ByteArray>): AiReply = withContext(Dispatchers.IO) {
         val key = settings.key(AiProvider.GEMINI)

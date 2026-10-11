@@ -3,8 +3,8 @@ package com.personal.mise.ai
 import com.personal.mise.importer.ImportException
 
 /** 调用 Agnes 的 OpenAI 格式接口；文档没说支持 JSON 模式，只靠提示让它返回 JSON */
-class AgnesClient(settings: AiSettings, http: AiHttp) :
-    OpenAiCompatibleClient(AiProvider.AGNES, ENDPOINT, settings, http) {
+class AgnesClient(settings: AiSettings, http: AiHttp, usage: AiUsage) :
+    OpenAiCompatibleClient(AiProvider.AGNES, ENDPOINT, settings, http, usage) {
 
     override val jsonMode = false
 

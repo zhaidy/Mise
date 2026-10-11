@@ -16,10 +16,10 @@ import com.personal.mise.ai.AiProvider
 import com.personal.mise.ai.AiRecipeOrganizer
 import com.personal.mise.ai.AiSettings
 import com.personal.mise.ai.AiStepSplitter
+import com.personal.mise.ai.AiUsage
 import com.personal.mise.ai.CellularNetwork
 import com.personal.mise.ai.DeepSeekClient
 import com.personal.mise.ai.GeminiClient
-import com.personal.mise.ai.GeminiUsage
 import com.personal.mise.ai.SwitchableAiClient
 import com.personal.mise.backup.BackupManager
 import com.personal.mise.data.CalorieBudget
@@ -58,7 +58,7 @@ class MiseApp : Application() {
     val backup: BackupManager by lazy { BackupManager(this, database) }
     val pantry: Pantry by lazy { Pantry(this) }
     val calorieBudget: CalorieBudget by lazy { CalorieBudget(this) }
-    val geminiUsage: GeminiUsage by lazy { GeminiUsage(this) }
+    val aiUsage: AiUsage by lazy { AiUsage(this) }
     private val cellular: CellularNetwork by lazy { CellularNetwork(this) }
     private val onCellularUsed = {
         Handler(Looper.getMainLooper()).post {
@@ -74,8 +74,8 @@ class MiseApp : Application() {
         SwitchableAiClient(
             aiSettings,
             mapOf(
-                AiProvider.GEMINI to GeminiClient(aiSettings, geminiUsage, AiHttp(aiSettings, cellular, readTimeoutSeconds = 90, onCellularUsed = onCellularUsed)),
-                AiProvider.AGNES to AgnesClient(aiSettings, AiHttp(aiSettings, cellular, readTimeoutSeconds = 120, onCellularUsed = onCellularUsed)),
+                AiProvider.GEMINI to GeminiClient(aiSettings, aiUsage, AiHttp(aiSettings, cellular, readTimeoutSeconds = 90, onCellularUsed = onCellularUsed)),
+                AiProvider.AGNES to AgnesClient(aiSettings, AiHttp(aiSettings, cellular, readTimeoutSeconds = 120, onCellularUsed = onCellularUsed), aiUsage),
                 AiProvider.DEEPSEEK to deepSeek,
             ),
             onModelUsed = ::showModelUsed,

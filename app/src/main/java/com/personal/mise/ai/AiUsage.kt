@@ -3,11 +3,12 @@ package com.personal.mise.ai
 import android.content.Context
 
 /**
- * 这台手机上每个 Gemini 模型今天用了几次、哪些模型当天额度用完了。
- * Google 不提供查剩余免费额度的接口，只能自己记；「今天」按太平洋时间算，和免费额度重置的时间一致。
+ * 这台手机上每个模型今天用了几次、哪些 Gemini 模型当天额度用完了；模型按 API 名记，几家的名字不重。
+ * Google 和 Agnes 都不提供查剩余额度的接口，只能自己记；「今天」按太平洋时间算，和 Gemini 免费额度重置的时间一致。
  * 在别的手机或别的地方用同一个 Key 的次数记不到。
  */
-class GeminiUsage(context: Context) {
+class AiUsage(context: Context) {
+    // 以前只记 Gemini，沿用原来的文件名，升级后今天的次数还在
     private val prefs = context.getSharedPreferences("gemini_usage", Context.MODE_PRIVATE)
 
     /** 今天成功调用的次数 */
