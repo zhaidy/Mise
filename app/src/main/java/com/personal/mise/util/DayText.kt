@@ -1,5 +1,9 @@
 package com.personal.mise.util
 
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flow
 import java.time.LocalDate
 import java.time.format.DateTimeParseException
 
@@ -8,6 +12,14 @@ object DayText {
     private val weekdays = listOf("周一", "周二", "周三", "周四", "周五", "周六", "周日")
 
     fun today(): String = LocalDate.now().toString()
+
+    /** 今天的日期，过了半夜换成新的一天；每分钟看一次 */
+    fun observeToday(): Flow<String> = flow {
+        while (true) {
+            emit(today())
+            delay(60_000)
+        }
+    }.distinctUntilChanged()
 
     fun parse(date: String): LocalDate? = try {
         LocalDate.parse(date)

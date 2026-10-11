@@ -125,29 +125,6 @@ data class SauceBowlItem(
     val amountText: String,
 )
 
-@Entity(
-    tableName = "today_menu",
-    foreignKeys = [ForeignKey(
-        entity = Recipe::class,
-        parentColumns = ["id"],
-        childColumns = ["recipeId"],
-        onDelete = ForeignKey.CASCADE,
-    )],
-)
-data class TodayMenu(
-    @PrimaryKey val recipeId: Long,
-    @ColumnInfo(name = "sortOrder") val order: Int,
-    val currentStep: Int = 0,
-    /** 备料清单里已勾选的项目，逗号分隔，如「i12,b3」 */
-    val bowlsChecked: String = "",
-    /** 加入、移出、换顺序、翻步骤、勾备料时更新，同步时按它判断谁新 */
-    val updatedAt: Long = System.currentTimeMillis(),
-    /** 移出菜单只做标记，好让移出也能同步到别的设备 */
-    val removed: Boolean = false,
-    /** 这道菜今天做完了；可以随时取消 */
-    val done: Boolean = false,
-)
-
 /**
  * 做菜记录：哪天做过哪道菜。一道菜一天只记一条，
  * 主键是「菜谱 uid_日期」，两台手机同一天各记一次也只算一条。
@@ -174,6 +151,7 @@ data class CookLog(
 /**
  * 做菜计划：哪天打算做哪道菜。和做菜记录一样，一道菜一天只排一次，
  * 主键是「菜谱 uid_日期」，两台手机同一天各排一次也只算一条。
+ * 今日菜单就是今天的计划：顺序、做到第几步、做没做完也记在这里。
  */
 @Entity(tableName = "meal_plan", indices = [Index("recipeUid"), Index("date")])
 data class MealPlan(
@@ -184,9 +162,15 @@ data class MealPlan(
     val title: String,
     /** 本地日期，如 2026-10-11 */
     val date: String,
-    /** 提前备料时已勾选的项目，写法和今日菜单一样，如「i12,b3」 */
+    /** 备料清单里已勾选的项目，逗号分隔，如「i12,b3」 */
     val checked: String = "",
-    /** 排上、移出、勾备料时更新，同步时按它判断谁新 */
+    /** 同一天里的先后，今日菜单里拖动排序 */
+    @ColumnInfo(name = "sortOrder") val order: Int = 0,
+    /** 做菜页翻到第几步 */
+    val currentStep: Int = 0,
+    /** 这道菜做完了；可以随时取消 */
+    val done: Boolean = false,
+    /** 排上、移出、换顺序、翻步骤、勾备料、做完时更新，同步时按它判断谁新 */
     val updatedAt: Long = System.currentTimeMillis(),
     /** 移出计划只做标记，好让移出也能同步到别的设备 */
     val deleted: Boolean = false,
@@ -202,6 +186,7 @@ data class PlanRow(
     val date: String,
     val title: String,
     val checked: String,
+    val done: Boolean,
     val recipeId: Long?,
     val coverImage: String?,
     val calories: Int?,
@@ -230,11 +215,14 @@ data class BowlItemRow(
     val amountText: String,
 )
 
+/** 今日菜单的一行：今天的计划，菜谱还在的才算 */
 data class TodayRow(
+    /** 计划的 uid */
+    val uid: String,
     val recipeId: Long,
     val position: Int,
     val currentStep: Int,
-    val bowlsChecked: String,
+    val checked: String,
     val title: String,
     val coverImage: String?,
     val stepCount: Int,

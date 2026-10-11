@@ -6,6 +6,7 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import com.personal.mise.util.DayText
 import java.util.UUID
 
 @Database(
@@ -15,7 +16,6 @@ import java.util.UUID
         Step::class,
         SauceBowl::class,
         SauceBowlItem::class,
-        TodayMenu::class,
         CookLog::class,
         MealPlan::class,
     ],
@@ -24,17 +24,16 @@ import java.util.UUID
 )
 abstract class MiseDatabase : RoomDatabase() {
     abstract fun recipeDao(): RecipeDao
-    abstract fun todayDao(): TodayDao
     abstract fun cookLogDao(): CookLogDao
     abstract fun mealPlanDao(): MealPlanDao
 
     companion object {
-        const val VERSION = 10
+        const val VERSION = 11
         const val NAME = "mise.db"
 
         fun create(context: Context): MiseDatabase =
             Room.databaseBuilder(context, MiseDatabase::class.java, NAME)
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11)
                 .build()
     }
 }
@@ -122,5 +121,45 @@ val MIGRATION_8_9 = object : Migration(8, 9) {
 val MIGRATION_9_10 = object : Migration(9, 10) {
     override fun migrate(db: SupportSQLiteDatabase) {
         db.execSQL("ALTER TABLE recipe ADD COLUMN note TEXT")
+    }
+}
+
+/**
+ * v11：今日菜单并进计划。计划加顺序、做到第几步、做没做完；
+ * 今日菜单里还在的菜变成今天的计划，进度和备料勾选带过去，然后删掉今日菜单表
+ */
+val MIGRATION_10_11 = object : Migration(10, 11) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE meal_plan ADD COLUMN sortOrder INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE meal_plan ADD COLUMN currentStep INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE meal_plan ADD COLUMN done INTEGER NOT NULL DEFAULT 0")
+        // 以前做完只记在今日菜单里：记过做菜的那天，计划也算做完，免得被当成没做完的
+        db.execSQL("UPDATE meal_plan SET done = 1 WHERE uid IN (SELECT uid FROM cook_log WHERE deleted = 0)")
+        val today = DayText.today()
+        val now = System.currentTimeMillis()
+        db.query(
+            """
+            SELECT r.uid, r.title, t.sortOrder, t.currentStep, t.bowlsChecked, t.done
+            FROM today_menu t JOIN recipe r ON r.id = t.recipeId
+            WHERE t.removed = 0 AND r.deleted = 0
+            """
+        ).use { c ->
+            while (c.moveToNext()) {
+                val recipeUid = c.getString(0)
+                val uid = "${recipeUid}_$today"
+                // 今日菜单里没勾过备料时，留着计划里提前勾的
+                val checked = c.getString(4).ifEmpty {
+                    db.query("SELECT checked FROM meal_plan WHERE uid = ? AND deleted = 0", arrayOf<Any>(uid)).use { p ->
+                        if (p.moveToFirst()) p.getString(0) else ""
+                    }
+                }
+                db.execSQL(
+                    "INSERT OR REPLACE INTO meal_plan (uid, recipeUid, title, date, checked, sortOrder, currentStep, done, updatedAt, deleted) " +
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)",
+                    arrayOf<Any>(uid, recipeUid, c.getString(1), today, checked, c.getInt(2), c.getInt(3), c.getInt(5), now),
+                )
+            }
+        }
+        db.execSQL("DROP TABLE today_menu")
     }
 }

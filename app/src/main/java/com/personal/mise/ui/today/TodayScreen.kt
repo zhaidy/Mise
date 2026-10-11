@@ -1,5 +1,6 @@
 package com.personal.mise.ui.today
 
+import android.content.Context
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
@@ -87,6 +88,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -117,10 +119,20 @@ fun TodayScreen(
     val limit by app.calorieBudget.limit.collectAsStateWithLifecycle()
     var editingLimit by remember { mutableStateOf(false) }
     val plans by app.repository.observePlan().collectAsStateWithLifecycle(emptyList())
-    val today = DayText.today()
-    // 今天计划了、还没放进今日菜单的菜
-    val pending = plans.filter { it.date == today && it.recipeId != null && items.none { row -> row.recipeId == it.recipeId } }
-    val addPlanned: () -> Unit = { scope.launch { app.repository.planToToday(today) } }
+    val today by remember { DayText.observeToday() }.collectAsStateWithLifecycle(DayText.today())
+    val yesterday = DayText.plus(today, -1)
+    // 昨天排了没做完、今天也还没排的菜，问一下要不要挪到今天；点了「不用」这天就不再问
+    val context = LocalContext.current
+    val prefs = remember { context.getSharedPreferences("today", Context.MODE_PRIVATE) }
+    var leftoverDismissed by remember { mutableStateOf(prefs.getString(KEY_LEFTOVER_DISMISSED, null)) }
+    val leftover = if (leftoverDismissed == today) emptyList() else {
+        plans.filter { p -> p.date == yesterday && !p.done && p.recipeId != null && items.none { it.recipeId == p.recipeId } }
+    }
+    val moveLeftover: () -> Unit = { scope.launch { app.repository.moveToToday(leftover.map { it.uid }) } }
+    val dismissLeftover: () -> Unit = {
+        prefs.edit().putString(KEY_LEFTOVER_DISMISSED, today).apply()
+        leftoverDismissed = today
+    }
 
     /** 让 AI 把还没算热量的菜逐道估一下 */
     fun estimateMissing() {
@@ -156,7 +168,7 @@ fun TodayScreen(
         val toIndex = items.indexOfFirst { it.recipeId == to.key }
         if (fromIndex >= 0 && toIndex >= 0) {
             items = items.toMutableList().apply { add(toIndex, removeAt(fromIndex)) }
-            app.repository.reorderToday(items.map { it.recipeId })
+            app.repository.reorderToday(items.map { it.uid })
         }
     }
 
@@ -201,13 +213,13 @@ fun TodayScreen(
     ) { padding ->
         if (items.isEmpty()) {
             Column(Modifier.padding(padding)) {
-                if (pending.isNotEmpty()) {
-                    PlannedBanner(pending.map { it.title }, addPlanned, Modifier.padding(horizontal = 20.dp, vertical = 12.dp))
+                if (leftover.isNotEmpty()) {
+                    LeftoverBanner(leftover.map { it.title }, moveLeftover, dismissLeftover, Modifier.padding(horizontal = 20.dp, vertical = 12.dp))
                 }
                 EmptyState(
                     "菜",
                     "今天还没选菜",
-                    "在菜谱列表里长按一道菜，或者在菜谱详情里点「加入今日菜单」。",
+                    "在菜谱列表里长按一道菜、在菜谱详情里点「加入今日菜单」，或者在「计划」里给今天排菜。",
                 )
             }
         } else {
@@ -222,8 +234,8 @@ fun TodayScreen(
                 ),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                if (pending.isNotEmpty()) {
-                    item(key = "planned") { PlannedBanner(pending.map { it.title }, addPlanned) }
+                if (leftover.isNotEmpty()) {
+                    item(key = "leftover") { LeftoverBanner(leftover.map { it.title }, moveLeftover, dismissLeftover) }
                 }
                 item(key = "calories") {
                     CaloriesSummary(
@@ -291,7 +303,7 @@ fun TodayScreen(
         AlertDialog(
             onDismissRequest = { confirmClear = false },
             title = { Text("清空今日菜单") },
-            text = { Text("清空后各道菜的做菜进度和备料勾选都会重置。") },
+            text = { Text("今天计划的菜都会移出，各道菜的做菜进度和备料勾选也会重置。") },
             confirmButton = {
                 TextButton(onClick = {
                     confirmClear = false
@@ -303,9 +315,11 @@ fun TodayScreen(
     }
 }
 
-/** 今天计划了还没放进来的菜，一键放进今日菜单 */
+private const val KEY_LEFTOVER_DISMISSED = "leftover_dismissed"
+
+/** 昨天没做完的菜，一键挪到今天 */
 @Composable
-private fun PlannedBanner(titles: List<String>, onAdd: () -> Unit, modifier: Modifier = Modifier) {
+private fun LeftoverBanner(titles: List<String>, onMove: () -> Unit, onDismiss: () -> Unit, modifier: Modifier = Modifier) {
     Surface(
         modifier.fillMaxWidth(),
         shape = RoundedCornerShape(24.dp),
@@ -314,10 +328,11 @@ private fun PlannedBanner(titles: List<String>, onAdd: () -> Unit, modifier: Mod
     ) {
         Row(Modifier.padding(start = 18.dp, end = 8.dp, top = 12.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text("今天的计划", style = MaterialTheme.typography.labelMedium)
+                Text("昨天没做完", style = MaterialTheme.typography.labelMedium)
                 Text(titles.joinToString("、"), style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
-            TextButton(onClick = onAdd) { Text("放进来") }
+            TextButton(onClick = onDismiss) { Text("不用") }
+            TextButton(onClick = onMove) { Text("挪到今天") }
         }
     }
 }

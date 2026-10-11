@@ -51,8 +51,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.personal.mise.data.CookLogRow
 import com.personal.mise.data.PlanRow
 import com.personal.mise.ui.plan.PlanDayCard
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
 import com.personal.mise.ui.common.CircleIconButton
 import com.personal.mise.ui.common.EmptyState
 import com.personal.mise.ui.common.MiseHeader
@@ -88,10 +86,8 @@ fun HistoryScreen(
     val plans by app.repository.observePlan().collectAsStateWithLifecycle(emptyList())
     var confirmDelete by remember { mutableStateOf<CookLogRow?>(null) }
     var calendarView by rememberSavedView("history_calendar")
-    val snackbar = remember { SnackbarHostState() }
 
     Scaffold(
-        snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             MiseHeader("做菜记录", eyebrow = if (logs.isEmpty()) "还没有记录" else "一共做了 ${logs.size} 次") {
                 if (logs.isNotEmpty() || plans.isNotEmpty()) {
@@ -120,7 +116,6 @@ fun HistoryScreen(
                     PlanDayCard(
                         date = date,
                         rows = rows,
-                        snackbar = snackbar,
                         onOpenRecipe = onOpenRecipe,
                         onPrep = onPrep,
                         onShopping = onShopping,

@@ -87,8 +87,8 @@ private data class PrepItem(val key: String, val title: String, val detail: Stri
 private data class PrepSection(val name: String, val items: List<PrepItem>)
 
 /**
- * 备料清单里的一道菜：来自今日菜单，或者某天的计划。
- * key 在清单里区分各道菜；checked 是已勾选的项目，写法见 TodayMenu.bowlsChecked。
+ * 备料清单里的一道菜：某天计划的菜，今日菜单就是今天的计划。
+ * key 是计划的 uid；checked 是已勾选的项目，写法见 MealPlan.checked。
  */
 private data class PrepSource(val key: String, val recipeId: Long, val title: String, val checked: String)
 
@@ -141,14 +141,10 @@ private fun buildPrep(row: PrepSource, full: RecipeFull, factor: Double): PrepRe
 fun PrepListScreen(planDate: String?, onBack: () -> Unit, onCook: () -> Unit) {
     val app = rememberApp()
     val scope = rememberCoroutineScope()
-    val todayRows by app.repository.observeToday().collectAsStateWithLifecycle(emptyList())
     val plans by app.repository.observePlan().collectAsStateWithLifecycle(emptyList())
-    // 有日期时是那天计划的菜，可以提前备；勾选记在计划里，放进今日菜单时一起带过去
-    val rows = if (planDate == null) {
-        todayRows.map { PrepSource("t${it.recipeId}", it.recipeId, it.title, it.bowlsChecked) }
-    } else {
-        plans.filter { it.date == planDate && it.recipeId != null }.map { PrepSource(it.uid, it.recipeId!!, it.title, it.checked) }
-    }
+    // 没给日期就是今日菜单；有日期时是那天计划的菜，可以提前备，到了那天接着勾
+    val date = planDate ?: DayText.today()
+    val rows = plans.filter { it.date == date && it.recipeId != null }.map { PrepSource(it.uid, it.recipeId!!, it.title, it.checked) }
     val ids = rows.map { it.recipeId }
     val fulls by remember(ids) {
         if (ids.isEmpty()) flowOf(emptyList<RecipeFull?>())
@@ -163,17 +159,11 @@ fun PrepListScreen(planDate: String?, onBack: () -> Unit, onCook: () -> Unit) {
     }
     val total = recipes.sumOf { it.allKeys.size }
     val done = recipes.sumOf { r -> parseChecked(r.row.checked).count { it in r.allKeys } }
-    // 计划里的菜只有当天才能直接开始做：先放进今日菜单
-    val canCook = planDate == null || planDate == DayText.today()
-    val cook: () -> Unit = {
-        if (planDate == null) onCook() else scope.launch { app.repository.planToToday(planDate); onCook() }
-    }
+    // 计划里的菜只有当天才能开始做
+    val canCook = date == DayText.today()
 
     fun save(recipe: PrepRecipe, next: Set<String>) {
-        scope.launch {
-            if (planDate == null) app.repository.setChecked(recipe.row.recipeId, next)
-            else app.repository.setPlanChecked(recipe.row.key, next)
-        }
+        scope.launch { app.repository.setPlanChecked(recipe.row.key, next) }
     }
 
     fun toggle(recipe: PrepRecipe, key: String) {
@@ -209,7 +199,7 @@ fun PrepListScreen(planDate: String?, onBack: () -> Unit, onCook: () -> Unit) {
     Scaffold(
         topBar = { MiseHeader("备料清单", eyebrow = planDate?.let { "${DayText.ahead(it)}的计划" }, onBack = onBack) },
         bottomBar = {
-            if (canCook) BottomActionBar { PillButton("开始做菜", cook, Modifier.weight(1f)) }
+            if (canCook) BottomActionBar { PillButton("开始做菜", onCook, Modifier.weight(1f)) }
         },
     ) { padding ->
         if (recipes.isEmpty()) {
@@ -300,7 +290,7 @@ fun PrepListScreen(planDate: String?, onBack: () -> Unit, onCook: () -> Unit) {
             title = { Text("都备好了") },
             text = { Text(if (canCook) "所有用料和调料碗都准备好了，开始做菜吧！" else "所有用料和调料碗都准备好了，到那天直接开火。") },
             confirmButton = {
-                if (canCook) TextButton(onClick = { showDone = false; cook() }) { Text("开始做菜") }
+                if (canCook) TextButton(onClick = { showDone = false; onCook() }) { Text("开始做菜") }
                 else TextButton(onClick = { showDone = false }) { Text("好的") }
             },
             dismissButton = { if (canCook) TextButton(onClick = { showDone = false }) { Text("再看看") } },
