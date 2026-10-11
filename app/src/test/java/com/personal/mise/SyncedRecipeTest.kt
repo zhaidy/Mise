@@ -68,6 +68,14 @@ class SyncedRecipeTest {
     }
 
     @Test
+    fun `翻译前的原文跟着同步，旧文档没有时为空`() {
+        val original = """{"title":"Braised Pork","servings":null,"ingredients":[],"steps":["Simmer"]}"""
+        val map = SyncedRecipe.from(full.copy(recipe = full.recipe.copy(original = original))).toMap()
+        assertEquals(original, SyncedRecipe.fromMap("u-1", firestoreLike(map))?.original)
+        assertNull(SyncedRecipe.fromMap("u-1", firestoreLike(map - "original"))?.original)
+    }
+
+    @Test
     fun `旧版本的文档没有分类`() {
         val map = SyncedRecipe.from(full).toMap()
         assertEquals("家常菜", SyncedRecipe.fromMap("u-1", firestoreLike(map))?.category)

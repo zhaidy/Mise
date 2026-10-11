@@ -27,12 +27,12 @@ abstract class MiseDatabase : RoomDatabase() {
     abstract fun cookLogDao(): CookLogDao
 
     companion object {
-        const val VERSION = 6
+        const val VERSION = 7
         const val NAME = "mise.db"
 
         fun create(context: Context): MiseDatabase =
             Room.databaseBuilder(context, MiseDatabase::class.java, NAME)
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
                 .build()
     }
 }
@@ -87,5 +87,12 @@ val MIGRATION_5_6 = object : Migration(5, 6) {
         db.execSQL("ALTER TABLE recipe ADD COLUMN category TEXT")
         db.execSQL("ALTER TABLE recipe ADD COLUMN subcategory TEXT")
         db.execSQL("ALTER TABLE recipe ADD COLUMN tags TEXT NOT NULL DEFAULT ''")
+    }
+}
+
+/** v7：菜谱加 original，翻译过的菜谱留着原文 */
+val MIGRATION_6_7 = object : Migration(6, 7) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE recipe ADD COLUMN original TEXT")
     }
 }

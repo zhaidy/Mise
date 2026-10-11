@@ -15,6 +15,7 @@ import com.personal.mise.bowl.SeasoningDictionary
 import com.personal.mise.data.IngredientDraft
 import com.personal.mise.data.IngredientKind
 import com.personal.mise.data.RecipeDraft
+import com.personal.mise.data.RecipeText
 import com.personal.mise.data.StepDraft
 import com.personal.mise.importer.ImportException
 import com.personal.mise.ui.common.ClassifyState
@@ -99,6 +100,8 @@ class EditorViewModel(
     var cover by mutableStateOf<String?>(null)
         private set
     private var sourceUrl: String? = null
+    /** 翻译前的原文，编辑时不动，保存时原样带上 */
+    private var original: RecipeText? = null
     private var aiOrganized = false
     val ingredients = mutableStateListOf<IngredientRow>()
     val steps = mutableStateListOf<StepRow>()
@@ -211,6 +214,7 @@ class EditorViewModel(
         classify.fill(draft.category, draft.subcategory, draft.tags)
         cover = draft.coverImage
         sourceUrl = draft.sourceUrl
+        original = draft.original
         ingredients.clear()
         ingredients += draft.ingredients.map {
             IngredientRow(nextKey(), it.id, it.name, it.amountText, it.kind, kindManual = it.id != 0L)
@@ -483,6 +487,7 @@ class EditorViewModel(
         category = classify.category,
         subcategory = classify.subcategory,
         tags = classify.allTags(),
+        original = original,
         ingredients = ingredients.map { IngredientDraft(it.id, it.name, it.amount, it.kind) },
         steps = steps.map { row ->
             val seconds = row.timerMinutes.toDoubleOrNull()?.let { (it * 60).toInt() }?.takeIf { it > 0 }
