@@ -118,7 +118,7 @@ class MiseApp : Application() {
         images = ImageStore(this)
         database = MiseDatabase.create(this)
         repository = RecipeRepository(database, images)
-        timers = TimerManager(this)
+        timers = TimerManager(this, repository)
         kitchen = KitchenSync(this, repository, images, aiSettings, appScope).also { it.start() }
         Notifications.createChannels(this)
         appScope.launch { updater.cleanup() }

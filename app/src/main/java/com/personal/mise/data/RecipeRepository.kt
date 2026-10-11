@@ -370,6 +370,9 @@ class RecipeRepository(
         recipeIds.forEachIndexed { index, id -> todayDao.setOrder(id, index, now) }
     }
 
+    /** 今日菜单里这道菜做到第几步；不在菜单里为 null */
+    suspend fun currentStepOf(recipeId: Long): Int? = todayDao.get(recipeId)?.takeIf { !it.removed }?.currentStep
+
     suspend fun setCurrentStep(recipeId: Long, step: Int) =
         todayDao.setCurrentStep(recipeId, step, System.currentTimeMillis())
 

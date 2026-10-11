@@ -97,6 +97,7 @@ import com.personal.mise.ui.common.SectionHeader
 import com.personal.mise.ui.common.hasImage
 import com.personal.mise.ui.common.miseFieldColors
 import com.personal.mise.ui.common.rememberApp
+import com.personal.mise.ui.common.rememberSavedView
 import com.personal.mise.ui.detail.BowlCard
 import com.personal.mise.ui.detail.IngredientTable
 import com.personal.mise.ui.detail.PhaseLabel
@@ -289,6 +290,8 @@ private fun RecipePager(
 
     // 在菜谱里点了某一步，切回做菜后翻到那一步
     var jumpTo by remember { mutableStateOf<Int?>(null) }
+    // 计时到点是只响铃，还是自动翻到下一步接着计时；记在本机，下次还是这个
+    var autoNext by rememberSavedView("timer_auto_next")
 
     Column(modifier.fillMaxSize()) {
         ModeSwitch(showRecipe, onShowRecipe)
@@ -328,7 +331,11 @@ private fun RecipePager(
                     factor = factor,
                     timers = timers.filter { it.stepIndex == page },
                     now = now,
-                    onStartTimer = { seconds -> app.timers.start(row.recipeId, row.title, page, seconds) },
+                    autoNext = autoNext,
+                    onAutoNextChange = { autoNext = it },
+                    onStartTimer = { seconds ->
+                        app.timers.start(row.recipeId, row.title, page, seconds, autoNext = autoNext && page < steps.lastIndex)
+                    },
                     onCancelTimer = { app.timers.cancel(it) },
                 )
             }
@@ -380,11 +387,16 @@ internal fun ModeSwitch(showRecipe: Boolean, onChange: (Boolean) -> Unit, mainLa
 
 /** 几个选项平分一条胶囊，选中的那格深色；备料清单用它切「按菜 / 切配 / 菜谱」 */
 @Composable
-internal fun ModeTabs(labels: List<String>, selected: Int, onSelect: (Int) -> Unit) {
+internal fun ModeTabs(
+    labels: List<String>,
+    selected: Int,
+    onSelect: (Int) -> Unit,
+    modifier: Modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
+) {
     Surface(
         shape = CircleShape,
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp),
+        modifier = Modifier.fillMaxWidth().then(modifier),
     ) {
         Row(Modifier.padding(4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             labels.forEachIndexed { index, label ->
@@ -571,9 +583,12 @@ private fun StepPage(
     factor: Double,
     timers: List<CookingTimer>,
     now: Long,
+    autoNext: Boolean,
+    onAutoNextChange: (Boolean) -> Unit,
     onStartTimer: (Int) -> Unit,
     onCancelTimer: (Int) -> Unit,
 ) {
+    val last = index >= total - 1
     val app = rememberApp()
     var customOpen by remember { mutableStateOf(false) }
     val suggested = step.timerSeconds ?: TimeText.guessSeconds(step.text)
@@ -659,13 +674,19 @@ private fun StepPage(
                         gapSize = 0.dp,
                     )
                     Spacer(Modifier.width(14.dp))
-                    Text(
-                        TimeText.format(remaining),
-                        fontSize = 40.sp,
-                        fontWeight = FontWeight.Bold,
-                        style = MaterialTheme.typography.bodyLarge.copy(fontFeatureSettings = "tnum"),
-                        modifier = Modifier.weight(1f),
-                    )
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            TimeText.format(remaining),
+                            fontSize = 40.sp,
+                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.bodyLarge.copy(fontFeatureSettings = "tnum"),
+                        )
+                        Text(
+                            if (timer.autoNext) "到点自动下一步" else "到点响铃",
+                            fontSize = 14.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                     OutlinedButton(onClick = { onCancelTimer(timer.id) }, modifier = Modifier.height(48.dp), shape = CircleShape) {
                         Text("取消", fontSize = 16.sp)
                     }
@@ -673,6 +694,23 @@ private fun StepPage(
             }
         }
 
+        // 最后一步没有下一步可跳，只能响铃
+        if (!last) {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                ModeTabs(
+                    labels = listOf("闹钟", "自动下一步"),
+                    selected = if (autoNext) 1 else 0,
+                    onSelect = { onAutoNextChange(it == 1) },
+                    modifier = Modifier,
+                )
+                Text(
+                    if (autoNext) "到点响铃并翻到下一步，下一步有时间就接着计时" else "到点只响铃，停在这一步",
+                    fontSize = 14.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 8.dp),
+                )
+            }
+        }
         if (suggested != null) {
             PillButton(
                 "开始计时 ${TimeText.describe(suggested)}",

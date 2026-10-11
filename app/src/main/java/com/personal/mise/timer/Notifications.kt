@@ -78,7 +78,7 @@ object Notifications {
             if (timers.size > 1) {
                 val style = NotificationCompat.InboxStyle()
                 timers.sortedBy { it.endAtElapsed }.forEach {
-                    style.addLine("${it.recipeTitle} · 第 ${it.stepIndex + 1} 步")
+                    style.addLine("${it.recipeTitle} · 第 ${it.stepIndex + 1} 步${if (it.autoNext) " · 到点自动下一步" else ""}")
                 }
                 builder.setStyle(style)
             }
@@ -86,14 +86,15 @@ object Notifications {
         return builder.build()
     }
 
-    fun showFinished(context: Context, timer: CookingTimer) {
+    fun showFinished(context: Context, event: TimerFinished) {
+        val timer = event.timer
         val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) ==
             PackageManager.PERMISSION_GRANTED || android.os.Build.VERSION.SDK_INT < 33
         if (!granted) return
         val notification = NotificationCompat.Builder(context, CHANNEL_DONE)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle("计时结束：${timer.recipeTitle}")
-            .setContentText("第 ${timer.stepIndex + 1} 步的时间到了")
+            .setContentText(event.message)
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setCategory(NotificationCompat.CATEGORY_ALARM)
             .setAutoCancel(true)
