@@ -9,6 +9,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.personal.mise.MiseApp
 import com.personal.mise.ai.GeminiAmountEstimator
+import com.personal.mise.ai.GeminiStepSplitter
 import com.personal.mise.bowl.SeasoningDictionary
 import com.personal.mise.data.IngredientDraft
 import com.personal.mise.data.IngredientKind
@@ -68,6 +69,9 @@ class EditorViewModel(
     var aiBusy by mutableStateOf(false)
         private set
     var aiMessage by mutableStateOf<String?>(null)
+    /** 步骤已经用 AI 拆分过（导入时自动拆的或手动点的），界面上提示不用再点 */
+    var stepsAiSplit by mutableStateOf(false)
+        private set
     var estimating by mutableStateOf(false)
         private set
     var estimateMessage by mutableStateOf<String?>(null)
@@ -110,6 +114,8 @@ class EditorViewModel(
                 loadState = LoadState.Ready
                 // 导入的菜谱里有「适量」或没写用量的，有 Key 就顺手让 AI 估一下
                 if (importText != null && hasGeminiKey && canEstimate) aiEstimateAmounts()
+                // 下厨房链接导入的步骤常常几件事挤在一步里，有 Key 就自动用 AI 拆一下（笔记整理时 AI 已经分好步了）
+                if (importText != null && !aiNote && hasGeminiKey && steps.any { it.text.isNotBlank() }) aiSplitSteps(auto = true)
             } catch (e: ImportException) {
                 loadState = LoadState.Failed(e.message ?: "导入失败", needsKey = aiNote && !app.aiSettings.hasKey)
             } catch (e: Exception) {
@@ -229,32 +235,48 @@ class EditorViewModel(
         }
     }
 
-    /** 把现有步骤文字交给 Gemini 重新拆分；原来的步骤图片只在原本只有一步时保留到第一步 */
-    fun aiSplitSteps() {
+    /**
+     * 把现有步骤文字交给 Gemini 重新拆分。原来每步的图片和计时跟到拆出来的第一步；
+     * 带图的步骤对应不上时不改动，免得把图弄丢。auto = 导入时自动拆分。
+     */
+    fun aiSplitSteps(auto: Boolean = false) {
         if (aiBusy) return
         aiBusy = true
-        aiMessage = null
+        aiMessage = if (auto) "正在用 AI 自动拆分步骤…" else null
         viewModelScope.launch {
             try {
                 val old = steps.toList()
                 val result = app.stepSplitter.split(old.map { it.text })
-                val firstImage = old.singleOrNull()?.image
-                val firstTimer = old.singleOrNull()?.timerMinutes.orEmpty()
+                val carry = GeminiStepSplitter.carryOver(old.map { it.image != null }, result)
+                if (carry == null) {
+                    aiMessage = "AI 拆分后对不上原来的步骤图，${if (auto) "保留了下厨房原来的步骤" else "步骤没有改动"}"
+                    return@launch
+                }
+                if (steps.toList() != old) {
+                    // 拆分期间手动改过步骤，不覆盖
+                    if (auto) aiMessage = "步骤已经改过，没有自动拆分，需要的话可以点「AI 拆分步骤」"
+                    return@launch
+                }
+                val fromOld = carry.entries.associate { (i, j) -> j to old[i] }
                 steps.clear()
-                steps += result.mapIndexed { i, s ->
+                steps += result.mapIndexed { j, s ->
                     StepRow(
                         key = nextKey(),
                         text = s.text,
-                        image = if (i == 0) firstImage else null,
+                        image = fromOld[j]?.image,
                         timerMinutes = s.timerMinutes?.let { formatMinutes((it * 60).toInt()) }
-                            ?: if (i == 0) firstTimer else "",
+                            ?: fromOld[j]?.timerMinutes.orEmpty(),
                     )
                 }
-                aiMessage = "已拆成 ${result.size} 步，请检查一下"
-            } catch (e: ImportException) {
-                aiMessage = e.message
+                stepsAiSplit = true
+                aiMessage = if (auto) {
+                    "✨ 导入时已自动用 AI 拆分：原来 ${old.size} 步 → 现在 ${result.size} 步，不用再点，检查一下就好"
+                } else {
+                    "已拆成 ${result.size} 步，请检查一下"
+                }
             } catch (e: Exception) {
-                aiMessage = "AI 拆分失败：${e.message ?: e.javaClass.simpleName}"
+                val reason = if (e is ImportException) e.message else e.message ?: e.javaClass.simpleName
+                aiMessage = if (auto) "自动 AI 拆分没成功（$reason），步骤保持原样" else if (e is ImportException) reason else "AI 拆分失败：$reason"
             } finally {
                 aiBusy = false
             }
