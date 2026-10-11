@@ -56,7 +56,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
-import com.personal.mise.timer.CookingTimer
+import com.personal.mise.timer.TimerFinished
 import com.personal.mise.ui.bowl.BowlEditScreen
 import com.personal.mise.ui.common.MiseIcons
 import com.personal.mise.ui.common.rememberApp
@@ -123,15 +123,16 @@ fun MiseRoot(navRequests: MutableStateFlow<NavRequest?>) {
         if (request != null) navRequests.value = null
     }
 
-    var finishedTimer by remember { mutableStateOf<CookingTimer?>(null) }
+    var finishedTimer by remember { mutableStateOf<TimerFinished?>(null) }
     LaunchedEffect(Unit) {
         app.timers.finished.collect { finishedTimer = it }
     }
-    finishedTimer?.let { timer ->
+    finishedTimer?.let { event ->
+        val timer = event.timer
         AlertDialog(
             onDismissRequest = { finishedTimer = null },
             title = { Text("计时结束") },
-            text = { Text("${timer.recipeTitle} · 第 ${timer.stepIndex + 1} 步的时间到了") },
+            text = { Text("${timer.recipeTitle} · ${event.message}") },
             confirmButton = {
                 TextButton(onClick = {
                     finishedTimer = null
