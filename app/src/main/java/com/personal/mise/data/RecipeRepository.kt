@@ -6,8 +6,12 @@ import com.personal.mise.image.ImageStore
 import com.personal.mise.sync.SyncedRecipe
 import com.personal.mise.sync.SyncedTodayEntry
 import com.personal.mise.sync.TodayKeys
+import com.personal.mise.util.DayText
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 
 data class IngredientDraft(
     val id: Long = 0,
@@ -29,6 +33,8 @@ data class RecipeDraft(
     val coverImage: String? = null,
     val sourceUrl: String? = null,
     val servings: String? = null,
+    /** 整道菜的千卡 */
+    val calories: Int? = null,
     val ingredients: List<IngredientDraft> = emptyList(),
     val steps: List<StepDraft> = emptyList(),
 )
@@ -46,6 +52,7 @@ class RecipeRepository(
 ) {
     private val dao = db.recipeDao()
     private val todayDao = db.todayDao()
+    private val cookLogDao = db.cookLogDao()
 
     fun search(query: String): Flow<List<Recipe>> = dao.search(query.trim())
 
@@ -80,6 +87,7 @@ class RecipeRepository(
             coverImage = full.recipe.coverImage,
             sourceUrl = full.recipe.sourceUrl,
             servings = full.recipe.servings,
+            calories = full.recipe.calories,
             ingredients = full.ingredients.map { IngredientDraft(it.id, it.name, it.amountText, it.kind) },
             steps = full.steps.map { StepDraft(it.id, it.text, it.image, it.timerSeconds) },
         )
@@ -96,6 +104,7 @@ class RecipeRepository(
                         coverImage = draft.coverImage,
                         sourceUrl = draft.sourceUrl,
                         servings = draft.servings?.takeIf { it.isNotBlank() },
+                        calories = draft.calories,
                     )
                 )
             } else {
@@ -106,6 +115,7 @@ class RecipeRepository(
                         coverImage = draft.coverImage,
                         sourceUrl = draft.sourceUrl,
                         servings = draft.servings?.takeIf { it.isNotBlank() },
+                        calories = draft.calories,
                         updatedAt = System.currentTimeMillis(),
                     )
                 )
@@ -147,6 +157,9 @@ class RecipeRepository(
         }
         paths.forEach { images.delete(it) }
     }
+
+    /** 只改热量，不动用料和调料碗；会同步到别的手机 */
+    suspend fun setCalories(id: Long, calories: Int?) = dao.setCalories(id, calories, System.currentTimeMillis())
 
     private suspend fun imagesOf(id: Long): Set<String> {
         val recipe = dao.get(id) ?: return emptySet()
@@ -227,6 +240,7 @@ class RecipeRepository(
                 uid = remote.uid,
                 updatedAt = remote.updatedAt,
                 deleted = remote.deleted,
+                calories = remote.calories,
             )
             val recipeId = if (existing == null) dao.insert(row) else { dao.update(row); existing.id }
 
@@ -325,6 +339,34 @@ class RecipeRepository(
             )
         )
     }
+
+    // 做菜记录
+
+    fun observeCookLog(): Flow<List<CookLogRow>> = cookLogDao.observeAll()
+
+    /** 这道菜做过的日子，新的在前 */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun observeCookDates(recipeId: Long): Flow<List<String>> =
+        dao.observe(recipeId).flatMapLatest { r ->
+            if (r == null) flowOf(emptyList()) else cookLogDao.observeDates(r.uid)
+        }
+
+    /** 记一笔：这天做了这道菜。这天已经记过返回 false */
+    suspend fun logCooked(recipeId: Long, date: String = DayText.today()): Boolean = db.withTransaction {
+        val recipe = dao.get(recipeId) ?: return@withTransaction false
+        val uid = CookLog.uidOf(recipe.uid, date)
+        if (cookLogDao.get(uid)?.deleted == false) return@withTransaction false
+        cookLogDao.upsert(CookLog(uid = uid, recipeUid = recipe.uid, title = recipe.title, date = date))
+        true
+    }
+
+    suspend fun deleteCookLog(uid: String) = cookLogDao.markDeleted(uid, System.currentTimeMillis())
+
+    fun observeCookLogStamps(): Flow<List<RecipeStamp>> = cookLogDao.observeStamps()
+
+    suspend fun loadCookLogForSync(uid: String): CookLog? = cookLogDao.get(uid)
+
+    suspend fun applyRemoteCookLog(remote: CookLog) = cookLogDao.upsert(remote)
 }
 
 fun parseChecked(value: String): Set<String> =

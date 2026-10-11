@@ -20,6 +20,13 @@ import com.personal.mise.ui.common.OutlinePillButton
 import com.personal.mise.ui.common.PillButton
 import com.personal.mise.ui.common.RecipeCover
 import com.personal.mise.ui.common.SoftCard
+import com.personal.mise.ui.common.CircleIconButton
+import com.personal.mise.ui.edit.AiKeyDialog
+import com.personal.mise.importer.ImportException
+import com.personal.mise.util.CalorieText
+import kotlinx.coroutines.CancellationException
+import androidx.compose.material.icons.filled.ShoppingCart
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -76,6 +83,7 @@ import sh.calvin.reorderable.rememberReorderableLazyListState
 fun TodayScreen(
     onOpenRecipe: (Long) -> Unit,
     onPrep: () -> Unit,
+    onShopping: () -> Unit,
     onCook: () -> Unit,
 ) {
     val app = rememberApp()
@@ -84,6 +92,37 @@ fun TodayScreen(
     var items by remember { mutableStateOf(rows) }
     LaunchedEffect(rows) { items = rows }
     var confirmClear by remember { mutableStateOf(false) }
+    var estimating by remember { mutableStateOf(false) }
+    var calorieMessage by remember { mutableStateOf<String?>(null) }
+    var askingKey by remember { mutableStateOf(false) }
+
+    /** 让 AI 把还没算热量的菜逐道估一下 */
+    fun estimateMissing() {
+        if (estimating) return
+        val missing = items.filter { it.calories == null }
+        estimating = true
+        calorieMessage = null
+        scope.launch {
+            var done = 0
+            var error: String? = null
+            missing.forEach { row ->
+                try {
+                    val full = app.repository.loadFull(row.recipeId) ?: return@forEach
+                    if (full.ingredients.isEmpty()) return@forEach
+                    app.repository.setCalories(row.recipeId, app.calorieEstimator.estimate(full))
+                    done++
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: ImportException) {
+                    error = e.message
+                } catch (e: Exception) {
+                    error = e.message ?: e.javaClass.simpleName
+                }
+            }
+            estimating = false
+            calorieMessage = error?.let { "估算了 $done 道，有的没成功：$it" }
+        }
+    }
 
     val listState = rememberLazyListState()
     val reorderState = rememberReorderableLazyListState(listState) { from, to ->
@@ -102,6 +141,12 @@ fun TodayScreen(
                 eyebrow = if (items.isEmpty()) "还没选菜" else "共 ${items.size} 道菜",
             ) {
                 if (items.isNotEmpty()) {
+                    CircleIconButton(
+                        Icons.Filled.ShoppingCart,
+                        "购物清单",
+                        onShopping,
+                        container = MaterialTheme.colorScheme.surfaceContainerLowest,
+                    )
                     OutlinedButton(
                         onClick = { confirmClear = true },
                         shape = CircleShape,
@@ -143,10 +188,20 @@ fun TodayScreen(
                 ),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
+                item(key = "calories") {
+                    CaloriesSummary(
+                        rows = items,
+                        factorOf = app::scaleOf,
+                        estimating = estimating,
+                        message = calorieMessage,
+                        onEstimate = { if (app.aiSettings.hasKey) estimateMissing() else askingKey = true },
+                    )
+                }
                 items(items, key = { it.recipeId }) { row ->
                     ReorderableItem(reorderState, key = row.recipeId) { isDragging ->
                         TodayCard(
                             row = row,
+                            factor = app.scaleOf(row.recipeId),
                             dragging = isDragging,
                             onClick = { onOpenRecipe(row.recipeId) },
                             onRemove = { scope.launch { app.repository.removeFromToday(row.recipeId) } },
@@ -167,6 +222,17 @@ fun TodayScreen(
         }
     }
 
+    if (askingKey) {
+        AiKeyDialog(
+            confirmLabel = "保存并估算",
+            onDismiss = { askingKey = false },
+            onConfirm = {
+                askingKey = false
+                estimateMissing()
+            },
+        )
+    }
+
     if (confirmClear) {
         AlertDialog(
             onDismissRequest = { confirmClear = false },
@@ -183,9 +249,52 @@ fun TodayScreen(
     }
 }
 
+/** 今日菜单一共多少千卡；按每道菜现在的换算倍率算 */
+@Composable
+private fun CaloriesSummary(
+    rows: List<TodayRow>,
+    factorOf: (Long) -> Double,
+    estimating: Boolean,
+    message: String?,
+    onEstimate: () -> Unit,
+) {
+    val known = rows.filter { it.calories != null }
+    val missing = rows.size - known.size
+    val total = known.sumOf { CalorieText.scaled(it.calories!!, factorOf(it.recipeId)) }
+    Surface(
+        Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(24.dp),
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+    ) {
+        Row(Modifier.padding(start = 18.dp, end = 8.dp, top = 14.dp, bottom = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text("今日热量", style = MaterialTheme.typography.labelMedium)
+                Text(
+                    if (known.isEmpty()) "还没算" else CalorieText.format(total),
+                    style = MaterialTheme.typography.titleLarge,
+                )
+                val detail = when {
+                    missing == 0 -> "${rows.size} 道菜，整道菜的热量加起来"
+                    known.isEmpty() -> "可以让 AI 按用料估算每道菜的热量"
+                    else -> "还有 $missing 道菜没算热量，没算进去"
+                }
+                Text(detail, style = MaterialTheme.typography.bodySmall)
+                message?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+            }
+            if (estimating) {
+                CircularProgressIndicator(Modifier.padding(12.dp).size(20.dp), strokeWidth = 2.dp)
+            } else if (missing > 0) {
+                TextButton(onClick = onEstimate) { Text("AI 估算") }
+            }
+        }
+    }
+}
+
 @Composable
 private fun TodayCard(
     row: TodayRow,
+    factor: Double,
     dragging: Boolean,
     onClick: () -> Unit,
     onRemove: () -> Unit,
@@ -237,12 +346,23 @@ private fun TodayCard(
                     gapSize = 0.dp,
                     drawStopIndicator = {},
                 )
-                if (hasTimer) {
-                    InfoPill(
-                        "计时中",
-                        container = MaterialTheme.colorScheme.tertiaryContainer,
-                        content = MaterialTheme.colorScheme.onTertiaryContainer,
-                    )
+                if (hasTimer || row.calories != null) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (hasTimer) {
+                            InfoPill(
+                                "计时中",
+                                container = MaterialTheme.colorScheme.tertiaryContainer,
+                                content = MaterialTheme.colorScheme.onTertiaryContainer,
+                            )
+                        }
+                        row.calories?.let {
+                            Text(
+                                CalorieText.describe(it, null, factor),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
                 }
             }
             IconButton(onClick = onRemove) {

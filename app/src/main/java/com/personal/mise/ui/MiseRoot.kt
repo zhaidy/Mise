@@ -5,6 +5,7 @@ import android.net.Uri
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.core.tween
@@ -41,6 +42,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -61,8 +64,10 @@ import com.personal.mise.ui.cooking.CookingScreen
 import com.personal.mise.ui.detail.RecipeDetailScreen
 import com.personal.mise.ui.edit.ImportScreen
 import com.personal.mise.ui.edit.RecipeEditScreen
+import com.personal.mise.ui.history.HistoryScreen
 import com.personal.mise.ui.list.RecipeListScreen
 import com.personal.mise.ui.prep.PrepListScreen
+import com.personal.mise.ui.shopping.ShoppingListScreen
 import com.personal.mise.ui.theme.LocalMiseColors
 import com.personal.mise.ui.today.TodayScreen
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -77,6 +82,8 @@ object Routes {
     const val RECIPES = "recipes"
     const val TODAY = "today"
     const val PREP = "prep"
+    const val SHOPPING = "shopping"
+    const val HISTORY = "history"
     fun detail(id: Long) = "detail/$id"
     fun edit(id: Long) = "edit/$id"
     fun bowls(id: Long) = "bowls/$id"
@@ -128,7 +135,7 @@ fun MiseRoot(navRequests: MutableStateFlow<NavRequest?>) {
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         bottomBar = {
-            if (route == Routes.RECIPES || route == Routes.TODAY) {
+            if (route == Routes.RECIPES || route == Routes.TODAY || route == Routes.HISTORY) {
                 val todayCount by remember { app.repository.observeToday() }.collectAsStateWithLifecycle(emptyList())
                 FloatingTabBar {
                     TabPill(
@@ -143,6 +150,12 @@ fun MiseRoot(navRequests: MutableStateFlow<NavRequest?>) {
                         label = "今日菜单",
                         badge = todayCount.size.takeIf { it > 0 },
                         onClick = { nav.switchTab(Routes.TODAY) },
+                    )
+                    TabPill(
+                        selected = route == Routes.HISTORY,
+                        icon = MiseIcons.Calendar,
+                        label = "做过",
+                        onClick = { nav.switchTab(Routes.HISTORY) },
                     )
                 }
             }
@@ -168,8 +181,12 @@ fun MiseRoot(navRequests: MutableStateFlow<NavRequest?>) {
                 TodayScreen(
                     onOpenRecipe = { nav.navigate(Routes.detail(it)) },
                     onPrep = { nav.navigate(Routes.PREP) },
+                    onShopping = { nav.navigate(Routes.SHOPPING) },
                     onCook = { nav.navigate(Routes.cooking()) },
                 )
+            }
+            composable(Routes.HISTORY) {
+                HistoryScreen(onOpenRecipe = { nav.navigate(Routes.detail(it)) })
             }
             composable(
                 "detail/{id}",
@@ -221,6 +238,9 @@ fun MiseRoot(navRequests: MutableStateFlow<NavRequest?>) {
                     recipeId = entry.arguments?.getLong("id") ?: 0L,
                     onBack = { nav.popBackStack() },
                 )
+            }
+            composable(Routes.SHOPPING) {
+                ShoppingListScreen(onBack = { nav.popBackStack() })
             }
             composable(Routes.PREP) {
                 PrepListScreen(
@@ -276,6 +296,7 @@ private fun FloatingTabBar(content: @Composable RowScope.() -> Unit) {
     }
 }
 
+/** 选中的那一格展开显示文字，其余只显示图标 */
 @Composable
 private fun RowScope.TabPill(
     selected: Boolean,
@@ -285,17 +306,20 @@ private fun RowScope.TabPill(
     badge: Int? = null,
 ) {
     val colors = LocalMiseColors.current
+    val weight by animateFloatAsState(if (selected) 2f else 1f, label = "tab")
     Surface(
         onClick = onClick,
-        modifier = Modifier.weight(1f).height(52.dp),
+        modifier = Modifier.weight(weight).height(52.dp).semantics { contentDescription = label },
         shape = CircleShape,
         color = if (selected) colors.onInk else colors.ink,
         contentColor = if (selected) colors.ink else colors.onInkMuted,
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
-            Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp))
-            Spacer(Modifier.width(8.dp))
-            Text(label, fontSize = 15.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium)
+            Icon(icon, contentDescription = null, modifier = Modifier.size(22.dp))
+            if (selected) {
+                Spacer(Modifier.width(8.dp))
+                Text(label, fontSize = 15.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+            }
             if (badge != null) {
                 Spacer(Modifier.width(6.dp))
                 Box(

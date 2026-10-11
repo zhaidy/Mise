@@ -43,9 +43,9 @@ class UpdateChecker(private val context: Context) {
         null
     }
 
-    /** 下载 APK 到缓存目录 */
+    /** 下载 APK 到缓存目录；先清掉以前下的包，最多只留一个 */
     suspend fun download(info: UpdateInfo): File = withContext(Dispatchers.IO) {
-        val dir = File(context.cacheDir, "updates").apply { mkdirs() }
+        val dir = updatesDir().apply { deleteRecursively(); mkdirs() }
         val file = File(dir, "mise-${info.build}.apk")
         val request = Request.Builder().url(info.apkUrl).build()
         client.newCall(request).execute().use { resp ->
@@ -74,6 +74,13 @@ class UpdateChecker(private val context: Context) {
         )
         return true
     }
+
+    /** 删掉下载过的安装包；启动时调用，装完新版后旧包就没用了 */
+    suspend fun cleanup() = withContext(Dispatchers.IO) {
+        updatesDir().deleteRecursively()
+    }
+
+    private fun updatesDir() = File(context.cacheDir, "updates")
 
     private fun currentBuild(): Long =
         context.packageManager.getPackageInfo(context.packageName, 0).longVersionCode

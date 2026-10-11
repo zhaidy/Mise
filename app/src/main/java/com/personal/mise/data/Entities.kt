@@ -25,6 +25,8 @@ data class Recipe(
     val updatedAt: Long = System.currentTimeMillis(),
     /** 删除只做标记并清空内容，好让删除也能同步到别的设备 */
     val deleted: Boolean = false,
+    /** 整道菜（按菜谱原文的份量）大约多少千卡，AI 估算或手填；空表示还没算 */
+    val calories: Int? = null,
 )
 
 @Entity(
@@ -134,6 +136,38 @@ data class TodayMenu(
     val removed: Boolean = false,
 )
 
+/**
+ * 做菜记录：哪天做过哪道菜。一道菜一天只记一条，
+ * 主键是「菜谱 uid_日期」，两台手机同一天各记一次也只算一条。
+ */
+@Entity(tableName = "cook_log", indices = [Index("recipeUid"), Index("date")])
+data class CookLog(
+    @PrimaryKey val uid: String,
+    /** 不设外键：菜谱删了，记录还留着 */
+    val recipeUid: String,
+    /** 记下当时的菜名，菜谱删了也看得出做的是什么 */
+    val title: String,
+    /** 本地日期，如 2026-10-11，按字符串排序就是按日期排序 */
+    val date: String,
+    /** 新记、删除时更新，同步时按它判断谁新 */
+    val updatedAt: Long = System.currentTimeMillis(),
+    /** 删除只做标记，好让删除也能同步到别的设备 */
+    val deleted: Boolean = false,
+) {
+    companion object {
+        fun uidOf(recipeUid: String, date: String) = "${recipeUid}_$date"
+    }
+}
+
+/** 记录页的一行；菜谱还在时带上它的 id 和封面 */
+data class CookLogRow(
+    val uid: String,
+    val date: String,
+    val title: String,
+    val recipeId: Long?,
+    val coverImage: String?,
+)
+
 /** 调料碗里的一项，连同用料名称 */
 data class BowlItemRow(
     val id: Long,
@@ -151,6 +185,7 @@ data class TodayRow(
     val title: String,
     val coverImage: String?,
     val stepCount: Int,
+    val calories: Int?,
 )
 
 data class RecipeStamp(val uid: String, val updatedAt: Long)

@@ -33,6 +33,13 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.SelectableDates
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -75,6 +82,12 @@ import com.personal.mise.ui.common.OutlinePillButton
 import com.personal.mise.ui.common.PillButton
 import com.personal.mise.ui.common.RecipeCover
 import com.personal.mise.ui.common.SectionHeader
+import com.personal.mise.ui.common.SoftCard
+import com.personal.mise.importer.ImportException
+import com.personal.mise.ui.edit.AiKeyDialog
+import com.personal.mise.util.CalorieText
+import com.personal.mise.util.DayText
+import java.time.LocalDate
 import com.personal.mise.ui.common.hasImage
 import com.personal.mise.ui.common.miseFieldColors
 import com.personal.mise.ui.common.rememberApp
@@ -103,7 +116,30 @@ fun RecipeDetailScreen(
     val full by remember(recipeId) { app.repository.observeFull(recipeId) }.collectAsStateWithLifecycle(null)
     var confirmDelete by remember { mutableStateOf(false) }
     var scaleOpen by remember { mutableStateOf(false) }
+    var estimatingCalories by remember { mutableStateOf(false) }
+    var askingKey by remember { mutableStateOf(false) }
+    var logOpen by remember { mutableStateOf(false) }
+    val cookDates by remember(recipeId) { app.repository.observeCookDates(recipeId) }.collectAsStateWithLifecycle(emptyList())
     val factor = app.scaleOf(recipeId)
+
+    fun estimateCalories() {
+        val current = full ?: return
+        if (estimatingCalories) return
+        estimatingCalories = true
+        scope.launch {
+            val message = try {
+                val kcal = app.calorieEstimator.estimate(current)
+                app.repository.setCalories(recipeId, kcal)
+                "AI 估算整道菜约 $kcal 千卡"
+            } catch (e: ImportException) {
+                e.message ?: "AI 估算热量失败"
+            } catch (e: Exception) {
+                "AI 估算热量失败：${e.message ?: e.javaClass.simpleName}"
+            }
+            estimatingCalories = false
+            snackbar.showSnackbar(message)
+        }
+    }
 
     Scaffold(
         // 封面延伸到状态栏下面，按钮自己避开状态栏
@@ -194,6 +230,32 @@ fun RecipeDetailScreen(
                             }
                             if (factor != 1.0) {
                                 TextButton(onClick = { app.scales.remove(recipeId) }) { Text("恢复原量") }
+                            }
+                        }
+                        SoftCard(Modifier.fillMaxWidth().padding(top = 4.dp), shape = RoundedCornerShape(20.dp)) {
+                            Column {
+                                val kcal = data.recipe.calories
+                                StatRow(
+                                    label = "热量",
+                                    value = if (kcal == null) "还没算" else CalorieText.describe(kcal, data.recipe.servings, factor),
+                                    muted = kcal == null,
+                                ) {
+                                    if (estimatingCalories) {
+                                        CircularProgressIndicator(Modifier.padding(12.dp).size(20.dp), strokeWidth = 2.dp)
+                                    } else if (data.ingredients.isNotEmpty()) {
+                                        TextButton(onClick = { if (app.aiSettings.hasKey) estimateCalories() else askingKey = true }) {
+                                            Text(if (kcal == null) "AI 估算" else "重新估算")
+                                        }
+                                    }
+                                }
+                                HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outlineVariant)
+                                StatRow(
+                                    label = "做过",
+                                    value = if (cookDates.isEmpty()) "还没做过" else "${cookDates.size} 次 · 上次${DayText.ago(cookDates.first())}",
+                                    muted = cookDates.isEmpty(),
+                                ) {
+                                    TextButton(onClick = { logOpen = true }) { Text("记一笔") }
+                                }
                             }
                         }
                     }
@@ -295,6 +357,30 @@ fun RecipeDetailScreen(
         }
     }
 
+    if (askingKey) {
+        AiKeyDialog(
+            confirmLabel = "保存并估算",
+            onDismiss = { askingKey = false },
+            onConfirm = {
+                askingKey = false
+                estimateCalories()
+            },
+        )
+    }
+
+    if (logOpen) {
+        LogDateDialog(
+            onDismiss = { logOpen = false },
+            onPick = { date ->
+                logOpen = false
+                scope.launch {
+                    val logged = app.repository.logCooked(recipeId, date)
+                    snackbar.showSnackbar(if (logged) "已记下：${DayText.label(date)}做了这道菜" else "${DayText.label(date)}已经记过了")
+                }
+            },
+        )
+    }
+
     if (scaleOpen) {
         ScaleDialog(
             current = factor,
@@ -322,6 +408,24 @@ fun RecipeDetailScreen(
             },
             dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("取消") } },
         )
+    }
+}
+
+/** 详情卡里的一行：左边小标签，中间数值，右边操作 */
+@Composable
+private fun StatRow(label: String, value: String, muted: Boolean, action: @Composable () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 52.dp).padding(start = 16.dp, end = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, modifier = Modifier.width(40.dp))
+        Text(
+            value,
+            style = MaterialTheme.typography.bodyMedium,
+            color = if (muted) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.weight(1f),
+        )
+        action()
     }
 }
 
@@ -426,4 +530,32 @@ private fun ScaleDialog(current: Double, onDismiss: () -> Unit, onPick: (Double)
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
     )
+}
+
+private const val DAY_MS = 24 * 60 * 60 * 1000L
+
+/** 选哪天做的，默认今天，不能选以后的日子。DatePicker 用的是 UTC 零点的毫秒数 */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun LogDateDialog(onDismiss: () -> Unit, onPick: (String) -> Unit) {
+    val todayMs = LocalDate.now().toEpochDay() * DAY_MS
+    val state = rememberDatePickerState(
+        initialSelectedDateMillis = todayMs,
+        selectableDates = object : SelectableDates {
+            override fun isSelectableDate(utcTimeMillis: Long) = utcTimeMillis <= todayMs
+            override fun isSelectableYear(year: Int) = year <= LocalDate.now().year
+        },
+    )
+    DatePickerDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(
+                onClick = { state.selectedDateMillis?.let { onPick(LocalDate.ofEpochDay(it / DAY_MS).toString()) } },
+                enabled = state.selectedDateMillis != null,
+            ) { Text("记下") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
+    ) {
+        DatePicker(state = state, title = { Text("哪天做的", Modifier.padding(start = 24.dp, top = 16.dp)) })
+    }
 }

@@ -21,7 +21,7 @@ import java.util.Random
 class SyncedRecipeTest {
 
     private val full = RecipeFull(
-        recipe = Recipe(id = 7, title = "红烧肉", servings = "2 人", createdAt = 100, uid = "u-1", updatedAt = 200, bowlsManual = true),
+        recipe = Recipe(id = 7, title = "红烧肉", servings = "2 人", createdAt = 100, uid = "u-1", updatedAt = 200, bowlsManual = true, calories = 860),
         ingredients = listOf(
             Ingredient(id = 31, recipeId = 7, name = "五花肉", amountText = "500 克", kind = IngredientKind.MAIN, order = 0),
             Ingredient(id = 32, recipeId = 7, name = "生抽", amountText = "1 汤匙", kind = IngredientKind.SEASONING, order = 1),
@@ -58,6 +58,13 @@ class SyncedRecipeTest {
         val back = SyncedRecipe.fromMap("u-1", firestoreLike(tombstone.toMap()))
         assertEquals(true, back?.deleted)
         assertEquals(emptyList<Any>(), back?.ingredients)
+    }
+
+    @Test
+    fun `旧版本的文档没有热量`() {
+        val map = SyncedRecipe.from(full).toMap()
+        assertEquals(860, SyncedRecipe.fromMap("u-1", firestoreLike(map))?.calories)
+        assertNull(SyncedRecipe.fromMap("u-1", firestoreLike(map - "calories"))?.calories)
     }
 
     @Test

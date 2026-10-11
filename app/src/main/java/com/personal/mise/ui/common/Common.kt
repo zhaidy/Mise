@@ -1,6 +1,14 @@
 package com.personal.mise.ui.common
 
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.border
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -350,6 +358,59 @@ fun EmptyState(glyph: String, title: String, body: String, modifier: Modifier = 
     }
 }
 
+/** 可勾选的一行：圆形勾选框，勾上后文字变淡加删除线。备料清单、购物清单共用 */
+@Composable
+fun CheckRow(
+    title: String,
+    detail: String,
+    checked: Boolean,
+    onToggle: () -> Unit,
+    modifier: Modifier = Modifier,
+    accent: Color = MaterialTheme.colorScheme.secondary,
+    bold: Boolean = false,
+) {
+    val fill by animateColorAsState(if (checked) accent else Color.Transparent, label = "check")
+    val textColor by animateColorAsState(
+        if (checked) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.onSurface,
+        label = "text",
+    )
+    Row(
+        modifier
+            .fillMaxWidth()
+            .heightIn(min = 52.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .toggleable(value = checked, role = Role.Checkbox, onValueChange = { onToggle() })
+            .padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            Modifier
+                .size(26.dp)
+                .clip(CircleShape)
+                .background(fill)
+                .border(2.dp, if (checked) accent else MaterialTheme.colorScheme.outline, CircleShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (checked) {
+                Icon(Icons.Filled.Check, contentDescription = null, tint = MaterialTheme.colorScheme.background, modifier = Modifier.size(16.dp))
+            }
+        }
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                title,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = if (bold) FontWeight.Bold else FontWeight.Medium,
+                color = textColor,
+                textDecoration = if (checked) TextDecoration.LineThrough else null,
+            )
+            if (detail.isNotBlank()) {
+                Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
+}
+
 /** 输入框统一样式：圆角、浅底、描边淡 */
 val FieldShape = RoundedCornerShape(16.dp)
 
@@ -394,6 +455,15 @@ object MiseIcons {
 
     val Timer: ImageVector by lazy {
         stroke("Timer", "M12 21a8 8 0 1 0 0-16 8 8 0 0 0 0 16z", "M12 9v4l2.5 2", "M10 2h4")
+    }
+
+    /** 日历：做菜记录 */
+    val Calendar: ImageVector by lazy {
+        stroke("Calendar", "M5 5h14a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z", "M4 10h16", "M8 3v4", "M16 3v4")
+    }
+
+    val Share: ImageVector by lazy {
+        stroke("Share", "M12 15V3", "M8 7l4-4 4 4", "M5 12v7a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-7")
     }
 
     val ChevronRight: ImageVector by lazy { stroke("ChevronRight", "M9 6l6 6-6 6", width = 2.4f) }

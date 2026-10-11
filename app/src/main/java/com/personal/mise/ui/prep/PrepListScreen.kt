@@ -21,6 +21,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.sp
 import com.personal.mise.ui.common.BottomActionBar
+import com.personal.mise.ui.common.CheckRow
 import com.personal.mise.ui.common.EmptyState
 import com.personal.mise.ui.common.MiseHeader
 import com.personal.mise.ui.common.PillButton
@@ -186,12 +187,13 @@ fun PrepListScreen(onBack: () -> Unit, onCook: () -> Unit) {
                                     modifier = Modifier.padding(top = 12.dp, bottom = 2.dp),
                                 )
                                 section.items.forEach { prep ->
-                                    PrepRow(
-                                        prep = prep,
+                                    CheckRow(
+                                        title = prep.title,
+                                        detail = prep.detail,
                                         checked = prep.key in checked,
+                                        onToggle = { toggle(recipe, prep.key) },
                                         accent = accent,
                                         bold = section.name == "调料碗",
-                                        onToggle = { toggle(recipe, prep.key) },
                                     )
                                 }
                             }
@@ -251,45 +253,3 @@ private fun ProgressCard(done: Int, total: Int) {
     }
 }
 
-/** 一项备料：圆形勾选框，勾上后文字变淡加删除线 */
-@Composable
-private fun PrepRow(prep: PrepItem, checked: Boolean, accent: Color, bold: Boolean, onToggle: () -> Unit) {
-    val fill by animateColorAsState(if (checked) accent else Color.Transparent, label = "check")
-    val textColor by animateColorAsState(
-        if (checked) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.onSurface,
-        label = "text",
-    )
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .heightIn(min = 52.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .toggleable(value = checked, role = Role.Checkbox, onValueChange = { onToggle() })
-            .padding(vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(
-            Modifier
-                .size(26.dp)
-                .clip(CircleShape)
-                .background(fill)
-                .border(2.dp, if (checked) accent else MaterialTheme.colorScheme.outline, CircleShape),
-            contentAlignment = Alignment.Center,
-        ) {
-            if (checked) Icon(Icons.Filled.Check, contentDescription = null, tint = MaterialTheme.colorScheme.background, modifier = Modifier.size(16.dp))
-        }
-        Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f)) {
-            Text(
-                prep.title,
-                style = MaterialTheme.typography.bodyLarge,
-                fontWeight = if (bold) FontWeight.Bold else FontWeight.Medium,
-                color = textColor,
-                textDecoration = if (checked) TextDecoration.LineThrough else null,
-            )
-            if (prep.detail.isNotBlank()) {
-                Text(prep.detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
-    }
-}

@@ -41,6 +41,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -118,6 +121,7 @@ fun CookingScreen(initialRecipeId: Long, onBack: () -> Unit) {
             delay(500)
         }
     }
+    val snackbar = remember { SnackbarHostState() }
     var selectedId by rememberSaveable { mutableLongStateOf(initialRecipeId) }
     LaunchedEffect(initialRecipeId) { if (initialRecipeId > 0) selectedId = initialRecipeId }
 
@@ -155,6 +159,7 @@ fun CookingScreen(initialRecipeId: Long, onBack: () -> Unit) {
                 }
             }
         },
+        snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
         if (list == null) {
             Box(Modifier.padding(padding).fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
@@ -170,6 +175,7 @@ fun CookingScreen(initialRecipeId: Long, onBack: () -> Unit) {
                 row = selected,
                 timers = timers.filter { it.recipeId == selected.recipeId },
                 now = now,
+                snackbar = snackbar,
                 modifier = Modifier.padding(padding),
             )
         }
@@ -213,6 +219,7 @@ private fun RecipePager(
     row: TodayRow,
     timers: List<CookingTimer>,
     now: Long,
+    snackbar: SnackbarHostState,
     modifier: Modifier,
 ) {
     val app = rememberApp()
@@ -268,12 +275,23 @@ private fun RecipePager(
             )
             val last = pagerState.currentPage >= steps.lastIndex
             PillButton(
-                if (last) "最后一步" else "下一步",
-                onClick = { scope.launch { pagerState.animateScrollToPage(pagerState.currentPage + 1) } },
-                enabled = !last,
+                if (last) "做好了" else "下一步",
+                onClick = {
+                    scope.launch {
+                        if (!last) {
+                            pagerState.animateScrollToPage(pagerState.currentPage + 1)
+                        } else {
+                            // 最后一步点「做好了」记一笔，记录页能看到哪天做过
+                            val logged = app.repository.logCooked(row.recipeId)
+                            snackbar.showSnackbar(if (logged) "已记下：今天做了${row.title}" else "今天已经记过了")
+                        }
+                    }
+                },
                 modifier = Modifier.weight(1.4f),
                 height = ButtonHeight,
-                icon = if (last) null else MiseIcons.ChevronRight,
+                icon = if (last) Icons.Filled.Check else MiseIcons.ChevronRight,
+                container = if (last) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.primary,
+                content = if (last) MaterialTheme.colorScheme.onSecondary else MaterialTheme.colorScheme.onPrimary,
             )
         }
     }

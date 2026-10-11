@@ -40,6 +40,7 @@ import com.personal.mise.ui.common.RecipeCover
 import com.personal.mise.ui.common.SoftCard
 import com.personal.mise.ui.common.miseFieldColors
 import java.util.Locale
+import com.personal.mise.util.CalorieText
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -371,8 +372,12 @@ private fun RecipeCard(recipe: Recipe, onClick: () -> Unit, onLongClick: () -> U
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
+                val info = listOfNotNull(
+                    recipe.servings?.takeIf { it.isNotBlank() },
+                    recipe.calories?.let { CalorieText.format(it) },
+                ).joinToString(" · ")
                 Text(
-                    recipe.servings?.takeIf { it.isNotBlank() } ?: "　",
+                    info.ifEmpty { "　" },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
