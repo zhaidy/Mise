@@ -68,6 +68,30 @@ interface RecipeDao {
     @Query("UPDATE recipe SET calories = :calories, updatedAt = :now WHERE id = :id AND deleted = 0")
     suspend fun setCalories(id: Long, calories: Int?, now: Long)
 
+    @Query("UPDATE recipe SET category = :category, subcategory = :subcategory, tags = :tags, updatedAt = :now WHERE id = :id AND deleted = 0")
+    suspend fun setClassification(id: Long, category: String?, subcategory: String?, tags: String, now: Long)
+
+    /** 改名或删除大类；删除时（newName 为空）小类一起去掉 */
+    @Query(
+        """
+        UPDATE recipe SET category = :newName,
+            subcategory = CASE WHEN :newName IS NULL THEN NULL ELSE subcategory END,
+            updatedAt = :now
+        WHERE deleted = 0 AND category = :old
+        """
+    )
+    suspend fun renameCategory(old: String, newName: String?, now: Long)
+
+    @Query("UPDATE recipe SET subcategory = :newName, updatedAt = :now WHERE deleted = 0 AND category = :category AND subcategory = :old")
+    suspend fun renameSubcategory(category: String, old: String, newName: String?, now: Long)
+
+    /** 可能带这个标签的菜谱；LIKE 只是粗筛，调用方再按标签精确比对 */
+    @Query("SELECT * FROM recipe WHERE deleted = 0 AND tags LIKE '%' || :tag || '%'")
+    suspend fun withTagLike(tag: String): List<Recipe>
+
+    @Query("UPDATE recipe SET tags = :tags, updatedAt = :now WHERE id = :id")
+    suspend fun setTags(id: Long, tags: String, now: Long)
+
     @Query("DELETE FROM ingredient WHERE recipeId = :recipeId")
     suspend fun deleteIngredients(recipeId: Long)
 

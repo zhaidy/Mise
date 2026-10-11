@@ -15,9 +15,9 @@ import com.personal.mise.bowl.SeasoningDictionary
 import com.personal.mise.data.IngredientDraft
 import com.personal.mise.data.IngredientKind
 import com.personal.mise.data.RecipeDraft
-import com.personal.mise.data.RecipeTags
 import com.personal.mise.data.StepDraft
 import com.personal.mise.importer.ImportException
+import com.personal.mise.ui.common.ClassifyState
 import com.personal.mise.importer.ImportResult
 import com.personal.mise.importer.UrlExtractor
 import com.personal.mise.importer.XiaohongshuParser
@@ -88,17 +88,8 @@ class EditorViewModel(
 
     var title by mutableStateOf("")
     var servings by mutableStateOf("")
-    /** 大类，空表示未分类 */
-    var category by mutableStateOf("")
-    /** 大类下的小类 */
-    var subcategory by mutableStateOf("")
-    /** 已有的大类、小类和标签，编辑时点一下就能选 */
-    val categories = app.repository.observeCategories()
-    val allTags = app.repository.observeTags()
-    val tags = mutableStateListOf<String>()
-    /** 正在输入、还没加进去的标签 */
-    var tagInput by mutableStateOf("")
-        private set
+    /** 大类、小类和标签 */
+    val classify = ClassifyState()
     /** 整道菜的千卡，空表示还没算 */
     var calories by mutableStateOf("")
         private set
@@ -201,10 +192,7 @@ class EditorViewModel(
     private fun fill(draft: RecipeDraft) {
         title = draft.title
         servings = draft.servings.orEmpty()
-        category = draft.category.orEmpty()
-        subcategory = draft.subcategory.orEmpty()
-        tags.clear()
-        tags += draft.tags
+        classify.fill(draft.category, draft.subcategory, draft.tags)
         cover = draft.coverImage
         sourceUrl = draft.sourceUrl
         ingredients.clear()
@@ -217,37 +205,6 @@ class EditorViewModel(
         }
         calories = draft.calories?.toString().orEmpty()
         caloriesBasis = ingredientBasis()
-    }
-
-    // 分类和标签
-
-    fun selectCategory(name: String) {
-        if (name != category.trim()) subcategory = ""
-        category = name
-    }
-
-    /** 输入里出现逗号、空格或 # 时，前面的部分就算一个标签 */
-    fun updateTagInput(text: String) {
-        val parts = text.split(Regex("[,，、#＃\\s]"))
-        if (parts.size > 1) {
-            parts.dropLast(1).forEach { addTag(it) }
-            tagInput = parts.last()
-        } else {
-            tagInput = text
-        }
-    }
-
-    fun commitTagInput() {
-        addTag(tagInput)
-        tagInput = ""
-    }
-
-    fun addTag(text: String) {
-        RecipeTags.parse(text).forEach { if (it !in tags) tags += it }
-    }
-
-    fun removeTag(tag: String) {
-        tags.remove(tag)
     }
 
     // 用料
@@ -503,10 +460,9 @@ class EditorViewModel(
         sourceUrl = sourceUrl,
         servings = servings,
         calories = calories.toIntOrNull()?.takeIf { it > 0 },
-        category = category,
-        subcategory = subcategory,
-        // 输了还没按「添加」的标签也算上
-        tags = tags + RecipeTags.parse(tagInput),
+        category = classify.category,
+        subcategory = classify.subcategory,
+        tags = classify.allTags(),
         ingredients = ingredients.map { IngredientDraft(it.id, it.name, it.amount, it.kind) },
         steps = steps.map { row ->
             val seconds = row.timerMinutes.toDoubleOrNull()?.let { (it * 60).toInt() }?.takeIf { it > 0 }

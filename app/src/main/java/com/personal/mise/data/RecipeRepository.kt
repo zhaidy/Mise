@@ -186,6 +186,30 @@ class RecipeRepository(
         paths.forEach { images.delete(it) }
     }
 
+    // 分类和标签
+
+    /** 只改分类和标签，不进编辑页；会同步到别的手机 */
+    suspend fun setClassification(id: Long, category: String?, subcategory: String?, tags: List<String>) {
+        val draft = RecipeDraft(category = category, subcategory = subcategory)
+        dao.setClassification(id, draft.cleanCategory, draft.cleanSubcategory, RecipeTags.format(tags), System.currentTimeMillis())
+    }
+
+    /** 所有用到这个大类的菜谱一起改名；新名字为空就是删除（菜谱变成未分类） */
+    suspend fun renameCategory(old: String, newName: String) =
+        dao.renameCategory(old, newName.trim().takeIf { it.isNotEmpty() }, System.currentTimeMillis())
+
+    /** 新名字为空就是删除小类，菜谱还留在大类里 */
+    suspend fun renameSubcategory(category: String, old: String, newName: String) =
+        dao.renameSubcategory(category, old, newName.trim().takeIf { it.isNotEmpty() }, System.currentTimeMillis())
+
+    /** 所有带这个标签的菜谱一起改；新名字为空就是删除，改成已有的标签就是合并 */
+    suspend fun renameTag(old: String, newName: String) = db.withTransaction {
+        val now = System.currentTimeMillis()
+        dao.withTagLike(old).forEach { recipe ->
+            RecipeTags.replace(recipe.tagList, old, newName)?.let { dao.setTags(recipe.id, RecipeTags.format(it), now) }
+        }
+    }
+
     /** 只改热量，不动用料和调料碗；会同步到别的手机 */
     suspend fun setCalories(id: Long, calories: Int?) = dao.setCalories(id, calories, System.currentTimeMillis())
 
