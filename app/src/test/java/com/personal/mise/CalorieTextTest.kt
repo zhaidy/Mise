@@ -27,4 +27,14 @@ class CalorieTextTest {
         assertEquals("约 1720 千卡（×2）", CalorieText.describe(860, "2 人", 2.0))
         assertEquals(430, CalorieText.scaled(860, 0.5))
     }
+
+    @Test
+    fun overBy() {
+        assertEquals(500, CalorieText.overBy(4500, 2, 2000))
+        assertNull(CalorieText.overBy(4000, 2, 2000))
+        assertNull(CalorieText.overBy(3000, 2, 2000))
+        assertEquals(100, CalorieText.overBy(900, 1, 800))
+        assertEquals(250, CalorieText.perPerson(500, 2))
+        assertEquals(500, CalorieText.perPerson(500, 0))
+    }
 }
