@@ -148,7 +148,7 @@ private fun GeminiFallbackFields(
     Spacer(Modifier.height(8.dp))
     Row(verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
-            Text("都用完后改用 DeepSeek", style = MaterialTheme.typography.bodyMedium)
+            Text("都用完或连不上时改用 DeepSeek", style = MaterialTheme.typography.bodyMedium)
             Text(
                 if (hasDeepSeekKey) "扣 DeepSeek 的预付余额，不会自动扣费" else "还没填 DeepSeek Key，点上面的 DeepSeek 填写",
                 style = MaterialTheme.typography.bodySmall,
