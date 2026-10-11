@@ -6,6 +6,7 @@ import com.personal.mise.importer.ImportException
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class GeminiClientTest {
@@ -17,7 +18,9 @@ class GeminiClientTest {
             """{"type":"OBJECT","required":["steps"],"properties":{"steps":{"type":"ARRAY","items":{"type":"OBJECT","required":["text"],
             "properties":{"text":{"type":"STRING"},"timerMinutes":{"type":"NUMBER","nullable":true}}}}}}""",
         )
-        assertEquals(expected.toString(), GeminiClient.toGeminiSchema(schema).toString())
+        val actual = GeminiClient.toGeminiSchema(schema)
+        // org.json 输出的字段顺序不固定，按结构比较
+        assertTrue(actual.toString(), expected.similar(actual))
     }
 
     @Test
