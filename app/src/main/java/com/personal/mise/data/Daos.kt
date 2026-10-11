@@ -265,3 +265,42 @@ interface CookLogDao {
     @Query("UPDATE cook_log SET deleted = 1, updatedAt = :now WHERE uid = :uid AND deleted = 0")
     suspend fun markDeleted(uid: String, now: Long)
 }
+
+@Dao
+interface MealPlanDao {
+    /** 菜谱还在就用现在的菜名；同一天先排的在前 */
+    @Query(
+        """
+        SELECT p.uid AS uid, p.date AS date, COALESCE(r.title, p.title) AS title, p.checked AS checked,
+               r.id AS recipeId, r.coverImage AS coverImage, r.calories AS calories
+        FROM meal_plan p LEFT JOIN recipe r ON r.uid = p.recipeUid AND r.deleted = 0
+        WHERE p.deleted = 0
+        ORDER BY p.date, p.uid
+        """
+    )
+    fun observeAll(): Flow<List<PlanRow>>
+
+    /** 这道菜排在哪些日子 */
+    @Query("SELECT date FROM meal_plan WHERE recipeUid = :recipeUid AND deleted = 0 ORDER BY date")
+    fun observeDates(recipeUid: String): Flow<List<String>>
+
+    /** 包括已移出的 */
+    @Query("SELECT * FROM meal_plan WHERE uid = :uid")
+    suspend fun get(uid: String): MealPlan?
+
+    @Query("SELECT * FROM meal_plan WHERE date = :date AND deleted = 0 ORDER BY uid")
+    suspend fun onDate(date: String): List<MealPlan>
+
+    /** 包括已移出的，同步时比较两边谁新 */
+    @Query("SELECT uid, updatedAt FROM meal_plan")
+    fun observeStamps(): Flow<List<RecipeStamp>>
+
+    @Upsert
+    suspend fun upsert(plan: MealPlan)
+
+    @Query("UPDATE meal_plan SET deleted = 1, updatedAt = :now WHERE uid = :uid AND deleted = 0")
+    suspend fun markDeleted(uid: String, now: Long)
+
+    @Query("UPDATE meal_plan SET checked = :checked, updatedAt = :now WHERE uid = :uid AND checked != :checked")
+    suspend fun setChecked(uid: String, checked: String, now: Long)
+}

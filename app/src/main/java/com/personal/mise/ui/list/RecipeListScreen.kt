@@ -107,6 +107,8 @@ import com.personal.mise.importer.UrlExtractor
 import com.personal.mise.ui.common.LocalImage
 import com.personal.mise.ui.common.hasImage
 import com.personal.mise.ui.common.rememberApp
+import com.personal.mise.ui.plan.PlanDateDialog
+import com.personal.mise.util.DayText
 import com.personal.mise.ui.edit.AiKeyDialog
 import com.personal.mise.ui.edit.AiKeyFields
 import com.personal.mise.update.UpdateInfo
@@ -160,6 +162,7 @@ fun RecipeListScreen(
     var restoring by remember { mutableStateOf(false) }
     var kitchenOpen by remember { mutableStateOf(false) }
     var classifying by remember { mutableStateOf<Recipe?>(null) }
+    var planning by remember { mutableStateOf<Recipe?>(null) }
     var manageOpen by remember { mutableStateOf(false) }
     var menuShareOpen by remember { mutableStateOf(false) }
     var menuShareDates by rememberSaveable { mutableStateOf(true) }
@@ -195,7 +198,7 @@ fun RecipeListScreen(
     }
     LaunchedEffect(Unit) { checkUpdate(manual = false) }
 
-    // 卡片和菜单行长按弹出的菜单：加入今日菜单、设分类和标签
+    // 卡片和菜单行长按弹出的菜单：加入今日菜单、排进计划、设分类和标签
     @Composable
     fun LongPressMenu(recipe: Recipe, content: @Composable (onLongClick: () -> Unit) -> Unit) {
         var open by remember { mutableStateOf(false) }
@@ -211,6 +214,10 @@ fun RecipeListScreen(
                             snackbar.showSnackbar(if (added) "已加入今日菜单：${recipe.title}" else "「${recipe.title}」已经在今日菜单里")
                         }
                     },
+                )
+                DropdownMenuItem(
+                    text = { Text("排进计划…") },
+                    onClick = { open = false; planning = recipe },
                 )
                 DropdownMenuItem(
                     text = { Text("分类和标签") },
@@ -516,6 +523,19 @@ fun RecipeListScreen(
 
     classifying?.let { recipe ->
         ClassifyDialog(recipe, onDismiss = { classifying = null })
+    }
+
+    planning?.let { recipe ->
+        PlanDateDialog(
+            onDismiss = { planning = null },
+            onPick = { date ->
+                planning = null
+                scope.launch {
+                    val added = app.repository.addToPlan(recipe.id, date)
+                    snackbar.showSnackbar(if (added) "已排进计划：${DayText.ahead(date)}做${recipe.title}" else "${DayText.ahead(date)}已经排了「${recipe.title}」")
+                }
+            },
+        )
     }
 
     if (manageOpen) {

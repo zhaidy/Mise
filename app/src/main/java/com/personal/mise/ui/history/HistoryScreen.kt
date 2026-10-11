@@ -49,6 +49,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.personal.mise.data.CookLogRow
+import com.personal.mise.data.PlanRow
+import com.personal.mise.ui.plan.PlanDayCard
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import com.personal.mise.ui.common.CircleIconButton
 import com.personal.mise.ui.common.EmptyState
 import com.personal.mise.ui.common.MiseHeader
@@ -65,26 +69,37 @@ import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.YearMonth
 
-/** 做菜记录：哪天做过哪道菜，可以按月份、日期分组列出来，也可以看月历；新的在前 */
+/**
+ * 做菜记录：哪天做过哪道菜，可以按月份、日期分组列出来，也可以看月历；新的在前。
+ * 月历上也标出做菜计划，点一天可以给那天排菜。
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HistoryScreen(onOpenRecipe: (Long) -> Unit) {
+fun HistoryScreen(
+    onOpenRecipe: (Long) -> Unit,
+    onPrep: (date: String) -> Unit,
+    onShopping: (from: String, days: Int) -> Unit,
+    onToday: () -> Unit,
+) {
     val app = rememberApp()
     val scope = rememberCoroutineScope()
     val logs by app.repository.observeCookLog().collectAsStateWithLifecycle(emptyList())
+    val plans by app.repository.observePlan().collectAsStateWithLifecycle(emptyList())
     var confirmDelete by remember { mutableStateOf<CookLogRow?>(null) }
     var calendarView by rememberSaveable { mutableStateOf(false) }
+    val snackbar = remember { SnackbarHostState() }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             MiseHeader("做菜记录", eyebrow = if (logs.isEmpty()) "还没有记录" else "一共做了 ${logs.size} 次") {
-                if (logs.isNotEmpty()) {
+                if (logs.isNotEmpty() || plans.isNotEmpty()) {
                     ViewSwitch(calendarView, onChange = { calendarView = it }, labels = "列表" to "日历")
                 }
             }
         },
     ) { padding ->
-        if (logs.isEmpty()) {
+        if (logs.isEmpty() && (!calendarView || plans.isEmpty())) {
             EmptyState(
                 "记",
                 "还没有记录",
@@ -95,7 +110,26 @@ fun HistoryScreen(onOpenRecipe: (Long) -> Unit) {
         }
         val onDelete: (CookLogRow) -> Unit = { confirmDelete = it }
         if (calendarView) {
-            CalendarView(logs, onOpenRecipe, onDelete, Modifier.padding(padding).fillMaxSize())
+            CalendarView(
+                logs = logs,
+                plans = plans,
+                onOpenRecipe = onOpenRecipe,
+                onDelete = onDelete,
+                planDay = { date, rows ->
+                    PlanDayCard(
+                        date = date,
+                        rows = rows,
+                        snackbar = snackbar,
+                        onOpenRecipe = onOpenRecipe,
+                        onPrep = onPrep,
+                        onShopping = onShopping,
+                        onToday = onToday,
+                        modifier = Modifier.padding(top = 16.dp),
+                        showDate = false,
+                    )
+                },
+                modifier = Modifier.padding(padding).fillMaxSize(),
+            )
         } else {
             ListView(logs, onOpenRecipe, onDelete, Modifier.padding(padding).fillMaxSize())
         }
@@ -186,12 +220,17 @@ private fun LazyListScope.logRows(
     }
 }
 
-/** 月历：一格一天，做过菜的格子写几道菜、多少千卡；点一天在下面列出那天做的菜 */
+/**
+ * 月历：一格一天，做过菜的格子写几道菜、多少千卡，排了计划的格子写计划几道；
+ * 点一天在下面列出那天做的菜和计划
+ */
 @Composable
 private fun CalendarView(
     logs: List<CookLogRow>,
+    plans: List<PlanRow>,
     onOpenRecipe: (Long) -> Unit,
     onDelete: (CookLogRow) -> Unit,
+    planDay: @Composable (date: String, rows: List<PlanRow>) -> Unit,
     modifier: Modifier,
 ) {
     val today = remember { LocalDate.now() }
@@ -199,6 +238,7 @@ private fun CalendarView(
     var selected by rememberSaveable { mutableStateOf(today.toString()) }
     val month = YearMonth.parse(monthText)
     val byDate = remember(logs) { logs.groupBy { it.date } }
+    val plansByDate = remember(plans) { plans.groupBy { it.date } }
     val monthLogs = logs.filter { it.date.startsWith("$monthText-") }
     val dayLogs = byDate[selected].orEmpty()
 
@@ -251,6 +291,7 @@ private fun CalendarView(
                                     DayCell(
                                         day = day,
                                         logs = byDate[key].orEmpty(),
+                                        planned = plansByDate[key].orEmpty().size,
                                         isToday = day == today,
                                         isSelected = key == selected,
                                         onClick = { selected = key },
@@ -265,7 +306,9 @@ private fun CalendarView(
         item(key = "selected-$selected") {
             DayHeading(selected, dayLogs, Modifier.padding(start = 4.dp, top = 20.dp, bottom = 6.dp))
         }
-        if (dayLogs.isEmpty()) {
+        // 今天和以后的日子主要看计划，没做过就不用再说一遍
+        val past = selected < today.toString()
+        if (dayLogs.isEmpty() && past) {
             item(key = "selected-empty") {
                 Text(
                     "这天没有做菜的记录",
@@ -277,22 +320,28 @@ private fun CalendarView(
         } else {
             logRows(dayLogs, onOpenRecipe, onDelete)
         }
+        val dayPlans = plansByDate[selected].orEmpty()
+        if (!past || dayPlans.isNotEmpty()) {
+            item(key = "plan-$selected") { planDay(selected, dayPlans) }
+        }
     }
 }
 
 @Composable
-private fun DayCell(day: LocalDate, logs: List<CookLogRow>, isToday: Boolean, isSelected: Boolean, onClick: () -> Unit) {
+private fun DayCell(day: LocalDate, logs: List<CookLogRow>, planned: Int, isToday: Boolean, isSelected: Boolean, onClick: () -> Unit) {
     val ink = LocalMiseColors.current
     val cooked = logs.isNotEmpty()
     val shape = RoundedCornerShape(12.dp)
     val background = when {
         isSelected -> ink.ink
         cooked -> MaterialTheme.colorScheme.primaryContainer
+        planned > 0 -> MaterialTheme.colorScheme.tertiaryContainer
         else -> Color.Transparent
     }
     val content = when {
         isSelected -> ink.onInk
         cooked -> MaterialTheme.colorScheme.onPrimaryContainer
+        planned > 0 -> MaterialTheme.colorScheme.onTertiaryContainer
         else -> MaterialTheme.colorScheme.onSurface
     }
     Column(
@@ -310,12 +359,18 @@ private fun DayCell(day: LocalDate, logs: List<CookLogRow>, isToday: Boolean, is
             "${day.dayOfMonth}",
             fontSize = 15.sp,
             lineHeight = 18.sp,
-            fontWeight = if (cooked || isToday) FontWeight.Bold else FontWeight.Normal,
-            color = if (isToday && !isSelected && !cooked) MaterialTheme.colorScheme.primary else content,
+            fontWeight = if (cooked || planned > 0 || isToday) FontWeight.Bold else FontWeight.Normal,
+            color = if (isToday && !isSelected && !cooked && planned == 0) MaterialTheme.colorScheme.primary else content,
         )
         if (cooked) {
             Spacer(Modifier.height(1.dp))
             Text("${logs.size} 道", fontSize = 10.sp, lineHeight = 12.sp, color = content, maxLines = 1)
+        }
+        // 做过又排了计划的格子放不下三行，热量让给计划
+        if (planned > 0) {
+            if (!cooked) Spacer(Modifier.height(1.dp))
+            Text("计划 $planned", fontSize = 10.sp, lineHeight = 12.sp, color = content.copy(alpha = if (cooked) 0.75f else 1f), maxLines = 1)
+        } else if (cooked) {
             CookCalendar.total(logs.map { it.calories })?.let {
                 Text(CookCalendar.short(it), fontSize = 10.sp, lineHeight = 12.sp, color = content.copy(alpha = 0.75f), maxLines = 1)
             }

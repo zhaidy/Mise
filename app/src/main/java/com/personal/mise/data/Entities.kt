@@ -167,6 +167,42 @@ data class CookLog(
     }
 }
 
+/**
+ * 做菜计划：哪天打算做哪道菜。和做菜记录一样，一道菜一天只排一次，
+ * 主键是「菜谱 uid_日期」，两台手机同一天各排一次也只算一条。
+ */
+@Entity(tableName = "meal_plan", indices = [Index("recipeUid"), Index("date")])
+data class MealPlan(
+    @PrimaryKey val uid: String,
+    /** 不设外键：菜谱删了，计划还看得出排的是什么 */
+    val recipeUid: String,
+    /** 记下排的时候的菜名 */
+    val title: String,
+    /** 本地日期，如 2026-10-11 */
+    val date: String,
+    /** 提前备料时已勾选的项目，写法和今日菜单一样，如「i12,b3」 */
+    val checked: String = "",
+    /** 排上、移出、勾备料时更新，同步时按它判断谁新 */
+    val updatedAt: Long = System.currentTimeMillis(),
+    /** 移出计划只做标记，好让移出也能同步到别的设备 */
+    val deleted: Boolean = false,
+) {
+    companion object {
+        fun uidOf(recipeUid: String, date: String) = "${recipeUid}_$date"
+    }
+}
+
+/** 计划页的一行；菜谱还在时带上它的 id、封面和热量 */
+data class PlanRow(
+    val uid: String,
+    val date: String,
+    val title: String,
+    val checked: String,
+    val recipeId: Long?,
+    val coverImage: String?,
+    val calories: Int?,
+)
+
 /** 记录页的一行；菜谱还在时带上它的 id 和封面 */
 data class CookLogRow(
     val uid: String,

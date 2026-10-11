@@ -69,12 +69,12 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.personal.mise.data.IngredientKind
 import com.personal.mise.data.RecipeFull
-import com.personal.mise.data.TodayRow
 import com.personal.mise.data.parseChecked
 import com.personal.mise.ui.common.rememberApp
 import com.personal.mise.ui.cooking.ModeSwitch
 import com.personal.mise.ui.cooking.recipeOverviewItems
 import com.personal.mise.util.AmountScaler
+import com.personal.mise.util.DayText
 import com.personal.mise.util.StepPhase
 import com.personal.mise.util.UnitText
 import kotlinx.coroutines.flow.combine
@@ -85,12 +85,18 @@ private data class PrepItem(val key: String, val title: String, val detail: Stri
 
 private data class PrepSection(val name: String, val items: List<PrepItem>)
 
-private data class PrepRecipe(val row: TodayRow, val sections: List<PrepSection>) {
+/**
+ * 备料清单里的一道菜：来自今日菜单，或者某天的计划。
+ * key 在清单里区分各道菜；checked 是已勾选的项目，写法见 TodayMenu.bowlsChecked。
+ */
+private data class PrepSource(val key: String, val recipeId: Long, val title: String, val checked: String)
+
+private data class PrepRecipe(val row: PrepSource, val sections: List<PrepSection>) {
     val allKeys: List<String> get() = sections.flatMap { s -> s.items.map { it.key } }
 }
 
 /** 一道菜的备料项：主料、调料碗、没进调料碗的其他调料 */
-private fun buildPrep(row: TodayRow, full: RecipeFull, factor: Double): PrepRecipe {
+private fun buildPrep(row: PrepSource, full: RecipeFull, factor: Double): PrepRecipe {
     fun amount(text: String) = UnitText.display(AmountScaler.scale(text, factor))
     val inBowls = full.bowls.flatMap { b -> b.items.map { it.ingredientId } }.toSet()
     val mains = full.ingredients.filter { it.kind != IngredientKind.SEASONING && it.id !in inBowls }
@@ -112,10 +118,17 @@ private fun buildPrep(row: TodayRow, full: RecipeFull, factor: Double): PrepReci
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PrepListScreen(onBack: () -> Unit, onCook: () -> Unit) {
+fun PrepListScreen(planDate: String?, onBack: () -> Unit, onCook: () -> Unit) {
     val app = rememberApp()
     val scope = rememberCoroutineScope()
-    val rows by app.repository.observeToday().collectAsStateWithLifecycle(emptyList())
+    val todayRows by app.repository.observeToday().collectAsStateWithLifecycle(emptyList())
+    val plans by app.repository.observePlan().collectAsStateWithLifecycle(emptyList())
+    // 有日期时是那天计划的菜，可以提前备；勾选记在计划里，放进今日菜单时一起带过去
+    val rows = if (planDate == null) {
+        todayRows.map { PrepSource("t${it.recipeId}", it.recipeId, it.title, it.bowlsChecked) }
+    } else {
+        plans.filter { it.date == planDate && it.recipeId != null }.map { PrepSource(it.uid, it.recipeId!!, it.title, it.checked) }
+    }
     val ids = rows.map { it.recipeId }
     val fulls by remember(ids) {
         if (ids.isEmpty()) flowOf(emptyList<RecipeFull?>())
@@ -129,24 +142,36 @@ fun PrepListScreen(onBack: () -> Unit, onCook: () -> Unit) {
         fulls.firstOrNull { it?.recipe?.id == row.recipeId }?.let { buildPrep(row, it, app.scaleOf(row.recipeId)) }
     }
     val total = recipes.sumOf { it.allKeys.size }
-    val done = recipes.sumOf { r -> parseChecked(r.row.bowlsChecked).count { it in r.allKeys } }
+    val done = recipes.sumOf { r -> parseChecked(r.row.checked).count { it in r.allKeys } }
+    // 计划里的菜只有当天才能直接开始做：先放进今日菜单
+    val canCook = planDate == null || planDate == DayText.today()
+    val cook: () -> Unit = {
+        if (planDate == null) onCook() else scope.launch { app.repository.planToToday(planDate); onCook() }
+    }
 
     fun toggle(recipe: PrepRecipe, key: String) {
-        val current = parseChecked(recipe.row.bowlsChecked).filter { it in recipe.allKeys }.toSet()
+        val current = parseChecked(recipe.row.checked).filter { it in recipe.allKeys }.toSet()
         val next = if (key in current) current - key else current + key
         val willBeDone = done - current.size + next.size
-        scope.launch { app.repository.setChecked(recipe.row.recipeId, next) }
+        scope.launch {
+            if (planDate == null) app.repository.setChecked(recipe.row.recipeId, next)
+            else app.repository.setPlanChecked(recipe.row.key, next)
+        }
         if (willBeDone == total && total > 0 && key !in current) showDone = true
     }
 
     Scaffold(
-        topBar = { MiseHeader("备料清单", onBack = onBack) },
+        topBar = { MiseHeader("备料清单", eyebrow = planDate?.let { "${DayText.ahead(it)}的计划" }, onBack = onBack) },
         bottomBar = {
-            BottomActionBar { PillButton("开始做菜", onCook, Modifier.weight(1f)) }
+            if (canCook) BottomActionBar { PillButton("开始做菜", cook, Modifier.weight(1f)) }
         },
     ) { padding ->
         if (recipes.isEmpty()) {
-            EmptyState("备", "今日菜单是空的", "先在菜谱里挑几道菜加入今日菜单。", Modifier.padding(padding))
+            if (planDate == null) {
+                EmptyState("备", "今日菜单是空的", "先在菜谱里挑几道菜加入今日菜单。", Modifier.padding(padding))
+            } else {
+                EmptyState("备", "这天还没排菜", "在「计划」里给这天加几道菜。", Modifier.padding(padding))
+            }
             return@Scaffold
         }
         Column(Modifier.fillMaxSize().padding(top = padding.calculateTopPadding())) {
@@ -167,8 +192,8 @@ fun PrepListScreen(onBack: () -> Unit, onCook: () -> Unit) {
             ) {
                 item(key = "progress") { ProgressCard(done, total) }
                 recipes.forEach { recipe ->
-                    val checked = parseChecked(recipe.row.bowlsChecked)
-                    item(key = "recipe-${recipe.row.recipeId}") {
+                    val checked = parseChecked(recipe.row.checked)
+                    item(key = "recipe-${recipe.row.key}") {
                         SoftCard(Modifier.fillMaxWidth()) {
                             Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 8.dp)) {
                                 Row(verticalAlignment = Alignment.Bottom) {
@@ -223,9 +248,12 @@ fun PrepListScreen(onBack: () -> Unit, onCook: () -> Unit) {
         AlertDialog(
             onDismissRequest = { showDone = false },
             title = { Text("都备好了") },
-            text = { Text("所有用料和调料碗都准备好了，开始做菜吧！") },
-            confirmButton = { TextButton(onClick = { showDone = false; onCook() }) { Text("开始做菜") } },
-            dismissButton = { TextButton(onClick = { showDone = false }) { Text("再看看") } },
+            text = { Text(if (canCook) "所有用料和调料碗都准备好了，开始做菜吧！" else "所有用料和调料碗都准备好了，到那天直接开火。") },
+            confirmButton = {
+                if (canCook) TextButton(onClick = { showDone = false; cook() }) { Text("开始做菜") }
+                else TextButton(onClick = { showDone = false }) { Text("好的") }
+            },
+            dismissButton = { if (canCook) TextButton(onClick = { showDone = false }) { Text("再看看") } },
         )
     }
 }
@@ -238,7 +266,7 @@ private fun RecipesOverview(recipes: List<PrepRecipe>, fulls: List<RecipeFull?>,
         recipes.forEachIndexed { index, recipe ->
             val full = fulls.firstOrNull { it?.recipe?.id == recipe.row.recipeId } ?: return@forEachIndexed
             val factor = app.scaleOf(recipe.row.recipeId)
-            item(key = "title-${recipe.row.recipeId}") {
+            item(key = "title-${recipe.row.key}") {
                 Column {
                     if (index > 0) HorizontalDivider(Modifier.padding(horizontal = 20.dp, vertical = 16.dp))
                     Row(Modifier.padding(horizontal = 20.dp), verticalAlignment = Alignment.Bottom) {
@@ -257,7 +285,7 @@ private fun RecipesOverview(recipes: List<PrepRecipe>, fulls: List<RecipeFull?>,
                 data = full,
                 factor = factor,
                 cookStart = StepPhase.cookStart(full.steps.map { it.text }),
-                keyPrefix = "r${recipe.row.recipeId}-",
+                keyPrefix = "r${recipe.row.key}-",
             )
         }
     }

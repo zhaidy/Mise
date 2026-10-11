@@ -462,6 +462,17 @@ object MiseIcons {
         stroke("Calendar", "M5 5h14a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z", "M4 10h16", "M8 3v4", "M16 3v4")
     }
 
+    /** 写着清单的夹板：做菜计划 */
+    val Plan: ImageVector by lazy {
+        stroke(
+            "Plan",
+            "M9 4H6a1 1 0 0 0-1 1v15a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V5a1 1 0 0 0-1-1h-3",
+            "M9 3h6v3H9z",
+            "M9 11h6",
+            "M9 15h4",
+        )
+    }
+
     val Share: ImageVector by lazy {
         stroke("Share", "M12 15V3", "M8 7l4-4 4 4", "M5 12v7a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-7")
     }
