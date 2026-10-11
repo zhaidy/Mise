@@ -158,7 +158,7 @@ fun AiKeyFields(
             }
         }
         Text(
-            "${provider.label} API Key：${provider.keyHelp}，只保存在这台手机上。",
+            "${provider.label} API Key：${provider.keyHelp}，保存在这台手机上；加入了共享厨房的话，厨房里的人共用。",
             style = MaterialTheme.typography.bodySmall,
         )
         Spacer(Modifier.height(8.dp))
