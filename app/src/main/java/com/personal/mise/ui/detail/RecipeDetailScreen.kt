@@ -98,6 +98,7 @@ import com.personal.mise.ui.common.miseFieldColors
 import com.personal.mise.ui.common.rememberApp
 import com.personal.mise.ui.theme.SerifFamily
 import com.personal.mise.util.AmountScaler
+import com.personal.mise.util.StepPhase
 import com.personal.mise.util.TimeText
 import com.personal.mise.util.UnitText
 import kotlinx.coroutines.launch
@@ -178,6 +179,7 @@ fun RecipeDetailScreen(
         },
     ) { padding ->
         val data = full ?: return@Scaffold
+        val cookStart = remember(data.steps) { StepPhase.cookStart(data.steps.map { it.text }) }
         val mains = data.ingredients.filter { it.kind != IngredientKind.SEASONING }
         val seasonings = data.ingredients.filter { it.kind == IngredientKind.SEASONING }
 
@@ -310,7 +312,7 @@ fun RecipeDetailScreen(
                 data.bowls.forEach { bowl ->
                     item(key = "bowl-${bowl.bowl.id}") {
                         val stepIndex = data.steps.indexOfFirst { it.id == bowl.bowl.stepId }
-                        BowlCard(bowl, if (stepIndex >= 0) "第 ${stepIndex + 1} 步下锅" else null, factor)
+                        BowlCard(bowl, if (stepIndex >= 0) StepPhase.bowlStepLabel(stepIndex, cookStart) else null, factor)
                     }
                 }
             }
@@ -323,39 +325,45 @@ fun RecipeDetailScreen(
                 )
             }
             itemsIndexed(data.steps, key = { _, s -> "step-${s.id}" }) { index, step ->
-                Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min).padding(horizontal = 20.dp)) {
-                    Column(Modifier.fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally) {
-                        Box(
-                            Modifier.size(32.dp).background(MaterialTheme.colorScheme.onSurface, CircleShape),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Text(
-                                "${index + 1}",
-                                color = MaterialTheme.colorScheme.background,
-                                fontFamily = SerifFamily,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 15.sp,
-                            )
-                        }
-                        if (index < data.steps.lastIndex) {
-                            Box(
-                                Modifier.padding(vertical = 4.dp).width(2.dp).weight(1f)
-                                    .background(MaterialTheme.colorScheme.outlineVariant),
-                            )
-                        }
+                Column {
+                    if (cookStart != null && (index == 0 || index == cookStart)) {
+                        PhaseLabel(if (index == 0) "备料 · 开火前" else "开火", prep = index == 0)
                     }
-                    Spacer(Modifier.width(14.dp))
-                    Column(Modifier.weight(1f).padding(top = 4.dp, bottom = 20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(step.text, style = MaterialTheme.typography.bodyLarge)
-                        step.timerSeconds?.let {
-                            InfoPill(
-                                "计时 ${TimeText.describe(it)}",
-                                container = MaterialTheme.colorScheme.tertiaryContainer,
-                                content = MaterialTheme.colorScheme.onTertiaryContainer,
-                            )
+                    Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min).padding(horizontal = 20.dp)) {
+                        Column(Modifier.fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally) {
+                            Box(
+                                Modifier.size(32.dp).background(MaterialTheme.colorScheme.onSurface, CircleShape),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(
+                                    "${index + 1}",
+                                    color = MaterialTheme.colorScheme.background,
+                                    fontFamily = SerifFamily,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 15.sp,
+                                )
+                            }
+                            // 备料最后一步和开火第一步之间断开
+                            if (index < data.steps.lastIndex && index + 1 != cookStart) {
+                                Box(
+                                    Modifier.padding(vertical = 4.dp).width(2.dp).weight(1f)
+                                        .background(MaterialTheme.colorScheme.outlineVariant),
+                                )
+                            }
                         }
-                        if (app.hasImage(step.image)) {
-                            LocalImage(step.image, Modifier.fillMaxWidth().aspectRatio(4f / 3f).clip(RoundedCornerShape(16.dp)))
+                        Spacer(Modifier.width(14.dp))
+                        Column(Modifier.weight(1f).padding(top = 4.dp, bottom = 20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(step.text, style = MaterialTheme.typography.bodyLarge)
+                            step.timerSeconds?.let {
+                                InfoPill(
+                                    "计时 ${TimeText.describe(it)}",
+                                    container = MaterialTheme.colorScheme.tertiaryContainer,
+                                    content = MaterialTheme.colorScheme.onTertiaryContainer,
+                                )
+                            }
+                            if (app.hasImage(step.image)) {
+                                LocalImage(step.image, Modifier.fillMaxWidth().aspectRatio(4f / 3f).clip(RoundedCornerShape(16.dp)))
+                            }
                         }
                     }
                 }
@@ -428,6 +436,18 @@ fun RecipeDetailScreen(
                 }) { Text("删除") }
             },
             dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("取消") } },
+        )
+    }
+}
+
+/** 步骤分段的小标题：备料用浅色，开火用主色 */
+@Composable
+private fun PhaseLabel(text: String, prep: Boolean) {
+    Box(Modifier.padding(start = 20.dp, end = 20.dp, bottom = 12.dp)) {
+        InfoPill(
+            text,
+            container = if (prep) MaterialTheme.colorScheme.surfaceContainerHigh else MaterialTheme.colorScheme.primary,
+            content = if (prep) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onPrimary,
         )
     }
 }

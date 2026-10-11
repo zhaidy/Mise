@@ -78,6 +78,7 @@ import com.personal.mise.timer.CookingTimer
 import com.personal.mise.ui.common.CircleIconButton
 import com.personal.mise.ui.common.EmptyState
 import com.personal.mise.ui.common.FieldShape
+import com.personal.mise.ui.common.InfoPill
 import com.personal.mise.ui.common.LocalImage
 import com.personal.mise.ui.common.MiseIcons
 import com.personal.mise.ui.common.OutlinePillButton
@@ -88,6 +89,7 @@ import com.personal.mise.ui.common.rememberApp
 import com.personal.mise.ui.theme.LocalMiseColors
 import com.personal.mise.ui.theme.SerifFamily
 import com.personal.mise.util.AmountScaler
+import com.personal.mise.util.StepPhase
 import com.personal.mise.util.TimeText
 import com.personal.mise.util.UnitText
 import kotlinx.coroutines.delay
@@ -236,6 +238,7 @@ private fun RecipePager(
         return
     }
 
+    val cookStart = remember(steps) { StepPhase.cookStart(steps.map { it.text }) }
     val pagerState = rememberPagerState(initialPage = row.currentStep.coerceIn(0, steps.lastIndex)) { steps.size }
     LaunchedEffect(pagerState) {
         snapshotFlow { pagerState.currentPage }.collect { app.repository.setCurrentStep(row.recipeId, it) }
@@ -254,6 +257,12 @@ private fun RecipePager(
                 step = step,
                 index = page,
                 total = steps.size,
+                phase = when {
+                    cookStart == null -> null
+                    page < cookStart -> "备料 · 还没开火"
+                    page == cookStart -> "开火"
+                    else -> null
+                },
                 bowls = data.bowlsForStep(step.id),
                 factor = app.scaleOf(row.recipeId),
                 timers = timers.filter { it.stepIndex == page },
@@ -302,6 +311,8 @@ private fun StepPage(
     step: Step,
     index: Int,
     total: Int,
+    /** 备料阶段、开火那一步给个提示，其余不显示 */
+    phase: String?,
     bowls: List<BowlFull>,
     factor: Double,
     timers: List<CookingTimer>,
@@ -318,7 +329,7 @@ private fun StepPage(
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Row(verticalAlignment = Alignment.Bottom) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
                 Text(
                     (index + 1).toString().padStart(2, '0'),
                     fontFamily = SerifFamily,
@@ -334,6 +345,16 @@ private fun StepPage(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(bottom = 6.dp),
                 )
+                Spacer(Modifier.weight(1f))
+                phase?.let {
+                    val firing = it == "开火"
+                    InfoPill(
+                        it,
+                        modifier = Modifier.padding(bottom = 8.dp),
+                        container = if (firing) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHigh,
+                        content = if (firing) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
             StepProgress(index, total)
         }

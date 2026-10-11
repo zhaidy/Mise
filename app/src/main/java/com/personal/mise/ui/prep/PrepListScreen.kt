@@ -71,6 +71,7 @@ import com.personal.mise.data.TodayRow
 import com.personal.mise.data.parseChecked
 import com.personal.mise.ui.common.rememberApp
 import com.personal.mise.util.AmountScaler
+import com.personal.mise.util.StepPhase
 import com.personal.mise.util.UnitText
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOf
@@ -90,10 +91,11 @@ private fun buildPrep(row: TodayRow, full: RecipeFull, factor: Double): PrepReci
     val inBowls = full.bowls.flatMap { b -> b.items.map { it.ingredientId } }.toSet()
     val mains = full.ingredients.filter { it.kind != IngredientKind.SEASONING && it.id !in inBowls }
         .map { PrepItem("i${it.id}", it.name, amount(it.amountText)) }
+    val cookStart = StepPhase.cookStart(full.steps.map { it.text })
     val bowls = full.bowls.map { b ->
         val stepIndex = full.steps.indexOfFirst { it.id == b.bowl.stepId }
         val detail = b.items.joinToString("、") { "${it.name} ${amount(it.amountText)}".trim() }
-        PrepItem("b${b.bowl.id}", b.bowl.label + if (stepIndex >= 0) "（第 ${stepIndex + 1} 步）" else "", detail)
+        PrepItem("b${b.bowl.id}", b.bowl.label + if (stepIndex >= 0) "（${StepPhase.bowlStepLabel(stepIndex, cookStart)}）" else "", detail)
     }
     val others = full.ingredients.filter { it.kind == IngredientKind.SEASONING && it.id !in inBowls }
         .map { PrepItem("i${it.id}", it.name, amount(it.amountText)) }

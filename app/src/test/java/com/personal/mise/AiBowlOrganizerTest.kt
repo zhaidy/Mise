@@ -47,6 +47,6 @@ class AiBowlOrganizerTest {
     fun `提示里带序号的用料和步骤`() {
         val prompt = AiBowlOrganizer.prompt(listOf("鸡腿" to "500克", "花椒" to ""), listOf("鸡腿切丁腌制", "爆香花椒"))
         assertTrue(prompt.contains("1. 鸡腿：500克\n2. 花椒\n"))
-        assertTrue(prompt.contains("1. 鸡腿切丁腌制\n2. 爆香花椒\n"))
+        assertTrue(prompt.contains("1. （备料）鸡腿切丁腌制\n2. 爆香花椒\n"))
     }
 }

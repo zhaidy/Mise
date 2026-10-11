@@ -1,6 +1,7 @@
 package com.personal.mise.ai
 
 import com.personal.mise.importer.ImportException
+import com.personal.mise.util.StepPhase
 import org.json.JSONObject
 
 /** AI 分好的一个碗：[stepIndex] 是下锅的步骤（从 0 开始），items 是 用料序号 to 这碗的用量 */
@@ -30,7 +31,9 @@ class AiBowlOrganizer(private val ai: AiClient) {
             "原文没有分开写用量就写「分次加入，共 X」。只出现一次的 amount 直接照抄用料的用量，没有用量留空字符串。\n" +
             "3. 每个碗的 step 填这碗在第几步下锅（步骤序号，从 1 开始）。\n" +
             "4. ingredient 填用料序号（从 1 开始），只用下面列出的用料，不要编造。\n" +
-            "5. 按下锅的先后顺序排列碗。\n\n"
+            "5. 按下锅的先后顺序排列碗。\n" +
+            "6. 标了「备料」的步骤还没开火。只是清洗、切配的用料不算在那一步下锅，要按它真正下锅的那一步分碗；" +
+            "备料步骤里只有腌制、泡、调汁这类要提前把用料混在一起的，才在那一步配碗。\n\n"
 
         fun prompt(ingredients: List<Pair<String, String>>, steps: List<String>): String = buildString {
             append(PROMPT)
@@ -41,7 +44,12 @@ class AiBowlOrganizer(private val ai: AiClient) {
                 append('\n')
             }
             append("\n做法：\n")
-            steps.forEachIndexed { i, text -> append("${i + 1}. ${text.trim()}\n") }
+            val cookStart = StepPhase.cookStart(steps)
+            steps.forEachIndexed { i, text ->
+                append("${i + 1}. ")
+                if (StepPhase.isPrep(i, cookStart)) append("（备料）")
+                append("${text.trim()}\n")
+            }
         }
 
         private val schema
