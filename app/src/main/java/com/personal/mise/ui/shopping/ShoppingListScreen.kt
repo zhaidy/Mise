@@ -49,16 +49,31 @@ import com.personal.mise.ui.common.rememberApp
 import com.personal.mise.util.AmountScaler
 import com.personal.mise.util.ShoppingList
 import com.personal.mise.util.UnitText
+import com.personal.mise.util.DayText
+import androidx.compose.material3.FilterChip
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOf
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ShoppingListScreen(onBack: () -> Unit) {
+fun ShoppingListScreen(planFrom: String?, planDays: Int, onBack: () -> Unit) {
     val app = rememberApp()
     val context = LocalContext.current
-    val rows by app.repository.observeToday().collectAsStateWithLifecycle(emptyList())
-    val ids = rows.map { it.recipeId }
+    val todayRows by app.repository.observeToday().collectAsStateWithLifecycle(emptyList())
+    val plans by app.repository.observePlan().collectAsStateWithLifecycle(emptyList())
+    var days by rememberSaveable { mutableIntStateOf(planDays) }
+    // 有起始日期时是计划里这几天的菜；同一道菜排了几天就买几份，明细里写上哪天
+    val rows = if (planFrom == null) {
+        todayRows.map { BuyFor(it.recipeId, it.title) }
+    } else {
+        val dates = DayText.days(planFrom, days)
+        plans.filter { it.date in dates && it.recipeId != null }
+            .map { BuyFor(it.recipeId!!, if (days > 1) "${it.title}·${DayText.weekday(it.date)}" else it.title) }
+    }
+    val ids = rows.map { it.recipeId }.distinct()
     val fulls by remember(ids) {
         if (ids.isEmpty()) flowOf(emptyList<RecipeFull?>())
         else combine(ids.map { app.repository.observeFull(it) }) { it.toList() }
@@ -69,7 +84,7 @@ fun ShoppingListScreen(onBack: () -> Unit) {
         val full = fulls.firstOrNull { it?.recipe?.id == row.recipeId } ?: return@flatMap emptyList()
         val factor = app.scaleOf(row.recipeId)
         full.ingredients.sortedBy { it.order }.map {
-            ShoppingList.Source(row.title, it.name, UnitText.display(AmountScaler.scale(it.amountText, factor)), it.kind)
+            ShoppingList.Source(row.label, it.name, UnitText.display(AmountScaler.scale(it.amountText, factor)), it.kind)
         }
     }
     val items = ShoppingList.build(sources)
@@ -77,7 +92,7 @@ fun ShoppingListScreen(onBack: () -> Unit) {
 
     Scaffold(
         topBar = {
-            MiseHeader("购物清单", onBack = onBack) {
+            MiseHeader("购物清单", eyebrow = planFrom?.let { planLabel(it, days) }, onBack = onBack) {
                 if (toBuy.isNotEmpty()) {
                     CircleIconButton(
                         MiseIcons.Share,
@@ -94,12 +109,22 @@ fun ShoppingListScreen(onBack: () -> Unit) {
         },
     ) { padding ->
         if (items.isEmpty()) {
-            EmptyState(
-                "购",
-                if (rows.isEmpty()) "今日菜单是空的" else "还没有用料",
-                if (rows.isEmpty()) "先在菜谱里挑几道菜加入今日菜单。" else "今日的菜还没有填用料。",
-                Modifier.padding(padding),
-            )
+            Column(Modifier.padding(padding)) {
+                if (planFrom != null) DaysSwitch(days, { days = it }, Modifier.padding(horizontal = 20.dp))
+                EmptyState(
+                    "购",
+                    when {
+                        rows.isNotEmpty() -> "还没有用料"
+                        planFrom != null -> "这几天还没排菜"
+                        else -> "今日菜单是空的"
+                    },
+                    when {
+                        rows.isNotEmpty() -> "这些菜还没有填用料。"
+                        planFrom != null -> "在「计划」里给这几天加几道菜。"
+                        else -> "先在菜谱里挑几道菜加入今日菜单。"
+                    },
+                )
+            }
             return@Scaffold
         }
         LazyColumn(
@@ -112,6 +137,9 @@ fun ShoppingListScreen(onBack: () -> Unit) {
             ),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
+            if (planFrom != null) {
+                item(key = "days") { DaysSwitch(days, { days = it }) }
+            }
             item(key = "hint") {
                 Text(
                     if (toBuy.isEmpty()) "都有了，不用买" else "要买 ${toBuy.size} 样。家里有的勾上，会挪到下面，下次也记得。",
@@ -141,6 +169,27 @@ fun ShoppingListScreen(onBack: () -> Unit) {
                     }
                 }
             }
+        }
+    }
+}
+
+/** 要买菜的一道菜；label 是明细里写的菜名，计划跨几天时带上星期 */
+private data class BuyFor(val recipeId: Long, val label: String)
+
+/** 「明天」「10月11日起 7 天」 */
+private fun planLabel(from: String, days: Int): String =
+    if (days == 1) "${DayText.ahead(from)}的计划" else "${DayText.ahead(from)}起 $days 天的计划"
+
+/** 计划的买菜清单可以切换看几天 */
+@Composable
+private fun DaysSwitch(days: Int, onChange: (Int) -> Unit, modifier: Modifier = Modifier) {
+    Row(modifier, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        listOf(1, 3, 7).forEach { n ->
+            FilterChip(
+                selected = days == n,
+                onClick = { onChange(n) },
+                label = { Text(if (n == 1) "这一天" else "$n 天") },
+            )
         }
     }
 }

@@ -17,6 +17,7 @@ import java.util.UUID
         SauceBowlItem::class,
         TodayMenu::class,
         CookLog::class,
+        MealPlan::class,
     ],
     version = MiseDatabase.VERSION,
     exportSchema = false,
@@ -25,14 +26,15 @@ abstract class MiseDatabase : RoomDatabase() {
     abstract fun recipeDao(): RecipeDao
     abstract fun todayDao(): TodayDao
     abstract fun cookLogDao(): CookLogDao
+    abstract fun mealPlanDao(): MealPlanDao
 
     companion object {
-        const val VERSION = 7
+        const val VERSION = 8
         const val NAME = "mise.db"
 
         fun create(context: Context): MiseDatabase =
             Room.databaseBuilder(context, MiseDatabase::class.java, NAME)
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
                 .build()
     }
 }
@@ -94,5 +96,17 @@ val MIGRATION_5_6 = object : Migration(5, 6) {
 val MIGRATION_6_7 = object : Migration(6, 7) {
     override fun migrate(db: SupportSQLiteDatabase) {
         db.execSQL("ALTER TABLE recipe ADD COLUMN original TEXT")
+    }
+}
+
+/** v8：做菜计划 */
+val MIGRATION_7_8 = object : Migration(7, 8) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS meal_plan (uid TEXT NOT NULL, recipeUid TEXT NOT NULL, title TEXT NOT NULL, " +
+                "date TEXT NOT NULL, checked TEXT NOT NULL, updatedAt INTEGER NOT NULL, deleted INTEGER NOT NULL, PRIMARY KEY(uid))"
+        )
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_meal_plan_recipeUid ON meal_plan (recipeUid)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_meal_plan_date ON meal_plan (date)")
     }
 }

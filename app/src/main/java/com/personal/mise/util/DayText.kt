@@ -41,6 +41,28 @@ object DayText {
         }
     }
 
+    /** 计划用的写法：「今天」「明天」「后天」，其余和 label 一样 */
+    fun ahead(date: String, today: LocalDate = LocalDate.now()): String {
+        val d = parse(date) ?: return date
+        return when (d) {
+            today.plusDays(1) -> "明天"
+            today.plusDays(2) -> "后天"
+            else -> label(date, today)
+        }
+    }
+
+    /** 星期几，如「周二」 */
+    fun weekday(date: String): String = parse(date)?.let { weekdays[it.dayOfWeek.value - 1] } ?: date
+
+    /** 从 from 开始连续 count 天 */
+    fun days(from: String, count: Int): List<String> {
+        val start = parse(from) ?: return emptyList()
+        return (0 until count).map { start.plusDays(it.toLong()).toString() }
+    }
+
+    /** 几天后的日期，按日期字符串算 */
+    fun plus(date: String, days: Long): String = parse(date)?.plusDays(days)?.toString() ?: date
+
     /** 月份标题，如「2026年10月」 */
     fun month(date: String): String = parse(date)?.let { "${it.year}年${it.monthValue}月" } ?: date
 }

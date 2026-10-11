@@ -95,6 +95,7 @@ import com.personal.mise.ui.common.MiseIcons
 import com.personal.mise.ui.common.OutlinePillButton
 import com.personal.mise.ui.common.PillButton
 import com.personal.mise.ui.common.RecipeCover
+import com.personal.mise.ui.plan.PlanDateDialog
 import com.personal.mise.ui.common.SectionHeader
 import com.personal.mise.ui.common.SoftCard
 import com.personal.mise.importer.ImportException
@@ -134,10 +135,12 @@ fun RecipeDetailScreen(
     var estimatingCalories by remember { mutableStateOf(false) }
     var askingKey by remember { mutableStateOf(false) }
     var logOpen by remember { mutableStateOf(false) }
+    var planOpen by remember { mutableStateOf(false) }
     var classifyOpen by remember { mutableStateOf(false) }
     /** 翻译过的菜谱切到原文看 */
     var showOriginal by remember { mutableStateOf(false) }
     val cookDates by remember(recipeId) { app.repository.observeCookDates(recipeId) }.collectAsStateWithLifecycle(emptyList())
+    val planDates by remember(recipeId) { app.repository.observePlanDates(recipeId) }.collectAsStateWithLifecycle(emptyList())
     val factor = app.scaleOf(recipeId)
 
     fun estimateCalories() {
@@ -302,6 +305,15 @@ fun RecipeDetailScreen(
                                 ) {
                                     TextButton(onClick = { logOpen = true }) { Text("记一笔") }
                                 }
+                                HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outlineVariant)
+                                val upcoming = planDates.filter { it >= DayText.today() }
+                                StatRow(
+                                    label = "计划",
+                                    value = if (upcoming.isEmpty()) "还没排" else upcoming.take(3).joinToString("、") { DayText.ahead(it) },
+                                    muted = upcoming.isEmpty(),
+                                ) {
+                                    TextButton(onClick = { planOpen = true }) { Text("排一天") }
+                                }
                             }
                         }
                     }
@@ -414,6 +426,19 @@ fun RecipeDetailScreen(
             onConfirm = {
                 askingKey = false
                 estimateCalories()
+            },
+        )
+    }
+
+    if (planOpen) {
+        PlanDateDialog(
+            onDismiss = { planOpen = false },
+            onPick = { date ->
+                planOpen = false
+                scope.launch {
+                    val added = app.repository.addToPlan(recipeId, date)
+                    snackbar.showSnackbar(if (added) "已排进计划：${DayText.ahead(date)}" else "${DayText.ahead(date)}已经排了这道菜")
+                }
             },
         )
     }

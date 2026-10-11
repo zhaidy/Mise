@@ -66,6 +66,7 @@ import com.personal.mise.ui.edit.ImportScreen
 import com.personal.mise.ui.edit.RecipeEditScreen
 import com.personal.mise.ui.history.HistoryScreen
 import com.personal.mise.ui.list.RecipeListScreen
+import com.personal.mise.ui.plan.PlanScreen
 import com.personal.mise.ui.prep.PrepListScreen
 import com.personal.mise.ui.shopping.ShoppingListScreen
 import com.personal.mise.ui.theme.LocalMiseColors
@@ -86,6 +87,11 @@ object Routes {
     const val PREP = "prep"
     const val SHOPPING = "shopping"
     const val HISTORY = "history"
+    const val PLAN = "plan"
+    /** 某天计划的菜的备料清单 */
+    fun prep(date: String) = "prep?date=$date"
+    /** 从 from 起几天计划的菜要买什么 */
+    fun shopping(from: String, days: Int) = "shopping?from=$from&days=$days"
     fun detail(id: Long) = "detail/$id"
     fun edit(id: Long) = "edit/$id"
     fun bowls(id: Long) = "bowls/$id"
@@ -139,7 +145,7 @@ fun MiseRoot(navRequests: MutableStateFlow<NavRequest?>) {
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         bottomBar = {
-            if (route == Routes.RECIPES || route == Routes.TODAY || route == Routes.HISTORY) {
+            if (route == Routes.RECIPES || route == Routes.TODAY || route == Routes.PLAN || route == Routes.HISTORY) {
                 val todayCount by remember { app.repository.observeToday() }.collectAsStateWithLifecycle(emptyList())
                 FloatingTabBar {
                     TabPill(
@@ -154,6 +160,12 @@ fun MiseRoot(navRequests: MutableStateFlow<NavRequest?>) {
                         label = "今日菜单",
                         badge = todayCount.size.takeIf { it > 0 },
                         onClick = { nav.switchTab(Routes.TODAY) },
+                    )
+                    TabPill(
+                        selected = route == Routes.PLAN,
+                        icon = MiseIcons.Plan,
+                        label = "计划",
+                        onClick = { nav.switchTab(Routes.PLAN) },
                     )
                     TabPill(
                         selected = route == Routes.HISTORY,
@@ -190,8 +202,21 @@ fun MiseRoot(navRequests: MutableStateFlow<NavRequest?>) {
                     onCook = { nav.navigate(Routes.cooking()) },
                 )
             }
+            composable(Routes.PLAN) {
+                PlanScreen(
+                    onOpenRecipe = { nav.navigate(Routes.detail(it)) },
+                    onPrep = { nav.navigate(Routes.prep(it)) },
+                    onShopping = { from, days -> nav.navigate(Routes.shopping(from, days)) },
+                    onToday = { nav.switchTab(Routes.TODAY) },
+                )
+            }
             composable(Routes.HISTORY) {
-                HistoryScreen(onOpenRecipe = { nav.navigate(Routes.detail(it)) })
+                HistoryScreen(
+                    onOpenRecipe = { nav.navigate(Routes.detail(it)) },
+                    onPrep = { nav.navigate(Routes.prep(it)) },
+                    onShopping = { from, days -> nav.navigate(Routes.shopping(from, days)) },
+                    onToday = { nav.switchTab(Routes.TODAY) },
+                )
             }
             composable(
                 "detail/{id}",
@@ -251,11 +276,25 @@ fun MiseRoot(navRequests: MutableStateFlow<NavRequest?>) {
                     onBack = { nav.popBackStack() },
                 )
             }
-            composable(Routes.SHOPPING) {
-                ShoppingListScreen(onBack = { nav.popBackStack() })
+            composable(
+                "shopping?from={from}&days={days}",
+                arguments = listOf(
+                    navArgument("from") { type = NavType.StringType; defaultValue = "" },
+                    navArgument("days") { type = NavType.IntType; defaultValue = 1 },
+                ),
+            ) { entry ->
+                ShoppingListScreen(
+                    planFrom = entry.arguments?.getString("from").orEmpty().ifEmpty { null },
+                    planDays = entry.arguments?.getInt("days") ?: 1,
+                    onBack = { nav.popBackStack() },
+                )
             }
-            composable(Routes.PREP) {
+            composable(
+                "prep?date={date}",
+                arguments = listOf(navArgument("date") { type = NavType.StringType; defaultValue = "" }),
+            ) { entry ->
                 PrepListScreen(
+                    planDate = entry.arguments?.getString("date").orEmpty().ifEmpty { null },
                     onBack = { nav.popBackStack() },
                     onCook = { nav.navigate(Routes.cooking()) },
                 )

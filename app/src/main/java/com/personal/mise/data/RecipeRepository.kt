@@ -3,6 +3,7 @@ package com.personal.mise.data
 import androidx.room.withTransaction
 import com.personal.mise.bowl.SauceBowlGenerator
 import com.personal.mise.image.ImageStore
+import com.personal.mise.sync.SyncedPlanEntry
 import com.personal.mise.sync.SyncedRecipe
 import com.personal.mise.sync.SyncedTodayEntry
 import com.personal.mise.sync.TodayKeys
@@ -66,6 +67,7 @@ class RecipeRepository(
     private val dao = db.recipeDao()
     private val todayDao = db.todayDao()
     private val cookLogDao = db.cookLogDao()
+    private val planDao = db.mealPlanDao()
 
     /** 按菜名、分类、标签或用料搜，见 RecipeSearch */
     fun search(query: String): Flow<List<SearchHit>> =
@@ -432,6 +434,84 @@ class RecipeRepository(
     suspend fun loadCookLogForSync(uid: String): CookLog? = cookLogDao.get(uid)
 
     suspend fun applyRemoteCookLog(remote: CookLog) = cookLogDao.upsert(remote)
+
+    // 做菜计划
+
+    fun observePlan(): Flow<List<PlanRow>> = planDao.observeAll()
+
+    /** 这道菜排在哪些日子，早的在前 */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun observePlanDates(recipeId: Long): Flow<List<String>> =
+        dao.observe(recipeId).flatMapLatest { r ->
+            if (r == null) flowOf(emptyList()) else planDao.observeDates(r.uid)
+        }
+
+    /** 把这道菜排到这天；这天已经排了返回 false */
+    suspend fun addToPlan(recipeId: Long, date: String): Boolean = db.withTransaction {
+        val recipe = dao.get(recipeId) ?: return@withTransaction false
+        val uid = MealPlan.uidOf(recipe.uid, date)
+        if (planDao.get(uid)?.deleted == false) return@withTransaction false
+        planDao.upsert(MealPlan(uid = uid, recipeUid = recipe.uid, title = recipe.title, date = date))
+        true
+    }
+
+    suspend fun removeFromPlan(uid: String) = planDao.markDeleted(uid, System.currentTimeMillis())
+
+    suspend fun setPlanChecked(uid: String, checked: Set<String>) =
+        planDao.setChecked(uid, checked.sorted().joinToString(","), System.currentTimeMillis())
+
+    /**
+     * 把这天计划的菜都放进今日菜单，返回新放进去的道数。
+     * 提前备料勾过的项目一起带过去，备料清单里接着勾。
+     */
+    suspend fun planToToday(date: String): Int = db.withTransaction {
+        var added = 0
+        planDao.onDate(date).forEach { plan ->
+            val recipe = dao.getByUid(plan.recipeUid)?.takeIf { !it.deleted } ?: return@forEach
+            if (isInToday(recipe.id)) return@forEach
+            todayDao.upsert(TodayMenu(recipeId = recipe.id, order = todayDao.maxOrder() + 1, bowlsChecked = plan.checked))
+            added++
+        }
+        added
+    }
+
+    fun observePlanStamps(): Flow<List<RecipeStamp>> = planDao.observeStamps()
+
+    /** 要上传的样子；勾选项换成按下标的写法，对方手机才认得 */
+    suspend fun loadPlanForSync(uid: String): SyncedPlanEntry? {
+        val plan = planDao.get(uid) ?: return null
+        val full = dao.getByUid(plan.recipeUid)?.let { loadFull(it.id) }
+        return SyncedPlanEntry(
+            uid = plan.uid,
+            recipeUid = plan.recipeUid,
+            title = plan.title,
+            date = plan.date,
+            checked = parseChecked(plan.checked)
+                .mapNotNull { TodayKeys.toPortable(it, full?.ingredients.orEmpty().map { g -> g.id }, full?.bowls.orEmpty().map { b -> b.bowl.id }) }
+                .sorted(),
+            updatedAt = plan.updatedAt,
+            deleted = plan.deleted,
+        )
+    }
+
+    /** 用云端的版本替换本地这一条；这道菜还没同步过来时勾选项先丢掉 */
+    suspend fun applyRemotePlan(remote: SyncedPlanEntry) {
+        val full = dao.getByUid(remote.recipeUid)?.let { loadFull(it.id) }
+        val checked = remote.checked.mapNotNull {
+            TodayKeys.fromPortable(it, full?.ingredients.orEmpty().map { g -> g.id }, full?.bowls.orEmpty().map { b -> b.bowl.id })
+        }
+        planDao.upsert(
+            MealPlan(
+                uid = remote.uid,
+                recipeUid = remote.recipeUid,
+                title = remote.title,
+                date = remote.date,
+                checked = checked.sorted().joinToString(","),
+                updatedAt = remote.updatedAt,
+                deleted = remote.deleted,
+            )
+        )
+    }
 }
 
 fun parseChecked(value: String): Set<String> =

@@ -24,6 +24,7 @@ import com.personal.mise.ui.common.CircleIconButton
 import com.personal.mise.ui.edit.AiKeyDialog
 import com.personal.mise.importer.ImportException
 import com.personal.mise.util.CalorieText
+import com.personal.mise.util.DayText
 import com.personal.mise.data.CalorieBudget
 import com.personal.mise.data.CalorieLimit
 import com.personal.mise.ui.common.FieldShape
@@ -105,6 +106,11 @@ fun TodayScreen(
     var askingKey by remember { mutableStateOf(false) }
     val limit by app.calorieBudget.limit.collectAsStateWithLifecycle()
     var editingLimit by remember { mutableStateOf(false) }
+    val plans by app.repository.observePlan().collectAsStateWithLifecycle(emptyList())
+    val today = DayText.today()
+    // 今天计划了、还没放进今日菜单的菜
+    val pending = plans.filter { it.date == today && it.recipeId != null && items.none { row -> row.recipeId == it.recipeId } }
+    val addPlanned: () -> Unit = { scope.launch { app.repository.planToToday(today) } }
 
     /** 让 AI 把还没算热量的菜逐道估一下 */
     fun estimateMissing() {
@@ -180,12 +186,16 @@ fun TodayScreen(
         },
     ) { padding ->
         if (items.isEmpty()) {
-            EmptyState(
-                "菜",
-                "今天还没选菜",
-                "在菜谱列表里长按一道菜，或者在菜谱详情里点「加入今日菜单」。",
-                Modifier.padding(padding),
-            )
+            Column(Modifier.padding(padding)) {
+                if (pending.isNotEmpty()) {
+                    PlannedBanner(pending.map { it.title }, addPlanned, Modifier.padding(horizontal = 20.dp, vertical = 12.dp))
+                }
+                EmptyState(
+                    "菜",
+                    "今天还没选菜",
+                    "在菜谱列表里长按一道菜，或者在菜谱详情里点「加入今日菜单」。",
+                )
+            }
         } else {
             LazyColumn(
                 state = listState,
@@ -198,6 +208,9 @@ fun TodayScreen(
                 ),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
+                if (pending.isNotEmpty()) {
+                    item(key = "planned") { PlannedBanner(pending.map { it.title }, addPlanned) }
+                }
                 item(key = "calories") {
                     CaloriesSummary(
                         rows = items,
@@ -269,6 +282,25 @@ fun TodayScreen(
             },
             dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("取消") } },
         )
+    }
+}
+
+/** 今天计划了还没放进来的菜，一键放进今日菜单 */
+@Composable
+private fun PlannedBanner(titles: List<String>, onAdd: () -> Unit, modifier: Modifier = Modifier) {
+    Surface(
+        modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(24.dp),
+        color = MaterialTheme.colorScheme.tertiaryContainer,
+        contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+    ) {
+        Row(Modifier.padding(start = 18.dp, end = 8.dp, top = 12.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text("今天的计划", style = MaterialTheme.typography.labelMedium)
+                Text(titles.joinToString("、"), style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
+            TextButton(onClick = onAdd) { Text("放进来") }
+        }
     }
 }
 
