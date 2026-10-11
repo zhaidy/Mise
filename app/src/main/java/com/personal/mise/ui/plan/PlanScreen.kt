@@ -56,6 +56,9 @@ import com.personal.mise.ui.common.RecipeCover
 import com.personal.mise.ui.common.SoftCard
 import com.personal.mise.ui.common.miseFieldColors
 import com.personal.mise.ui.common.rememberApp
+import com.personal.mise.ui.common.rememberSavedView
+import com.personal.mise.ui.history.CookCalendarView
+import com.personal.mise.ui.list.ViewSwitch
 import com.personal.mise.util.CalorieText
 import com.personal.mise.util.CookCalendar
 import com.personal.mise.util.DayText
@@ -65,7 +68,7 @@ import java.time.LocalDate
 /** 一次往下多看几天 */
 private const val DAYS_STEP = 7
 
-/** 做菜计划：从今天往后一天一张卡片，排哪天做哪道菜；每天可以提前备料、出买菜清单 */
+/** 做菜计划：从今天往后一天一张卡片，也可以看月历；排哪天做哪道菜，每天可以提前备料、出买菜清单 */
 @Composable
 fun PlanScreen(
     onOpenRecipe: (Long) -> Unit,
@@ -81,11 +84,13 @@ fun PlanScreen(
     val byDate = plans.groupBy { it.date }
     val weekCount = DayText.days(today, DAYS_STEP).sumOf { byDate[it].orEmpty().size }
     val snackbar = remember { SnackbarHostState() }
+    var calendarView by rememberSavedView("plan_calendar")
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             MiseHeader("做菜计划", eyebrow = if (weekCount == 0) "这周还没排菜" else "接下来 7 天排了 $weekCount 道菜") {
+                ViewSwitch(calendarView, onChange = { calendarView = it }, labels = "列表" to "日历")
                 if (weekCount > 0) {
                     CircleIconButton(
                         Icons.Filled.ShoppingCart,
@@ -97,6 +102,30 @@ fun PlanScreen(
             }
         },
     ) { padding ->
+        if (calendarView) {
+            CookCalendarView(
+                logs = emptyList(),
+                plans = plans,
+                onOpenRecipe = onOpenRecipe,
+                onDelete = {},
+                planDay = { date, rows ->
+                    PlanDayCard(
+                        date = date,
+                        rows = rows,
+                        snackbar = snackbar,
+                        onOpenRecipe = onOpenRecipe,
+                        onPrep = onPrep,
+                        onShopping = onShopping,
+                        onToday = onToday,
+                        modifier = Modifier.padding(top = 16.dp),
+                        showDate = false,
+                    )
+                },
+                modifier = Modifier.padding(padding).fillMaxSize(),
+                planOnly = true,
+            )
+            return@Scaffold
+        }
         LazyColumn(
             Modifier.fillMaxSize(),
             contentPadding = PaddingValues(

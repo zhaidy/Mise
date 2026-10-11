@@ -107,6 +107,7 @@ import com.personal.mise.importer.UrlExtractor
 import com.personal.mise.ui.common.LocalImage
 import com.personal.mise.ui.common.hasImage
 import com.personal.mise.ui.common.rememberApp
+import com.personal.mise.ui.common.rememberSavedView
 import com.personal.mise.ui.plan.PlanDateDialog
 import com.personal.mise.util.DayText
 import com.personal.mise.ui.edit.AiKeyDialog
@@ -149,7 +150,7 @@ fun RecipeListScreen(
         applyFilter(filter.prune(loadedCategories ?: return@LaunchedEffect, loadedTags ?: return@LaunchedEffect))
     }
     val hits = found.filter { filter.matches(it.recipe) }
-    var menuView by rememberSaveable { mutableStateOf(false) }
+    var menuView by rememberSavedView("recipes_menu")
     val lastCooked by remember { app.repository.observeLastCooked() }.collectAsStateWithLifecycle(emptyMap())
     var menuOpen by remember { mutableStateOf(false) }
     var pasteOpen by remember { mutableStateOf(false) }
