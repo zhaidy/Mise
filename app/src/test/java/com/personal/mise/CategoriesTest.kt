@@ -8,6 +8,7 @@ import com.personal.mise.data.RecipeFilter
 import com.personal.mise.data.RecipeTags
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -18,6 +19,16 @@ class CategoriesTest {
         assertEquals(listOf("荤菜", "烘焙", "甜品", "好吃"), RecipeTags.parse("#荤菜 #烘焙，甜品、好吃 #荤菜"))
         assertEquals(emptyList<String>(), RecipeTags.parse("  # , "))
         assertEquals("荤菜,好吃", RecipeTags.format(listOf("#荤菜", "好吃", "荤菜")))
+    }
+
+    @Test
+    fun `标签改名、删除、合并`() {
+        val tags = listOf("荤菜", "好吃", "快手")
+        assertEquals(listOf("肉菜", "好吃", "快手"), RecipeTags.replace(tags, "荤菜", "肉菜"))
+        assertEquals(listOf("荤菜", "快手"), RecipeTags.replace(tags, "好吃", ""))
+        assertEquals(listOf("荤菜", "快手"), RecipeTags.replace(tags, "好吃", "#快手"))
+        // LIKE 粗筛会把「荤菜汤」也筛出来，这里不能误改
+        assertNull(RecipeTags.replace(listOf("荤菜汤"), "荤菜", "肉菜"))
     }
 
     @Test

@@ -9,6 +9,16 @@ object RecipeTags {
         text.split(separators).map { it.trim() }.filter { it.isNotEmpty() }.distinct()
 
     fun format(tags: List<String>): String = tags.flatMap { parse(it) }.distinct().joinToString(",")
+
+    /**
+     * 把 old 换成 newName（原地换，顺序不变）；newName 为空就是去掉，和已有的重名就合并。
+     * 不带 old 时返回 null，表示不用改。
+     */
+    fun replace(tags: List<String>, old: String, newName: String): List<String>? {
+        val index = tags.indexOf(old)
+        if (index < 0) return null
+        return (tags.subList(0, index) + parse(newName) + tags.subList(index + 1, tags.size)).distinct()
+    }
 }
 
 val Recipe.tagList: List<String> get() = RecipeTags.parse(tags)

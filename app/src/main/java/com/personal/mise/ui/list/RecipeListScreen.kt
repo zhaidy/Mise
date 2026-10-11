@@ -29,6 +29,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilterChip
+import com.personal.mise.ui.common.ClassifyManageDialog
+import com.personal.mise.ui.common.ClassifyDialog
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material3.AssistChip
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.LazyListScope
 import com.personal.mise.data.Categories
@@ -146,6 +150,8 @@ fun RecipeListScreen(
     var restoreUri by remember { mutableStateOf<Uri?>(null) }
     var restoring by remember { mutableStateOf(false) }
     var kitchenOpen by remember { mutableStateOf(false) }
+    var classifying by remember { mutableStateOf<Recipe?>(null) }
+    var manageOpen by remember { mutableStateOf(false) }
     val context = LocalContext.current
 
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
@@ -235,6 +241,10 @@ fun RecipeListScreen(
                                     onClick = { moreOpen = false; kitchenOpen = true },
                                 )
                                 DropdownMenuItem(
+                                    text = { Text("管理分类和标签") },
+                                    onClick = { moreOpen = false; manageOpen = true },
+                                )
+                                DropdownMenuItem(
                                     text = { Text("AI 设置") },
                                     onClick = { moreOpen = false; aiSettingsOpen = true },
                                 )
@@ -269,6 +279,7 @@ fun RecipeListScreen(
                                     item(key = "none") {
                                         CategoryChip("未分类", category == Categories.NONE) { applyFilter(filter.copy(category = Categories.NONE, subcategory = null)) }
                                     }
+                                    item(key = "manage") { ManageChip { manageOpen = true } }
                                 }
                             }
                             if (subcategories.isNotEmpty()) {
@@ -282,12 +293,14 @@ fun RecipeListScreen(
                             if (allTags.isNotEmpty()) {
                                 // 标签可以多选，要全都带上才显示
                                 ChipRow {
-                                    items(allTags, key = { it }) { tag ->
+                                    items(allTags, key = { "t:$it" }) { tag ->
                                         val on = tag in filter.tags
                                         CategoryChip("#$tag", on) {
                                             applyFilter(filter.copy(tags = if (on) filter.tags - tag else filter.tags + tag))
                                         }
                                     }
+                                    // 没有大类那一排时，管理入口放在这里
+                                    if (categories.isEmpty()) item(key = "manage") { ManageChip { manageOpen = true } }
                                 }
                             }
                         }
@@ -303,7 +316,7 @@ fun RecipeListScreen(
                         Row(verticalAlignment = Alignment.Bottom) {
                             Text(heading, style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
                             Text(
-                                "共 ${hits.size} 道 · 长按加入今日",
+                                "共 ${hits.size} 道 · 长按加入今日、设分类",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -329,17 +342,31 @@ fun RecipeListScreen(
             } else {
                 items(hits, key = { it.recipe.id }) { hit ->
                     val recipe = hit.recipe
-                    RecipeCard(
-                        recipe = recipe,
-                        matchedIngredients = hit.matchedIngredients,
-                        onClick = { onOpen(recipe.id) },
-                        onLongClick = {
-                            scope.launch {
-                                val added = app.repository.addToToday(recipe.id)
-                                snackbar.showSnackbar(if (added) "已加入今日菜单：${recipe.title}" else "「${recipe.title}」已经在今日菜单里")
-                            }
-                        },
-                    )
+                    var cardMenu by remember { mutableStateOf(false) }
+                    Box {
+                        RecipeCard(
+                            recipe = recipe,
+                            matchedIngredients = hit.matchedIngredients,
+                            onClick = { onOpen(recipe.id) },
+                            onLongClick = { cardMenu = true },
+                        )
+                        DropdownMenu(expanded = cardMenu, onDismissRequest = { cardMenu = false }) {
+                            DropdownMenuItem(
+                                text = { Text("加入今日菜单") },
+                                onClick = {
+                                    cardMenu = false
+                                    scope.launch {
+                                        val added = app.repository.addToToday(recipe.id)
+                                        snackbar.showSnackbar(if (added) "已加入今日菜单：${recipe.title}" else "「${recipe.title}」已经在今日菜单里")
+                                    }
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("分类和标签") },
+                                onClick = { cardMenu = false; classifying = recipe },
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -410,6 +437,14 @@ fun RecipeListScreen(
             },
             dismissButton = { TextButton(enabled = !restoring, onClick = { restoreUri = null }) { Text("取消") } },
         )
+    }
+
+    classifying?.let { recipe ->
+        ClassifyDialog(recipe, onDismiss = { classifying = null })
+    }
+
+    if (manageOpen) {
+        ClassifyManageDialog(onDismiss = { manageOpen = false })
     }
 
     if (kitchenOpen) {
@@ -488,6 +523,17 @@ private fun RecipeCard(recipe: Recipe, matchedIngredients: List<String>, onClick
             }
         }
     }
+}
+
+/** 筛选标签那排最后的「管理」，点开改名、删除分类和标签 */
+@Composable
+private fun ManageChip(onClick: () -> Unit) {
+    AssistChip(
+        onClick = onClick,
+        label = { Text("管理") },
+        leadingIcon = { Icon(Icons.Filled.Edit, contentDescription = null, Modifier.size(16.dp)) },
+        shape = CircleShape,
+    )
 }
 
 /** 一排横着滑的筛选标签 */
