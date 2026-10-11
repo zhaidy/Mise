@@ -50,13 +50,13 @@ import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
-/** 菜谱页的「卡片 / 菜单」切换，放在头部右上角 */
+/** 两种视图的切换，放在头部右上角；菜谱页是「卡片 / 菜单」，做菜记录是「列表 / 日历」 */
 @Composable
-internal fun ViewSwitch(menuView: Boolean, onChange: (Boolean) -> Unit) {
+internal fun ViewSwitch(second: Boolean, onChange: (Boolean) -> Unit, labels: Pair<String, String> = "卡片" to "菜单") {
     Surface(shape = CircleShape, color = MaterialTheme.colorScheme.surfaceContainerHigh) {
         Row(Modifier.padding(3.dp)) {
-            ViewOption("卡片", selected = !menuView, onClick = { onChange(false) })
-            ViewOption("菜单", selected = menuView, onClick = { onChange(true) })
+            ViewOption(labels.first, selected = !second, onClick = { onChange(false) })
+            ViewOption(labels.second, selected = second, onClick = { onChange(true) })
         }
     }
 }
