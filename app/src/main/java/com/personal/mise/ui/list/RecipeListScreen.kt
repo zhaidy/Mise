@@ -249,13 +249,10 @@ fun RecipeListScreen(
                 Modifier.padding(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    // 菜单视图自己有刊头，这里就不放大标题了
-                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        if (!menuView) {
-                            Eyebrow(today)
-                            Text("今天做点什么？", style = MaterialTheme.typography.headlineLarge)
-                        }
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    // 菜单视图自己有刊头，这里就不放日期了
+                    Box(Modifier.weight(1f)) {
+                        if (!menuView) Eyebrow(today)
                     }
                     ViewSwitch(menuView, onChange = { menuView = it })
                     Box {
