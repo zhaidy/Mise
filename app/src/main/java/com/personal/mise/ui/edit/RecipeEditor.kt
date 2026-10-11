@@ -32,6 +32,9 @@ import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.material3.InputChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -334,33 +337,102 @@ private fun EditorSection(title: String, hint: String) {
     SectionHeader(title, Modifier.padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 4.dp), hint = hint)
 }
 
-/** 分类：可以直接输入新的，也可以点下面已有的分类；再点一次选中的就清空 */
+/**
+ * 分类和标签：大类、小类可以直接输入新的，也可以点下面已有的；再点一次选中的就清空。
+ * 标签输入时打逗号、空格或 # 就算一个，下面列出别的菜谱用过的标签。
+ */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun CategoryField(vm: EditorViewModel) {
-    val categories by vm.categories.collectAsStateWithLifecycle(emptyList())
+    val tree by vm.categories.collectAsStateWithLifecycle(emptyList())
+    val allTags by vm.allTags.collectAsStateWithLifecycle(emptyList())
     OutlinedTextField(
         shape = FieldShape,
         colors = miseFieldColors(),
         value = vm.category,
         onValueChange = { vm.category = it },
-        label = { Text("分类（可不填，如 家常菜、汤、早餐）") },
+        label = { Text("大类（可不填，如 家常菜、汤、甜点）") },
         modifier = Modifier.fillMaxWidth(),
         singleLine = true,
     )
-    if (categories.isNotEmpty()) {
+    PickChips(tree.map { it.name }, vm.category.trim()) { vm.selectCategory(it) }
+
+    if (vm.category.isNotBlank()) {
+        Spacer(Modifier.height(8.dp))
+        OutlinedTextField(
+            shape = FieldShape,
+            colors = miseFieldColors(),
+            value = vm.subcategory,
+            onValueChange = { vm.subcategory = it },
+            label = { Text("小类（可不填，如 炒菜、炖菜）") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+        )
+        val subs = tree.find { it.name == vm.category.trim() }?.subcategories.orEmpty()
+        PickChips(subs, vm.subcategory.trim()) { vm.subcategory = it }
+    }
+
+    Spacer(Modifier.height(8.dp))
+    if (vm.tags.isNotEmpty()) {
+        FlowRow(
+            Modifier.padding(bottom = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            vm.tags.forEach { tag ->
+                InputChip(
+                    selected = true,
+                    onClick = { vm.removeTag(tag) },
+                    label = { Text("#$tag") },
+                    trailingIcon = { Icon(Icons.Filled.Close, contentDescription = "去掉", Modifier.size(16.dp)) },
+                )
+            }
+        }
+    }
+    OutlinedTextField(
+        shape = FieldShape,
+        colors = miseFieldColors(),
+        value = vm.tagInput,
+        onValueChange = vm::updateTagInput,
+        label = { Text("加标签（如 荤菜、烘焙、好吃）") },
+        modifier = Modifier.fillMaxWidth(),
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+        keyboardActions = KeyboardActions(onDone = { vm.commitTagInput() }),
+        trailingIcon = {
+            if (vm.tagInput.isNotBlank()) {
+                IconButton(onClick = vm::commitTagInput) { Icon(Icons.Filled.Add, contentDescription = "添加标签") }
+            }
+        },
+    )
+    val suggestions = allTags.filter { it !in vm.tags }
+    if (suggestions.isNotEmpty()) {
         FlowRow(
             Modifier.padding(top = 6.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            categories.forEach { name ->
-                val selected = vm.category.trim() == name
-                FilterChip(
-                    selected = selected,
-                    onClick = { vm.category = if (selected) "" else name },
-                    label = { Text(name) },
-                )
+            suggestions.forEach { tag ->
+                FilterChip(selected = false, onClick = { vm.addTag(tag) }, label = { Text("#$tag") })
             }
+        }
+    }
+}
+
+/** 已有的名字，点一下选中，再点一下清空 */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun PickChips(names: List<String>, current: String, onPick: (String) -> Unit) {
+    if (names.isEmpty()) return
+    FlowRow(
+        Modifier.padding(top = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        names.forEach { name ->
+            val selected = current == name
+            FilterChip(
+                selected = selected,
+                onClick = { onPick(if (selected) "" else name) },
+                label = { Text(name) },
+            )
         }
     }
 }

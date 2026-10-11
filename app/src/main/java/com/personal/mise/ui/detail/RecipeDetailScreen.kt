@@ -69,6 +69,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.personal.mise.data.tagList
 import com.personal.mise.data.BowlFull
 import com.personal.mise.data.Ingredient
 import com.personal.mise.data.IngredientKind
@@ -213,9 +214,11 @@ fun RecipeDetailScreen(
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                             itemVerticalAlignment = Alignment.CenterVertically,
                         ) {
-                            data.recipe.category?.takeIf { it.isNotBlank() }?.let {
-                                InfoPill(it, container = MaterialTheme.colorScheme.secondaryContainer, content = MaterialTheme.colorScheme.onSecondaryContainer)
+                            data.recipe.category?.takeIf { it.isNotBlank() }?.let { cat ->
+                                val text = data.recipe.subcategory?.takeIf { it.isNotBlank() }?.let { "$cat › $it" } ?: cat
+                                InfoPill(text, container = MaterialTheme.colorScheme.secondaryContainer, content = MaterialTheme.colorScheme.onSecondaryContainer)
                             }
+                            data.recipe.tagList.forEach { InfoPill("#$it", content = MaterialTheme.colorScheme.primary) }
                             data.recipe.servings?.takeIf { it.isNotBlank() }?.let { InfoPill(it) }
                             if (data.steps.isNotEmpty()) InfoPill("${data.steps.size} 步")
                             Surface(

@@ -12,20 +12,25 @@ interface RecipeDao {
     @Query(
         """
         SELECT * FROM recipe WHERE deleted = 0
-          AND (title LIKE '%' || :query || '%' OR category LIKE '%' || :query || '%')
+          AND (title LIKE '%' || :query || '%' OR category LIKE '%' || :query || '%'
+               OR subcategory LIKE '%' || :query || '%' OR tags LIKE '%' || :query || '%')
         ORDER BY createdAt DESC
         """
     )
     fun search(query: String): Flow<List<Recipe>>
 
-    /** 用到的所有分类，按用得多少排，常用的在前 */
+    /** 每个大类、小类组合用了几次，排序交给 Categories.tree */
     @Query(
         """
-        SELECT category FROM recipe WHERE deleted = 0 AND category IS NOT NULL AND category != ''
-        GROUP BY category ORDER BY COUNT(*) DESC, category
+        SELECT category, subcategory, COUNT(*) AS count FROM recipe
+        WHERE deleted = 0 AND category IS NOT NULL AND category != ''
+        GROUP BY category, subcategory
         """
     )
-    fun observeCategories(): Flow<List<String>>
+    fun observeCategoryCounts(): Flow<List<CategoryCount>>
+
+    @Query("SELECT tags FROM recipe WHERE deleted = 0 AND tags != ''")
+    fun observeTagStrings(): Flow<List<String>>
 
     @Query("SELECT * FROM recipe WHERE id = :id AND deleted = 0")
     fun observe(id: Long): Flow<Recipe?>

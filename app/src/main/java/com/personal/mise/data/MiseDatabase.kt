@@ -81,9 +81,11 @@ val MIGRATION_4_5 = object : Migration(4, 5) {
     }
 }
 
-/** v6：菜谱加 category，按分类找菜 */
+/** v6：菜谱加大类、小类和标签，按分类找菜 */
 val MIGRATION_5_6 = object : Migration(5, 6) {
     override fun migrate(db: SupportSQLiteDatabase) {
         db.execSQL("ALTER TABLE recipe ADD COLUMN category TEXT")
+        db.execSQL("ALTER TABLE recipe ADD COLUMN subcategory TEXT")
+        db.execSQL("ALTER TABLE recipe ADD COLUMN tags TEXT NOT NULL DEFAULT ''")
     }
 }
