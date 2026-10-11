@@ -23,9 +23,15 @@ class WebPageLoader(private val context: Context) {
 
     /** 返回 (最终网址, HTML)；超时还没拿到认可的页面时返回 null */
     @SuppressLint("SetJavaScriptEnabled")
-    suspend fun load(url: String, timeoutMs: Long = TIMEOUT_MS, accept: suspend (url: String, html: String) -> Boolean): Pair<String, String>? =
+    suspend fun load(
+        url: String,
+        timeoutMs: Long = TIMEOUT_MS,
+        userAgent: String? = null,
+        accept: suspend (url: String, html: String) -> Boolean,
+    ): Pair<String, String>? =
         withContext(Dispatchers.Main) {
             val webView = WebView(context.applicationContext).apply {
+                userAgent?.let { settings.userAgentString = it }
                 settings.javaScriptEnabled = true
                 settings.domStorageEnabled = true
                 settings.loadsImagesAutomatically = false
