@@ -19,7 +19,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 // 温暖杂志风：米白纸感底色、陶土橙主色、橄榄绿和芥末黄点缀
-private val Light = lightColorScheme(
+/** 分享图片固定用浅色：别人收到的图不该跟着这台手机的深色模式变 */
+internal val Light = lightColorScheme(
     primary = Color(0xFFB5532E),
     onPrimary = Color.White,
     primaryContainer = Color(0xFFFFDBCF),
@@ -123,7 +124,7 @@ data class MiseExtraColors(
     val onInkMuted: Color,
 )
 
-private val LightExtra = MiseExtraColors(
+internal val LightExtra = MiseExtraColors(
     covers = listOf(
         CoverColors(Color(0xFFC4673F), Color(0xFFFFF6EE)),
         CoverColors(Color(0xFF6F7B45), Color(0xFFF7F3E6)),

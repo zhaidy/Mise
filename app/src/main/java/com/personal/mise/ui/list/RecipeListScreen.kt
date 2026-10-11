@@ -63,6 +63,10 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material3.Switch
+import com.personal.mise.share.ShareImage
+import com.personal.mise.ui.common.ShareImageDialog
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.DropdownMenu
@@ -157,6 +161,8 @@ fun RecipeListScreen(
     var kitchenOpen by remember { mutableStateOf(false) }
     var classifying by remember { mutableStateOf<Recipe?>(null) }
     var manageOpen by remember { mutableStateOf(false) }
+    var menuShareOpen by remember { mutableStateOf(false) }
+    var menuShareDates by rememberSaveable { mutableStateOf(true) }
     val context = LocalContext.current
 
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
@@ -255,6 +261,14 @@ fun RecipeListScreen(
                         if (!menuView) Eyebrow(today)
                     }
                     ViewSwitch(menuView, onChange = { menuView = it })
+                    if (menuView) {
+                        CircleIconButton(
+                            Icons.Filled.Share,
+                            "导出菜单图片",
+                            onClick = { menuShareOpen = true },
+                            container = MaterialTheme.colorScheme.surfaceContainerLowest,
+                        )
+                    }
                     Box {
                         CircleIconButton(
                             Icons.Filled.MoreVert,
@@ -270,6 +284,10 @@ fun RecipeListScreen(
                             DropdownMenuItem(
                                 text = { Text("管理分类和标签") },
                                 onClick = { moreOpen = false; manageOpen = true },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("导出菜单图片") },
+                                onClick = { moreOpen = false; menuShareOpen = true },
                             )
                             DropdownMenuItem(
                                 text = { Text("AI 设置") },
@@ -395,6 +413,31 @@ fun RecipeListScreen(
                 }
             }
         }
+    }
+
+    if (menuShareOpen) {
+        // 和菜单视图一样：按搜索词过滤，不管左栏的分类、标签筛选
+        val sections = remember(found, lastCooked) { RecipeMenu.sections(found.map { it.recipe }, lastCooked) }
+        ShareImageDialog(
+            title = "导出菜单图片",
+            name = "家宴菜单",
+            key = Triple(sections, menuShareDates, query),
+            render = { ShareImage.menu(sections, app.images, withDates = menuShareDates) },
+            onDismiss = { menuShareOpen = false },
+            options = {
+                if (query.isNotEmpty()) {
+                    Text(
+                        "只有搜索「$query」找到的菜",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Row(Modifier.fillMaxWidth().padding(top = 4.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("写上次下厨的时间", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                    Switch(checked = menuShareDates, onCheckedChange = { menuShareDates = it })
+                }
+            },
+        )
     }
 
     update?.let { info ->

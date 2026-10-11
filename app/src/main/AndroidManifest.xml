@@ -57,6 +57,17 @@
                 android:value="做菜计时器：切到后台时保持倒计时并在时间到时提醒" />
         </service>
 
+        <!-- 分享导出的菜谱、菜单图片 -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.share"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/share_paths" />
+        </provider>
+
         <receiver
             android:name=".timer.TimerAlarmReceiver"
             android:exported="false" />
