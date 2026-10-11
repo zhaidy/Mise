@@ -35,20 +35,20 @@ class AiRecipeTranslatorTest {
     fun `按原来的顺序换成翻译`() {
         val reply = JSONObject(
             """{"title":"蒜香黄油虾","servings":"4人份",
-               "ingredients":[{"name":"虾","amount":"1磅（去壳）"},{"name":"大蒜","amount":"4瓣"},{"name":"盐","amount":""}],
+               "ingredients":[{"name":"虾","amount":"454克（去壳）"},{"name":"大蒜","amount":"4瓣"},{"name":"盐","amount":""}],
                "steps":["中火把黄油在大平底锅里化开","放入虾煮2分钟"]}""",
         )
         val out = AiRecipeTranslator.parseResponse(reply, english)
         assertEquals("蒜香黄油虾", out.title)
         assertEquals("4人份", out.servings)
-        assertEquals(listOf("虾" to "1磅（去壳）", "大蒜" to "4瓣", "盐" to ""), out.ingredients)
+        assertEquals(listOf("虾" to "454克（去壳）", "大蒜" to "4瓣", "盐" to ""), out.ingredients)
         assertEquals(listOf("中火把黄油在大平底锅里化开", "放入虾煮2分钟"), out.steps)
     }
 
     @Test
     fun `空着的项保留原文`() {
         val reply = JSONObject(
-            """{"title":"","servings":null,"ingredients":[{"name":"虾","amount":"1磅"},{"name":"","amount":"4瓣"},{"name":"盐","amount":""}],
+            """{"title":"","servings":null,"ingredients":[{"name":"虾","amount":"454克"},{"name":"","amount":"4瓣"},{"name":"盐","amount":""}],
                "steps":["化开黄油",""]}""",
         )
         val out = AiRecipeTranslator.parseResponse(reply, english)

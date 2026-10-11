@@ -26,7 +26,9 @@ class AiRecipeTranslator(private val ai: AiClient) {
             "2. servings：翻译成「2人份」这样的写法，原来为空就留空。\n" +
             "3. ingredients：条数和顺序跟原来完全一样，一条对一条。name 翻译成常见的中文食材名，" +
             "只写名称，切法、备注之类放进 amount 后面的括号里。amount 保留原来的数字，单位换成中文" +
-            "（cup→杯、tablespoon/tbsp→汤匙、teaspoon/tsp→茶匙、oz→盎司、lb→磅、g→克、ml→毫升、clove→瓣、pinch→一小撮），" +
+            "（cup→杯、tablespoon/tbsp→汤匙、teaspoon/tsp→茶匙、g→克、ml→毫升、clove→瓣、pinch→一小撮）；" +
+            "磅（lb、pound）和盎司（oz、ounce）不要保留，换算成克（1磅≈454克、1盎司≈28克），取整数，比如「1 lb」写成「454克」；" +
+            "液体的 fl oz 换算成毫升（1液量盎司≈30毫升）；" +
             "分数写成「1/2」这样，数字在前、单位在后；原来没有用量就留空字符串。\n" +
             "4. steps：条数和顺序跟原来完全一样，一条对一条，不要合并、拆分或增删，不要带序号。" +
             "温度换算成摄氏度（如「200°C」），原来写了华氏度的保留在括号里。\n" +
