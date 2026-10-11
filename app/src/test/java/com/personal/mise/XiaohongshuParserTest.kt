@@ -62,6 +62,7 @@ class XiaohongshuParserTest {
         val note = XiaohongshuParser.parse(page("login_wall"), "https://www.xiaohongshu.com/website-login/error")
         assertEquals("", note.desc)
         assertTrue(note.imageUrls.isEmpty())
+        assertTrue(note.isEmpty)
     }
 
     @Test

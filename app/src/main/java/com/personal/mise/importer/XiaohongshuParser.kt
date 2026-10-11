@@ -5,7 +5,9 @@ import org.json.JSONObject
 import org.jsoup.Jsoup
 
 /** 小红书笔记：标题、正文和配图；排版随意，用料步骤常常写在图片上，后面交给 AI 整理 */
-data class XhsNote(val title: String, val desc: String, val imageUrls: List<String>)
+data class XhsNote(val title: String, val desc: String, val imageUrls: List<String>) {
+    val isEmpty get() = desc.isBlank() && imageUrls.isEmpty()
+}
 
 /**
  * 小红书笔记页面解析。所有和小红书页面结构有关的代码都在这个类里。

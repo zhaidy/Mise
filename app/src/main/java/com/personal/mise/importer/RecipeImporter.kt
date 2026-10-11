@@ -129,11 +129,12 @@ class RecipeImporter(
     }
 
     private suspend fun importXiaohongshu(url: String): ImportResult {
-        val (finalUrl, html) = fetchPage(url, DESKTOP_UA)
-        val note = XiaohongshuParser.parse(html, finalUrl)
-        if (note.desc.isBlank() && note.imageUrls.isEmpty()) {
-            throw ImportException("没能打开这篇小红书笔记（可能需要登录或笔记已删除）。可以在小红书里复制笔记正文，用「AI 整理笔记」导入")
-        }
+        // 直接请求常被小红书当成爬虫（短链靠 JS 跳转、没 cookie 时不给笔记数据），
+        // 拿不到时用 WebView 当真浏览器再打开一次；浏览器里没登录也能看到正文，只是盖着登录弹窗
+        val direct = runCatching { fetchPage(url, DESKTOP_UA).let { (finalUrl, html) -> XiaohongshuParser.parse(html, finalUrl) } }
+        val note = direct.getOrNull()?.takeUnless { it.isEmpty }
+            ?: loadXhsInBrowser(url)
+            ?: throw ImportException("没能打开这篇小红书笔记（可能需要登录或笔记已删除）。可以在小红书里复制笔记正文，用「AI 整理笔记」导入，或者截图用图片导入")
 
         val urls = note.imageUrls.take(MAX_XHS_IMAGES)
         val saved = coroutineScope { urls.map { async { download(it, XHS_REFERER) } }.awaitAll() }.filterNotNull()
@@ -152,6 +153,15 @@ class RecipeImporter(
         if (saved.isEmpty() && urls.isNotEmpty()) warnings += "封面图下载失败"
         if (note.imageUrls.size > MAX_XHS_IMAGES) warnings += "笔记图片太多，AI 只看了前 $MAX_XHS_IMAGES 张"
         return ImportResult(result.draft.copy(coverImage = saved.firstOrNull()), warnings, aiOrganized = true)
+    }
+
+    private suspend fun loadXhsInBrowser(url: String): XhsNote? {
+        val (finalUrl, html) = runCatching {
+            browser.load(url, userAgent = DESKTOP_UA) { pageUrl, html ->
+                withContext(Dispatchers.Default) { !XiaohongshuParser.parse(html, pageUrl).isEmpty }
+            }
+        }.getOrNull() ?: return null
+        return XiaohongshuParser.parse(html, finalUrl).takeUnless { it.isEmpty }
     }
 
     /** 给百度用的 MIP 页面，主站限流时一般还能打开 */
