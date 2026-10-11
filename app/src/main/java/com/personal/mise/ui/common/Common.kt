@@ -457,20 +457,9 @@ object MiseIcons {
         stroke("Timer", "M12 21a8 8 0 1 0 0-16 8 8 0 0 0 0 16z", "M12 9v4l2.5 2", "M10 2h4")
     }
 
-    /** 日历：做菜记录 */
+    /** 日历：计划和做菜记录 */
     val Calendar: ImageVector by lazy {
         stroke("Calendar", "M5 5h14a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z", "M4 10h16", "M8 3v4", "M16 3v4")
-    }
-
-    /** 写着清单的夹板：做菜计划 */
-    val Plan: ImageVector by lazy {
-        stroke(
-            "Plan",
-            "M9 4H6a1 1 0 0 0-1 1v15a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V5a1 1 0 0 0-1-1h-3",
-            "M9 3h6v3H9z",
-            "M9 11h6",
-            "M9 15h4",
-        )
     }
 
     val Share: ImageVector by lazy {

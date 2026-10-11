@@ -46,6 +46,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.personal.mise.data.CookLogRow
 import com.personal.mise.data.PlanRow
 import com.personal.mise.ui.common.CircleIconButton
 import com.personal.mise.ui.common.FieldShape
@@ -56,6 +57,8 @@ import com.personal.mise.ui.common.miseFieldColors
 import com.personal.mise.ui.common.rememberApp
 import com.personal.mise.ui.common.rememberSavedView
 import com.personal.mise.ui.history.CookCalendarView
+import com.personal.mise.ui.history.DeleteLogDialog
+import com.personal.mise.ui.history.cookLogItems
 import com.personal.mise.ui.list.ViewSwitch
 import com.personal.mise.util.CalorieText
 import com.personal.mise.util.CookCalendar
@@ -66,7 +69,10 @@ import java.time.LocalDate
 /** 一次往下多看几天 */
 private const val DAYS_STEP = 7
 
-/** 做菜计划：从今天往后一天一张卡片，也可以看月历；排哪天做哪道菜，每天可以提前备料、出买菜清单 */
+/**
+ * 计划和做菜记录合在一页。列表：从今天往后一天一张卡片，下面接着以前做过的菜；
+ * 日历：一格一天，点一天看那天排的和做过的菜。排哪天做哪道菜，每天可以提前备料、出买菜清单
+ */
 @Composable
 fun PlanScreen(
     onOpenRecipe: (Long) -> Unit,
@@ -76,16 +82,24 @@ fun PlanScreen(
 ) {
     val app = rememberApp()
     val plans by app.repository.observePlan().collectAsStateWithLifecycle(emptyList())
+    val logs by app.repository.observeCookLog().collectAsStateWithLifecycle(emptyList())
     val today = remember { DayText.today() }
     var shown by rememberSaveable { mutableStateOf(DAYS_STEP * 2) }
     val days = DayText.days(today, shown)
     val byDate = plans.groupBy { it.date }
+    val logsByDate = logs.groupBy { it.date }
     val weekCount = DayText.days(today, DAYS_STEP).sumOf { byDate[it].orEmpty().size }
     var calendarView by rememberSavedView("plan_calendar")
+    var confirmDelete by remember { mutableStateOf<CookLogRow?>(null) }
+    val onDeleteLog: (CookLogRow) -> Unit = { confirmDelete = it }
 
     Scaffold(
         topBar = {
-            MiseHeader("做菜计划", eyebrow = if (weekCount == 0) "这周还没排菜" else "接下来 7 天排了 $weekCount 道菜") {
+            val eyebrow = listOfNotNull(
+                if (weekCount == 0) "这周还没排菜" else "接下来 7 天排了 $weekCount 道",
+                "一共做了 ${logs.size} 次".takeIf { logs.isNotEmpty() },
+            ).joinToString(" · ")
+            MiseHeader("做菜日历", eyebrow = eyebrow) {
                 ViewSwitch(calendarView, onChange = { calendarView = it }, labels = "列表" to "日历")
                 if (weekCount > 0) {
                     CircleIconButton(
@@ -100,65 +114,74 @@ fun PlanScreen(
     ) { padding ->
         if (calendarView) {
             CookCalendarView(
-                logs = emptyList(),
+                logs = logs,
                 plans = plans,
-                onOpenRecipe = onOpenRecipe,
-                onDelete = {},
-                planDay = { date, rows ->
+                day = { date, dayPlans, dayLogs ->
                     PlanDayCard(
                         date = date,
-                        rows = rows,
+                        rows = dayPlans,
+                        logs = dayLogs,
                         onOpenRecipe = onOpenRecipe,
                         onPrep = onPrep,
                         onShopping = onShopping,
                         onToday = onToday,
-                        modifier = Modifier.padding(top = 16.dp),
+                        onDeleteLog = onDeleteLog,
                         showDate = false,
                     )
                 },
                 modifier = Modifier.padding(padding).fillMaxSize(),
-                planOnly = true,
             )
-            return@Scaffold
-        }
-        LazyColumn(
-            Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(
-                start = 20.dp,
-                end = 20.dp,
-                top = padding.calculateTopPadding() + 8.dp,
-                bottom = padding.calculateBottomPadding() + 16.dp,
-            ),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            items(days, key = { it }) { date ->
-                PlanDayCard(
-                    date = date,
-                    rows = byDate[date].orEmpty(),
-                    onOpenRecipe = onOpenRecipe,
-                    onPrep = onPrep,
-                    onShopping = onShopping,
-                    onToday = onToday,
-                )
-            }
-            item(key = "more") {
-                TextButton(onClick = { shown += DAYS_STEP }, modifier = Modifier.fillMaxWidth()) {
-                    Text("再往后看一周")
+        } else {
+            LazyColumn(
+                Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(
+                    start = 20.dp,
+                    end = 20.dp,
+                    top = padding.calculateTopPadding() + 8.dp,
+                    bottom = padding.calculateBottomPadding() + 16.dp,
+                ),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                items(days, key = { it }) { date ->
+                    PlanDayCard(
+                        date = date,
+                        rows = byDate[date].orEmpty(),
+                        logs = logsByDate[date].orEmpty(),
+                        onOpenRecipe = onOpenRecipe,
+                        onPrep = onPrep,
+                        onShopping = onShopping,
+                        onToday = onToday,
+                        onDeleteLog = onDeleteLog,
+                    )
                 }
+                item(key = "more") {
+                    TextButton(onClick = { shown += DAYS_STEP }, modifier = Modifier.fillMaxWidth()) {
+                        Text("再往后看一周")
+                    }
+                }
+                // 今天做过的已经在今天的卡片里了
+                cookLogItems(logs.filter { it.date < today }, onOpenRecipe, onDeleteLog)
             }
         }
     }
+
+    confirmDelete?.let { DeleteLogDialog(it, onDismiss = { confirmDelete = null }) }
 }
 
-/** 一天的计划卡片：日期、排的菜，下面是备料、买菜；今天的还能去今日菜单 */
+/**
+ * 一天的卡片：排的菜和那天做过的菜，同一道菜只列一次；下面是备料、买菜，今天的还能去今日菜单。
+ * 以前的日子只看，不再加菜、备料
+ */
 @Composable
 fun PlanDayCard(
     date: String,
     rows: List<PlanRow>,
+    logs: List<CookLogRow>,
     onOpenRecipe: (Long) -> Unit,
     onPrep: (date: String) -> Unit,
     onShopping: (from: String, days: Int) -> Unit,
     onToday: () -> Unit,
+    onDeleteLog: (CookLogRow) -> Unit,
     modifier: Modifier = Modifier,
     showDate: Boolean = true,
 ) {
@@ -167,6 +190,12 @@ fun PlanDayCard(
     var picking by remember { mutableStateOf(false) }
     val today = DayText.today()
     val isToday = date == today
+    val past = date < today
+    // 排了的菜有记录就算做过；没排、直接记的单独列在后面
+    fun matches(log: CookLogRow, row: PlanRow) =
+        if (log.recipeId != null) log.recipeId == row.recipeId else log.title == row.title
+    val unplanned = logs.filter { log -> rows.none { matches(log, it) } }
+    val cookedCount = rows.count { row -> row.done || logs.any { matches(it, row) } } + unplanned.size
     SoftCard(
         modifier.fillMaxWidth(),
         shape = RoundedCornerShape(24.dp),
@@ -182,29 +211,53 @@ fun PlanDayCard(
                         val full = if (parsed != null && label.length <= 2) "$label · ${parsed.monthValue}月${parsed.dayOfMonth}日 ${DayText.weekday(date)}" else label
                         Text(full, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     } else {
-                        Text("计划", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Text(if (past) "这天的菜" else "计划", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     }
-                    val total = CookCalendar.total(rows.map { it.calories })
-                    val meta = when {
-                        rows.isEmpty() -> "还没排菜"
-                        total != null -> "${rows.size} 道 · ${CalorieText.format(total)}"
-                        else -> "${rows.size} 道"
+                    val count = rows.size + unplanned.size
+                    val total = CookCalendar.total(rows.map { it.calories } + unplanned.map { it.calories })
+                    val meta = if (count == 0) {
+                        if (past) "没排菜" else "还没排菜"
+                    } else {
+                        listOfNotNull(
+                            "$count 道",
+                            total?.let(CalorieText::format),
+                            "做了 $cookedCount 道".takeIf { cookedCount > 0 && cookedCount < count },
+                            "都做了".takeIf { cookedCount == count },
+                        ).joinToString(" · ")
                     }
                     Text(meta, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                TextButton(onClick = { picking = true }) {
-                    Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Text(" 加菜")
+                if (!past) {
+                    TextButton(onClick = { picking = true }) {
+                        Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Text(" 加菜")
+                    }
                 }
             }
             rows.forEach { row ->
+                val cooked = row.done || logs.any { matches(it, row) }
                 PlanRecipeRow(
-                    row = row,
+                    title = row.title,
+                    coverImage = row.coverImage,
+                    calories = row.calories,
+                    cooked = cooked,
                     onClick = row.recipeId?.let { id -> { onOpenRecipe(id) } },
+                    removeLabel = "移出计划",
                     onRemove = { scope.launch { app.repository.removeFromPlan(row.uid) } },
                 )
             }
-            if (rows.any { it.recipeId != null }) {
+            unplanned.forEach { log ->
+                PlanRecipeRow(
+                    title = log.title,
+                    coverImage = log.coverImage,
+                    calories = log.calories,
+                    cooked = true,
+                    onClick = log.recipeId?.let { id -> { onOpenRecipe(id) } },
+                    removeLabel = "删除记录",
+                    onRemove = { onDeleteLog(log) },
+                )
+            }
+            if (!past && rows.any { it.recipeId != null }) {
                 Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.End) {
                     TextButton(onClick = { onPrep(date) }) { Text("备料") }
                     TextButton(onClick = { onShopping(date, 1) }) { Text("买菜") }
@@ -234,28 +287,34 @@ fun PlanDayCard(
     }
 }
 
-/** 菜谱已经删掉的计划点不开，菜名旁边注明 */
+/** 一道菜：排了的或者做过的。菜谱已经删掉的点不开，菜名旁边注明 */
 @Composable
-private fun PlanRecipeRow(row: PlanRow, onClick: (() -> Unit)?, onRemove: () -> Unit) {
+private fun PlanRecipeRow(
+    title: String,
+    coverImage: String?,
+    calories: Int?,
+    cooked: Boolean,
+    onClick: (() -> Unit)?,
+    removeLabel: String,
+    onRemove: () -> Unit,
+) {
     SoftCard(
         Modifier.fillMaxWidth().padding(end = 8.dp, top = 4.dp, bottom = 4.dp),
         shape = RoundedCornerShape(18.dp),
         onClick = onClick,
     ) {
         Row(Modifier.padding(start = 8.dp, end = 4.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            RecipeCover(row.title, row.coverImage, Modifier.size(40.dp).clip(RoundedCornerShape(12.dp)), initialSize = 18.sp)
+            RecipeCover(title, coverImage, Modifier.size(40.dp).clip(RoundedCornerShape(12.dp)), initialSize = 18.sp)
             Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                Text(row.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                val meta = if (onClick == null) {
-                    "菜谱已删除"
-                } else {
-                    listOfNotNull("做完了".takeIf { row.done }, row.calories?.let(CalorieText::format))
-                        .joinToString(" · ").ifEmpty { null }
-                }
+                Text(title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                val meta = listOfNotNull(
+                    "做过了".takeIf { cooked },
+                    if (onClick == null) "菜谱已删除" else calories?.let(CalorieText::format),
+                ).joinToString(" · ").ifEmpty { null }
                 meta?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             }
             IconButton(onClick = onRemove) {
-                Icon(Icons.Filled.Close, contentDescription = "移出计划", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                Icon(Icons.Filled.Close, contentDescription = removeLabel, tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }

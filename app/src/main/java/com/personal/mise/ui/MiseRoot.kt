@@ -64,7 +64,6 @@ import com.personal.mise.ui.cooking.CookingScreen
 import com.personal.mise.ui.detail.RecipeDetailScreen
 import com.personal.mise.ui.edit.ImportScreen
 import com.personal.mise.ui.edit.RecipeEditScreen
-import com.personal.mise.ui.history.HistoryScreen
 import com.personal.mise.ui.list.RecipeListScreen
 import com.personal.mise.ui.plan.PlanScreen
 import com.personal.mise.ui.prep.PrepListScreen
@@ -86,7 +85,6 @@ object Routes {
     const val TODAY = "today"
     const val PREP = "prep"
     const val SHOPPING = "shopping"
-    const val HISTORY = "history"
     const val PLAN = "plan"
     /** 某天计划的菜的备料清单 */
     fun prep(date: String) = "prep?date=$date"
@@ -146,7 +144,7 @@ fun MiseRoot(navRequests: MutableStateFlow<NavRequest?>) {
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         bottomBar = {
-            if (route == Routes.RECIPES || route == Routes.TODAY || route == Routes.PLAN || route == Routes.HISTORY) {
+            if (route == Routes.RECIPES || route == Routes.TODAY || route == Routes.PLAN) {
                 val todayCount by remember { app.repository.observeToday() }.collectAsStateWithLifecycle(emptyList())
                 FloatingTabBar {
                     TabPill(
@@ -164,15 +162,9 @@ fun MiseRoot(navRequests: MutableStateFlow<NavRequest?>) {
                     )
                     TabPill(
                         selected = route == Routes.PLAN,
-                        icon = MiseIcons.Plan,
-                        label = "计划",
-                        onClick = { nav.switchTab(Routes.PLAN) },
-                    )
-                    TabPill(
-                        selected = route == Routes.HISTORY,
                         icon = MiseIcons.Calendar,
-                        label = "做过",
-                        onClick = { nav.switchTab(Routes.HISTORY) },
+                        label = "日历",
+                        onClick = { nav.switchTab(Routes.PLAN) },
                     )
                 }
             }
@@ -205,14 +197,6 @@ fun MiseRoot(navRequests: MutableStateFlow<NavRequest?>) {
             }
             composable(Routes.PLAN) {
                 PlanScreen(
-                    onOpenRecipe = { nav.navigate(Routes.detail(it)) },
-                    onPrep = { nav.navigate(Routes.prep(it)) },
-                    onShopping = { from, days -> nav.navigate(Routes.shopping(from, days)) },
-                    onToday = { nav.switchTab(Routes.TODAY) },
-                )
-            }
-            composable(Routes.HISTORY) {
-                HistoryScreen(
                     onOpenRecipe = { nav.navigate(Routes.detail(it)) },
                     onPrep = { nav.navigate(Routes.prep(it)) },
                     onShopping = { from, days -> nav.navigate(Routes.shopping(from, days)) },
