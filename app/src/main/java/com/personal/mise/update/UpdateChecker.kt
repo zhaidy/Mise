@@ -99,6 +99,7 @@ class UpdateChecker(private val context: Context) {
                     Intent(context, InstallResultReceiver::class.java),
                     PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE,
                 )
+                markRelaunchRequested(context)
                 session.commit(callback.intentSender)
             }
         }
@@ -117,6 +118,23 @@ class UpdateChecker(private val context: Context) {
 
     internal companion object {
         const val REPO = "zhaidy/Mise"
+
+        private const val PREFS = "update"
+        private const val KEY_RELAUNCH = "relaunch_after_update"
+
+        /** 记一下“是应用里点的更新”，新版装好后 [UpdatedReceiver] 据此自动重新打开 */
+        fun markRelaunchRequested(context: Context) {
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+                .putLong(KEY_RELAUNCH, System.currentTimeMillis()).commit()
+        }
+
+        /** 读一次就清掉；超过 30 分钟的标记当作过期（比如那次安装失败或被取消了） */
+        fun consumeRelaunchRequest(context: Context): Boolean {
+            val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            val at = prefs.getLong(KEY_RELAUNCH, 0)
+            prefs.edit().remove(KEY_RELAUNCH).apply()
+            return at > 0 && System.currentTimeMillis() - at < 30 * 60 * 1000
+        }
 
         /** Release 说明是 CI 用提交标题生成的 Markdown 列表，一行一条 */
         fun parseChanges(body: String): List<String> =
