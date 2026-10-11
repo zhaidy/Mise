@@ -63,6 +63,7 @@ fun RecipeEditor(
     vm: EditorViewModel,
     modifier: Modifier = Modifier,
     header: @Composable () -> Unit = {},
+    footer: @Composable () -> Unit = {},
 ) {
     var pickingStepKey by rememberSaveable { mutableStateOf<Long?>(null) }
     val pickCover = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
@@ -324,6 +325,7 @@ fun RecipeEditor(
                 Text("添加步骤")
             }
         }
+        item { footer() }
     }
 }
 

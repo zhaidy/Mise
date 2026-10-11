@@ -217,6 +217,11 @@ fun MiseRoot(navRequests: MutableStateFlow<NavRequest?>) {
                         nav.popBackStack()
                         if (id == 0L && savedId != null) nav.navigate(Routes.detail(savedId))
                     },
+                    onSavedEditBowls = { savedId ->
+                        nav.popBackStack()
+                        if (id == 0L) nav.navigate(Routes.detail(savedId))
+                        nav.navigate(Routes.bowls(savedId))
+                    },
                 )
             }
             composable(
