@@ -6,6 +6,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -80,6 +82,7 @@ import com.personal.mise.data.IngredientKind
 import com.personal.mise.data.RecipeFull
 import com.personal.mise.data.Step
 import com.personal.mise.data.TodayRow
+import com.personal.mise.data.tagList
 import com.personal.mise.timer.CookingTimer
 import com.personal.mise.ui.common.CircleIconButton
 import com.personal.mise.ui.common.EmptyState
@@ -95,6 +98,10 @@ import com.personal.mise.ui.common.miseFieldColors
 import com.personal.mise.ui.common.rememberApp
 import com.personal.mise.ui.detail.BowlCard
 import com.personal.mise.ui.detail.IngredientTable
+import com.personal.mise.ui.detail.PhaseLabel
+import com.personal.mise.ui.detail.SourceLink
+import com.personal.mise.ui.detail.StepBowl
+import com.personal.mise.util.CalorieText
 import com.personal.mise.ui.theme.LocalMiseColors
 import com.personal.mise.ui.theme.SerifFamily
 import com.personal.mise.util.AmountScaler
@@ -413,6 +420,7 @@ internal fun LazyListScope.recipeOverviewItems(
 ) {
     val mains = data.ingredients.filter { it.kind != IngredientKind.SEASONING }
     val seasonings = data.ingredients.filter { it.kind == IngredientKind.SEASONING }
+    item(key = keyPrefix + "info") { RecipeInfo(data, factor) }
     item(key = keyPrefix + "mains-title") { SectionHeader("主料", Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 4.dp)) }
     item(key = keyPrefix + "mains") { IngredientTable(mains, factor) }
     item(key = keyPrefix + "seasonings-title") {
@@ -423,14 +431,18 @@ internal fun LazyListScope.recipeOverviewItems(
         )
     }
     item(key = keyPrefix + "seasonings") { IngredientTable(seasonings, factor) }
-    if (data.bowls.isNotEmpty()) {
-        item(key = keyPrefix + "bowls-title") {
-            SectionHeader(
-                "调料碗",
-                Modifier.padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 4.dp),
-                accent = MaterialTheme.colorScheme.tertiary,
-            )
+    item(key = keyPrefix + "bowls-title") {
+        SectionHeader(
+            "调料碗",
+            Modifier.padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 4.dp),
+            accent = MaterialTheme.colorScheme.tertiary,
+        )
+    }
+    if (data.bowls.isEmpty()) {
+        item(key = keyPrefix + "bowls-empty") {
+            Text("没有需要提前配的调料碗", Modifier.padding(horizontal = 20.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+    } else {
         items(data.bowls, key = { keyPrefix + "bowl-${it.bowl.id}" }) { bowl ->
             val stepIndex = data.steps.indexOfFirst { it.id == bowl.bowl.stepId }
             BowlCard(bowl, if (stepIndex >= 0) StepPhase.bowlStepLabel(stepIndex, cookStart, data.steps[stepIndex].text) else null, factor)
@@ -446,49 +458,82 @@ internal fun LazyListScope.recipeOverviewItems(
             )
         }
         itemsIndexed(data.steps, key = { _, s -> keyPrefix + "step-${s.id}" }) { index, step ->
+            val app = rememberApp()
             val current = index == currentStep
-            Surface(
-                onClick = { onJump?.invoke(index) },
-                enabled = onJump != null,
-                shape = RoundedCornerShape(20.dp),
-                color = if (current) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
-                contentColor = if (current) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
-            ) {
-                Row(Modifier.padding(horizontal = 12.dp, vertical = 12.dp)) {
-                    Box(
-                        Modifier.size(32.dp).background(
-                            if (current) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                            CircleShape,
-                        ),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(
-                            "${index + 1}",
-                            color = if (current) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.background,
-                            fontFamily = SerifFamily,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 15.sp,
-                        )
-                    }
-                    Spacer(Modifier.width(14.dp))
-                    Column(Modifier.weight(1f).padding(top = 4.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        when {
-                            current -> Text("正在做", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
-                            cookStart != null && index == cookStart -> Text("开火", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
-                        }
-                        Text(step.text, style = MaterialTheme.typography.bodyLarge)
-                        data.bowlsForStep(step.id).forEach { bowl ->
+            Column {
+                if (cookStart != null && (index == 0 || index == cookStart)) {
+                    PhaseLabel(if (index == 0) "备料 · 开火前" else "开火", prep = index == 0)
+                }
+                Surface(
+                    onClick = { onJump?.invoke(index) },
+                    enabled = onJump != null,
+                    shape = RoundedCornerShape(20.dp),
+                    color = if (current) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+                    contentColor = if (current) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
+                ) {
+                    Row(Modifier.padding(horizontal = 12.dp, vertical = 12.dp)) {
+                        Box(
+                            Modifier.size(32.dp).background(
+                                if (current) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                                CircleShape,
+                            ),
+                            contentAlignment = Alignment.Center,
+                        ) {
                             Text(
-                                "倒入${bowl.bowl.label}",
-                                style = MaterialTheme.typography.labelLarge,
-                                color = MaterialTheme.colorScheme.tertiary,
+                                "${index + 1}",
+                                color = if (current) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.background,
+                                fontFamily = SerifFamily,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 15.sp,
                             )
+                        }
+                        Spacer(Modifier.width(14.dp))
+                        Column(Modifier.weight(1f).padding(top = 4.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            if (current) Text("正在做", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                            Text(step.text, style = MaterialTheme.typography.bodyLarge)
+                            data.bowlsForStep(step.id).forEach { StepBowl(it, factor) }
+                            step.timerSeconds?.let {
+                                InfoPill(
+                                    "计时 ${TimeText.describe(it)}",
+                                    container = MaterialTheme.colorScheme.tertiaryContainer,
+                                    content = MaterialTheme.colorScheme.onTertiaryContainer,
+                                )
+                            }
+                            if (app.hasImage(step.image)) {
+                                LocalImage(step.image, Modifier.fillMaxWidth().aspectRatio(4f / 3f).clip(RoundedCornerShape(16.dp)))
+                            }
                         }
                     }
                 }
             }
         }
+    }
+    data.recipe.sourceUrl?.let { url ->
+        item(key = keyPrefix + "source") { SourceLink(url) }
+    }
+}
+
+/** 菜谱开头的分类、份量、步数、热量，和详情页一样 */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun RecipeInfo(data: RecipeFull, factor: Double) {
+    val pills = buildList {
+        data.recipe.category?.takeIf { it.isNotBlank() }?.let { cat ->
+            add(data.recipe.subcategory?.takeIf { it.isNotBlank() }?.let { "$cat › $it" } ?: cat)
+        }
+        data.recipe.tagList.forEach { add("#$it") }
+        data.recipe.servings?.takeIf { it.isNotBlank() }?.let { add(it) }
+        if (data.steps.isNotEmpty()) add("${data.steps.size} 步")
+        data.recipe.calories?.let { add(CalorieText.describe(it, data.recipe.servings, factor)) }
+    }
+    if (pills.isEmpty()) return
+    FlowRow(
+        Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        pills.forEach { InfoPill(it) }
     }
 }
 

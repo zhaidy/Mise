@@ -377,30 +377,7 @@ fun RecipeDetailScreen(
                 }
             }
             data.recipe.sourceUrl?.let { url ->
-                item(key = "source") {
-                    val uriHandler = LocalUriHandler.current
-                    val linkColor = MaterialTheme.colorScheme.primary
-                    val text = remember(url, linkColor) {
-                        buildAnnotatedString {
-                            append("来源：")
-                            if (url.startsWith("http://") || url.startsWith("https://")) {
-                                val link = LinkAnnotation.Url(
-                                    url,
-                                    TextLinkStyles(SpanStyle(color = linkColor, textDecoration = TextDecoration.Underline)),
-                                ) { runCatching { uriHandler.openUri(url) } }
-                                withLink(link) { append(url) }
-                            } else {
-                                append(url)
-                            }
-                        }
-                    }
-                    Text(
-                        text,
-                        Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+                item(key = "source") { SourceLink(url) }
             }
         }
     }
@@ -464,9 +441,36 @@ fun RecipeDetailScreen(
     }
 }
 
+/** 菜谱来源，网址可以直接点开 */
+@Composable
+internal fun SourceLink(url: String) {
+    val uriHandler = LocalUriHandler.current
+    val linkColor = MaterialTheme.colorScheme.primary
+    val text = remember(url, linkColor) {
+        buildAnnotatedString {
+            append("来源：")
+            if (url.startsWith("http://") || url.startsWith("https://")) {
+                val link = LinkAnnotation.Url(
+                    url,
+                    TextLinkStyles(SpanStyle(color = linkColor, textDecoration = TextDecoration.Underline)),
+                ) { runCatching { uriHandler.openUri(url) } }
+                withLink(link) { append(url) }
+            } else {
+                append(url)
+            }
+        }
+    }
+    Text(
+        text,
+        Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}
+
 /** 步骤分段的小标题：备料用浅色，开火用主色 */
 @Composable
-private fun PhaseLabel(text: String, prep: Boolean) {
+internal fun PhaseLabel(text: String, prep: Boolean) {
     Box(Modifier.padding(start = 20.dp, end = 20.dp, bottom = 12.dp)) {
         InfoPill(
             text,
@@ -478,7 +482,7 @@ private fun PhaseLabel(text: String, prep: Boolean) {
 
 /** 步骤下面列出这一步倒入的调料碗：碗名和碗里每样调料的用量 */
 @Composable
-private fun StepBowl(bowl: BowlFull, factor: Double) {
+internal fun StepBowl(bowl: BowlFull, factor: Double) {
     Surface(
         Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
