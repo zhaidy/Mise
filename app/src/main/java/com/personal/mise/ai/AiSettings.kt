@@ -32,10 +32,11 @@ data class AiModel(val provider: AiProvider, val id: String, val label: String) 
     }
 }
 
-/** 用哪些 AI 模型、什么顺序，和各家的 API Key，存在本机，不会跟菜谱一起导出；加入共享厨房时 Key 会同步给厨房里的人 */
+/** 用哪些 AI 模型、什么顺序，和各家的 API Key，存在本机，不会跟菜谱一起导出；加入共享厨房时都会同步给厨房里的人 */
 class AiSettings(context: Context) {
     private val prefs = context.getSharedPreferences("ai", Context.MODE_PRIVATE)
     private val keysChanged = MutableStateFlow(0)
+    private val modelsChanged = MutableStateFlow(0)
 
     init {
         // 以前支持过 Claude，去掉后把本机存的 Claude Key 也删掉
@@ -87,8 +88,33 @@ class AiSettings(context: Context) {
             return saved.split(',').mapNotNull(AiModel::fromKey).ifEmpty { AiModel.DEFAULT }
         }
         set(value) {
-            prefs.edit().putString(MODELS, value.joinToString(",") { it.key }).apply()
+            // 没改就不动，免得每次确认 AI 设置都当成新改的同步出去
+            val joined = value.joinToString(",") { it.key }
+            if (joined == prefs.getString(MODELS, null)) return
+            writeModels(joined, System.currentTimeMillis())
         }
+
+    /** 模型列表上次修改的时间；还没改过（用的是默认或从旧设置推出来的）是 0 */
+    val modelsUpdatedAt: Long get() = prefs.getLong(MODELS + UPDATED_AT_SUFFIX, 0)
+
+    /** 存着的模型列表原样（AiModel.key 的列表），给共享厨房同步用；这个版本不认识的模型也留着，还给别的手机 */
+    val savedModelKeys: List<String> get() = prefs.getString(MODELS, null)?.split(',')?.filter { it.isNotEmpty() }.orEmpty()
+
+    /** 共享厨房里别人改了用哪些模型、什么顺序，同步到本机 */
+    fun applyRemoteModels(keys: List<String>, updatedAt: Long) = writeModels(keys.joinToString(","), updatedAt)
+
+    private fun writeModels(joined: String, updatedAt: Long) {
+        prefs.edit()
+            .putString(MODELS, joined)
+            .putLong(MODELS + UPDATED_AT_SUFFIX, updatedAt)
+            .apply()
+        modelsChanged.update { it + 1 }
+    }
+
+    /** 改过模型列表时给出它的修改时间，uid 是 [MODELS_SYNC_ID]；给共享厨房同步用 */
+    fun observeModelsStamps(): Flow<List<RecipeStamp>> = modelsChanged.map {
+        listOfNotNull(RecipeStamp(MODELS_SYNC_ID, modelsUpdatedAt).takeIf { it.updatedAt > 0 })
+    }
 
     /**
      * 还没存过模型列表时，从以前的设置推出来：以前选的是 DeepSeek 就只用 DeepSeek；
@@ -120,16 +146,19 @@ class AiSettings(context: Context) {
     /** 有没有能用的模型（勾选了且填了 Key） */
     val hasKey: Boolean get() = firstUsable != null
 
-    private companion object {
-        const val CELLULAR_FALLBACK = "cellular_fallback"
-        const val MODELS = "models"
-        const val OLD_PROVIDER = "provider"
-        const val OLD_GEMINI_MODELS = "gemini_models"
-        const val OLD_DEEPSEEK_FALLBACK = "deepseek_fallback"
-        const val UPDATED_AT_SUFFIX = "_updated_at"
-        const val OLD_CLAUDE_KEY = "claude_key"
+    companion object {
+        /** 模型列表在云端的文档 id */
+        const val MODELS_SYNC_ID = "models"
 
-        fun keyName(provider: AiProvider) = when (provider) {
+        private const val CELLULAR_FALLBACK = "cellular_fallback"
+        private const val MODELS = "models"
+        private const val OLD_PROVIDER = "provider"
+        private const val OLD_GEMINI_MODELS = "gemini_models"
+        private const val OLD_DEEPSEEK_FALLBACK = "deepseek_fallback"
+        private const val UPDATED_AT_SUFFIX = "_updated_at"
+        private const val OLD_CLAUDE_KEY = "claude_key"
+
+        private fun keyName(provider: AiProvider) = when (provider) {
             AiProvider.GEMINI -> "gemini_key"
             AiProvider.DEEPSEEK -> "deepseek_key"
             AiProvider.AGNES -> "agnes_key"

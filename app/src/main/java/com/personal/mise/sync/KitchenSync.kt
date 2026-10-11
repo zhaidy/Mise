@@ -44,7 +44,7 @@ import java.security.SecureRandom
  *
  * 云端是 kitchens/{邀请码}/recipes/{uid}（每道菜一个文档）、kitchens/{邀请码}/today/{uid}（今日菜单）、
  * kitchens/{邀请码}/history/{菜谱 uid_日期}（做菜记录）、kitchens/{邀请码}/images/{文件名}（图片）
- * 和 kitchens/{邀请码}/aiKeys/{服务商}（AI 的 API Key）。本地和云端任何一边变了，
+ * kitchens/{邀请码}/aiKeys/{服务商}（AI 的 API Key）和 kitchens/{邀请码}/aiSettings/models（用哪些 AI 模型、什么顺序）。本地和云端任何一边变了，
  * 就逐条比较 updatedAt，新的覆盖旧的。Firestore 自带离线缓存，没网时的改动联网后补传。
  */
 class KitchenSync(
@@ -148,7 +148,7 @@ class KitchenSync(
         }
     }
 
-    /** 成员人数、菜谱、今日菜单、做菜记录、图片、AI Key 各自同步，任何一个出错就整体重来 */
+    /** 成员人数、菜谱、今日菜单、做菜记录、图片、AI Key、AI 模型列表各自同步，任何一个出错就整体重来 */
     private suspend fun sync(code: String, kitchen: DocumentReference) {
         coroutineScope {
             launch {
@@ -195,6 +195,16 @@ class KitchenSync(
                     updatedAt = { it.updatedAt },
                     apply = { aiSettings.applyRemoteKey(it.provider, it.key, it.updatedAt) },
                     load = { id -> SyncedAiKey.local(aiSettings, id)?.toMap() },
+                )
+            }
+            launch {
+                syncCollection<SyncedAiModels>(
+                    collection = kitchen.collection(AI_SETTINGS),
+                    localStamps = aiSettings.observeModelsStamps(),
+                    parse = { id, data -> SyncedAiModels.fromMap(id, data) },
+                    updatedAt = { it.updatedAt },
+                    apply = { aiSettings.applyRemoteModels(it.models, it.updatedAt) },
+                    load = { id -> SyncedAiModels.local(aiSettings, id)?.toMap() },
                 )
             }
         }
@@ -323,6 +333,7 @@ class KitchenSync(
         const val IMAGES = "images"
         const val HISTORY = "history"
         const val AI_KEYS = "aiKeys"
+        const val AI_SETTINGS = "aiSettings"
         const val KEY_UPLOADED_PREFIX = "images_done_"
         const val IMAGE_TIMEOUT_MS = 60_000L
         const val IMAGE_RETRY_FIRST_MS = 5_000L
