@@ -30,10 +30,23 @@ class DeepSeekClient(private val settings: AiSettings, private val http: AiHttp)
         AiReply(replyJson(reply.body), modelDisplayName(replyModel(reply.body)))
     }
 
+    /** 查账户余额，返回给人看的文字，比如「余额 ¥110.00」；出错时抛 ImportException */
+    suspend fun balance(key: String): String = withContext(Dispatchers.IO) {
+        val request = Request.Builder()
+            .url(BALANCE_ENDPOINT)
+            .header("Authorization", "Bearer $key")
+            .get()
+            .build()
+        val reply = http.execute(request, "DeepSeek")
+        if (!reply.isSuccessful) throw ImportException(errorMessage(reply.code, reply.body))
+        balanceText(reply.body)
+    }
+
     companion object {
         const val NO_KEY = "还没有填写 DeepSeek API Key"
 
         private const val ENDPOINT = "https://api.deepseek.com/chat/completions"
+        private const val BALANCE_ENDPOINT = "https://api.deepseek.com/user/balance"
         private const val MODEL = "deepseek-flash"
 
         fun requestBody(prompt: String, schema: JSONObject, images: List<ByteArray> = emptyList()): JSONObject = JSONObject()
@@ -76,6 +89,24 @@ class DeepSeekClient(private val settings: AiSettings, private val http: AiHttp)
             if (reply.isBlank()) throw ImportException("DeepSeek 没有返回内容，请重试")
             return runCatching { JSONObject(reply) }.getOrNull()
                 ?: throw ImportException("DeepSeek 返回的格式不对，请重试")
+        }
+
+        /** 把 /user/balance 的响应变成「余额 ¥110.00」；人民币和美元都有余额时两个都列出来 */
+        fun balanceText(body: String): String {
+            val json = runCatching { JSONObject(body) }.getOrNull() ?: throw ImportException("DeepSeek 返回的余额格式不对")
+            val infos = json.optJSONArray("balance_infos") ?: JSONArray()
+            val amounts = (0 until infos.length()).mapNotNull { i ->
+                val info = infos.optJSONObject(i) ?: return@mapNotNull null
+                val total = info.optString("total_balance").takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                when (val currency = info.optString("currency")) {
+                    "CNY" -> "¥$total"
+                    "USD" -> "$$total"
+                    else -> "$total $currency"
+                }
+            }
+            if (amounts.isEmpty()) throw ImportException("DeepSeek 没有返回余额")
+            val text = "余额 " + amounts.joinToString("、")
+            return if (json.optBoolean("is_available", true)) text else "$text，不够用了，请到 platform.deepseek.com 充值"
         }
 
         private fun errorMessage(code: Int, body: String): String {

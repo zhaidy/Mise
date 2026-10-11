@@ -9,7 +9,6 @@ import kotlinx.coroutines.flow.update
 
 enum class AiProvider(val label: String, val keyHelp: String) {
     GEMINI("Gemini", "在 aistudio.google.com 免费申请"),
-    CLAUDE("Claude", "在 platform.claude.com 申请，按用量付费"),
     DEEPSEEK("DeepSeek", "在 platform.deepseek.com 申请，预付费，余额用完就停、不会自动扣费"),
 }
 
@@ -17,6 +16,11 @@ enum class AiProvider(val label: String, val keyHelp: String) {
 class AiSettings(context: Context) {
     private val prefs = context.getSharedPreferences("ai", Context.MODE_PRIVATE)
     private val keysChanged = MutableStateFlow(0)
+
+    init {
+        // 以前支持过 Claude，去掉后把本机存的 Claude Key 也删掉
+        if (prefs.contains(OLD_CLAUDE_KEY)) prefs.edit().remove(OLD_CLAUDE_KEY).remove(OLD_CLAUDE_KEY + UPDATED_AT_SUFFIX).apply()
+    }
 
     var provider: AiProvider
         get() = prefs.getString(PROVIDER, null)?.let { name -> AiProvider.entries.firstOrNull { it.name == name } } ?: AiProvider.GEMINI
@@ -89,10 +93,10 @@ class AiSettings(context: Context) {
         const val GEMINI_MODELS = "gemini_models"
         const val DEEPSEEK_FALLBACK = "deepseek_fallback"
         const val UPDATED_AT_SUFFIX = "_updated_at"
+        const val OLD_CLAUDE_KEY = "claude_key"
 
         fun keyName(provider: AiProvider) = when (provider) {
             AiProvider.GEMINI -> "gemini_key"
-            AiProvider.CLAUDE -> "claude_key"
             AiProvider.DEEPSEEK -> "deepseek_key"
         }
     }

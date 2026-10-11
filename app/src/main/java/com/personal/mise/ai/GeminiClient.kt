@@ -11,17 +11,13 @@ import org.json.JSONObject
 import java.time.Instant
 import java.time.ZoneId
 import java.util.Base64
-import java.util.concurrent.ConcurrentHashMap
 
 /**
  * 调用 Gemini，要求按 responseSchema 返回 JSON。
  * 按设置里的顺序一个个模型试：免费额度用完（429）、模型下线（404）或太忙（503）就换下一个，
  * 都不行时抛 [GeminiQuotaException]，由 [SwitchableAiClient] 决定要不要改用 DeepSeek。
  */
-class GeminiClient(private val settings: AiSettings, private val http: AiHttp) : AiProviderClient {
-
-    /** 当天额度已经用完的模型，到太平洋时间零点额度重置前不再去试 */
-    private val exhaustedUntil = ConcurrentHashMap<String, Long>()
+class GeminiClient(private val settings: AiSettings, private val usage: GeminiUsage, private val http: AiHttp) : AiProviderClient {
 
     override suspend fun generate(prompt: String, schema: JSONObject, images: List<ByteArray>): AiReply = withContext(Dispatchers.IO) {
         val key = settings.key(AiProvider.GEMINI)
@@ -30,16 +26,20 @@ class GeminiClient(private val settings: AiSettings, private val http: AiHttp) :
         val body = requestBody(prompt, schema, images).toString()
         for (model in settings.geminiModels) {
             val now = System.currentTimeMillis()
-            if ((exhaustedUntil[model] ?: 0L) > now) continue
+            // 当天额度已经用完的模型，到太平洋时间零点额度重置前不再去试
+            if (usage.exhaustedUntil(model, now) != null) continue
             val request = Request.Builder()
                 .url("$ENDPOINT/$model:generateContent")
                 .header("x-goog-api-key", key)
                 .post(body.toRequestBody("application/json".toMediaType()))
                 .build()
             val reply = http.execute(request, "Gemini")
-            if (reply.isSuccessful) return@withContext AiReply(replyJson(reply.body), displayName(model))
+            if (reply.isSuccessful) {
+                usage.recordSuccess(model)
+                return@withContext AiReply(replyJson(reply.body), displayName(model))
+            }
             if (reply.code !in TRY_NEXT) throw ImportException(errorMessage(reply.code, reply.body))
-            if (reply.code == 429 && isDailyQuota(reply.body)) exhaustedUntil[model] = nextQuotaReset(now)
+            if (reply.code == 429 && isDailyQuota(reply.body)) usage.markExhausted(model, now)
         }
         throw GeminiQuotaException()
     }
@@ -67,11 +67,15 @@ class GeminiClient(private val settings: AiSettings, private val http: AiHttp) :
         fun isDailyQuota(body: String): Boolean = body.contains("PerDay")
 
         /** 免费额度在太平洋时间零点重置 */
+        private val QUOTA_ZONE = ZoneId.of("America/Los_Angeles")
+
         fun nextQuotaReset(nowMillis: Long): Long {
-            val zone = ZoneId.of("America/Los_Angeles")
-            val today = Instant.ofEpochMilli(nowMillis).atZone(zone).toLocalDate()
-            return today.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
+            val today = Instant.ofEpochMilli(nowMillis).atZone(QUOTA_ZONE).toLocalDate()
+            return today.plusDays(1).atStartOfDay(QUOTA_ZONE).toInstant().toEpochMilli()
         }
+
+        /** 免费额度算在哪一天（太平洋时间的日期，比如 2026-10-10） */
+        fun quotaDay(nowMillis: Long): String = Instant.ofEpochMilli(nowMillis).atZone(QUOTA_ZONE).toLocalDate().toString()
 
         fun requestBody(prompt: String, schema: JSONObject, images: List<ByteArray> = emptyList()): JSONObject = JSONObject()
             .put("contents", JSONArray().put(JSONObject().put("parts", parts(prompt, images))))
