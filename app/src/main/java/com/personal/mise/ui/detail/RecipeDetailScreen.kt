@@ -71,6 +71,7 @@ import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLinkStyles
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withLink
@@ -361,6 +362,7 @@ fun RecipeDetailScreen(
                         Spacer(Modifier.width(14.dp))
                         Column(Modifier.weight(1f).padding(top = 4.dp, bottom = 20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text(step.text, style = MaterialTheme.typography.bodyLarge)
+                            data.bowlsForStep(step.id).forEach { StepBowlPill(it) }
                             step.timerSeconds?.let {
                                 InfoPill(
                                     "计时 ${TimeText.describe(it)}",
@@ -472,6 +474,28 @@ private fun PhaseLabel(text: String, prep: Boolean) {
             container = if (prep) MaterialTheme.colorScheme.surfaceContainerHigh else MaterialTheme.colorScheme.primary,
             content = if (prep) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onPrimary,
         )
+    }
+}
+
+/** 步骤下面标出这一步倒入哪个调料碗，以及碗里有什么 */
+@Composable
+private fun StepBowlPill(bowl: BowlFull) {
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.tertiaryContainer,
+        contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+    ) {
+        Row(Modifier.heightIn(min = 30.dp).padding(horizontal = 12.dp, vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(MiseIcons.Bowl, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(6.dp))
+            Text(
+                buildAnnotatedString {
+                    withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append("倒入${bowl.bowl.label}") }
+                    if (bowl.items.isNotEmpty()) append("：" + bowl.items.joinToString("、") { it.name })
+                },
+                style = MaterialTheme.typography.labelLarge,
+            )
+        }
     }
 }
 
