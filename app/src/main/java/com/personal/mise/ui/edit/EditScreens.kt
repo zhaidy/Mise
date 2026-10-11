@@ -170,11 +170,10 @@ private fun EditorScaffold(
     }
 
     if (askingKey) {
-        GeminiKeyDialog(
+        AiKeyDialog(
             confirmLabel = "保存并整理",
             onDismiss = { askingKey = false },
             onConfirm = {
-                vm.saveGeminiKey(it)
                 askingKey = false
                 vm.load()
             },

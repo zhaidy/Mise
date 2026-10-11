@@ -115,13 +115,9 @@ class BowlEditViewModel(private val app: MiseApp, private val recipeId: Long) : 
         }
     }
 
-    val hasGeminiKey: Boolean get() = app.aiSettings.hasKey
+    val hasAiKey: Boolean get() = app.aiSettings.hasKey
 
-    fun saveGeminiKey(key: String) {
-        app.aiSettings.geminiKey = key
-    }
-
-    /** 让 Gemini 按下锅时机重新分碗；结果先放在编辑界面里，点保存才生效 */
+    /** 让 AI 按下锅时机重新分碗；结果先放在编辑界面里，点保存才生效 */
     fun aiOrganize() {
         if (aiBusy || !loaded) return
         aiBusy = true

@@ -14,7 +14,7 @@ import java.util.zip.ZipOutputStream
 
 /**
  * 手动备份：把数据库和 files/images/ 打包成一个 zip，存到用户选的位置。
- * Gemini Key 不放进备份文件。恢复后数据库实例已关闭，调用方需要重启 App。
+ * AI 的 API Key 不放进备份文件。恢复后数据库实例已关闭，调用方需要重启 App。
  */
 class BackupManager(private val context: Context, private val db: MiseDatabase) {
 

@@ -1,8 +1,7 @@
 package com.personal.mise
 
-import com.personal.mise.ai.GeminiAmountEstimator
+import com.personal.mise.ai.AiAmountEstimator
 import com.personal.mise.importer.ImportException
-import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -10,40 +9,38 @@ import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-class GeminiAmountEstimatorTest {
+class AiAmountEstimatorTest {
 
-    private fun reply(json: String) = JSONObject()
-        .put("candidates", JSONArray().put(JSONObject().put("content", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", json))))))
-        .toString()
+    private fun reply(json: String) = JSONObject(json)
 
     @Test
     fun needsEstimateOnlyForVagueOrMissingAmounts() {
-        assertTrue(GeminiAmountEstimator.needsEstimate("盐", "适量"))
-        assertTrue(GeminiAmountEstimator.needsEstimate("葱", ""))
-        assertTrue(GeminiAmountEstimator.needsEstimate("糖", " 少许 "))
-        assertFalse(GeminiAmountEstimator.needsEstimate("猪肉", "500克"))
-        assertFalse(GeminiAmountEstimator.needsEstimate("番茄", "一个半"))
-        assertFalse(GeminiAmountEstimator.needsEstimate("", "适量"))
-        assertFalse(GeminiAmountEstimator.needsEstimate("盐", "约3克（估算）"))
+        assertTrue(AiAmountEstimator.needsEstimate("盐", "适量"))
+        assertTrue(AiAmountEstimator.needsEstimate("葱", ""))
+        assertTrue(AiAmountEstimator.needsEstimate("糖", " 少许 "))
+        assertFalse(AiAmountEstimator.needsEstimate("猪肉", "500克"))
+        assertFalse(AiAmountEstimator.needsEstimate("番茄", "一个半"))
+        assertFalse(AiAmountEstimator.needsEstimate("", "适量"))
+        assertFalse(AiAmountEstimator.needsEstimate("盐", "约3克（估算）"))
     }
 
     @Test
     fun needsGramsForConcreteNonGramAmounts() {
-        assertTrue(GeminiAmountEstimator.needsGrams("生抽", "15毫升"))
-        assertTrue(GeminiAmountEstimator.needsGrams("鸡蛋", "2个"))
-        assertTrue(GeminiAmountEstimator.needsGrams("猪肉", "半斤"))
-        assertTrue(GeminiAmountEstimator.needsGrams("糖", "约1勺（估算）"))
-        assertFalse(GeminiAmountEstimator.needsGrams("猪肉", "500克"))
-        assertFalse(GeminiAmountEstimator.needsGrams("面粉", "200 g"))
-        assertFalse(GeminiAmountEstimator.needsGrams("牛肉", "1kg"))
-        assertFalse(GeminiAmountEstimator.needsGrams("生抽", "15毫升 ≈18克"))
-        assertFalse(GeminiAmountEstimator.needsGrams("盐", "适量"))
-        assertFalse(GeminiAmountEstimator.needsGrams("", "2个"))
+        assertTrue(AiAmountEstimator.needsGrams("生抽", "15毫升"))
+        assertTrue(AiAmountEstimator.needsGrams("鸡蛋", "2个"))
+        assertTrue(AiAmountEstimator.needsGrams("猪肉", "半斤"))
+        assertTrue(AiAmountEstimator.needsGrams("糖", "约1勺（估算）"))
+        assertFalse(AiAmountEstimator.needsGrams("猪肉", "500克"))
+        assertFalse(AiAmountEstimator.needsGrams("面粉", "200 g"))
+        assertFalse(AiAmountEstimator.needsGrams("牛肉", "1kg"))
+        assertFalse(AiAmountEstimator.needsGrams("生抽", "15毫升 ≈18克"))
+        assertFalse(AiAmountEstimator.needsGrams("盐", "适量"))
+        assertFalse(AiAmountEstimator.needsGrams("", "2个"))
     }
 
     @Test
     fun promptMarksOnlyTargets() {
-        val prompt = GeminiAmountEstimator.prompt(
+        val prompt = AiAmountEstimator.prompt(
             "猪肉炖粉条", "", listOf("猪肉" to "500克", "盐" to "适量", "生抽" to "1勺"), listOf("炖熟"),
         )
         assertTrue(prompt.contains("1. 猪肉：500克\n"))
@@ -66,7 +63,7 @@ class GeminiAmountEstimatorTest {
                 """{"ingredient":6,"amount":"","grams":0},""" +
                 """{"ingredient":7,"amount":"","grams":0}]}""",
         )
-        val result = GeminiAmountEstimator.parseResponse(body, ingredients)
+        val result = AiAmountEstimator.parseResponse(body, ingredients)
         assertEquals(
             mapOf(
                 1 to "约3克（估算）",
@@ -81,7 +78,7 @@ class GeminiAmountEstimatorTest {
     @Test
     fun throwsWhenNothingEstimated() {
         assertThrows(ImportException::class.java) {
-            GeminiAmountEstimator.parseResponse(reply("""{"estimates":[]}"""), listOf("盐" to "适量"))
+            AiAmountEstimator.parseResponse(reply("""{"estimates":[]}"""), listOf("盐" to "适量"))
         }
     }
 }

@@ -2,12 +2,15 @@ package com.personal.mise
 
 import android.app.Application
 import androidx.compose.runtime.mutableStateMapOf
+import com.personal.mise.ai.AiAmountEstimator
+import com.personal.mise.ai.AiBowlOrganizer
+import com.personal.mise.ai.AiClient
+import com.personal.mise.ai.AiRecipeOrganizer
 import com.personal.mise.ai.AiSettings
-import com.personal.mise.ai.GeminiAmountEstimator
-import com.personal.mise.ai.GeminiBowlOrganizer
+import com.personal.mise.ai.AiStepSplitter
+import com.personal.mise.ai.ClaudeClient
 import com.personal.mise.ai.GeminiClient
-import com.personal.mise.ai.GeminiRecipeOrganizer
-import com.personal.mise.ai.GeminiStepSplitter
+import com.personal.mise.ai.SwitchableAiClient
 import com.personal.mise.backup.BackupManager
 import com.personal.mise.data.MiseDatabase
 import com.personal.mise.data.RecipeRepository
@@ -38,11 +41,11 @@ class MiseApp : Application() {
     val aiSettings: AiSettings by lazy { AiSettings(this) }
     val updater: UpdateChecker by lazy { UpdateChecker(this) }
     val backup: BackupManager by lazy { BackupManager(this, database) }
-    private val gemini: GeminiClient by lazy { GeminiClient(aiSettings) }
-    val stepSplitter: GeminiStepSplitter by lazy { GeminiStepSplitter(gemini) }
-    val noteOrganizer: GeminiRecipeOrganizer by lazy { GeminiRecipeOrganizer(gemini) }
-    val bowlOrganizer: GeminiBowlOrganizer by lazy { GeminiBowlOrganizer(gemini) }
-    val amountEstimator: GeminiAmountEstimator by lazy { GeminiAmountEstimator(gemini) }
+    private val ai: AiClient by lazy { SwitchableAiClient(aiSettings, GeminiClient(aiSettings), ClaudeClient(aiSettings)) }
+    val stepSplitter: AiStepSplitter by lazy { AiStepSplitter(ai) }
+    val noteOrganizer: AiRecipeOrganizer by lazy { AiRecipeOrganizer(ai) }
+    val bowlOrganizer: AiBowlOrganizer by lazy { AiBowlOrganizer(ai) }
+    val amountEstimator: AiAmountEstimator by lazy { AiAmountEstimator(ai) }
 
     /** 每道菜当前的用量倍率，只在本次运行里有效；详情、备料、做菜页共用 */
     val scales = mutableStateMapOf<Long, Double>()

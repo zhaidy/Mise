@@ -61,11 +61,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.personal.mise.MainActivity
+import com.personal.mise.ai.AiProvider
 import com.personal.mise.data.Recipe
 import com.personal.mise.importer.UrlExtractor
 import com.personal.mise.ui.common.LocalImage
 import com.personal.mise.ui.common.hasImage
 import com.personal.mise.ui.common.rememberApp
+import com.personal.mise.ui.edit.AiKeyDialog
+import com.personal.mise.ui.edit.AiKeyFields
 import com.personal.mise.update.UpdateInfo
 import kotlinx.coroutines.launch
 import java.time.LocalDate
@@ -86,6 +89,7 @@ fun RecipeListScreen(
     var menuOpen by remember { mutableStateOf(false) }
     var pasteOpen by remember { mutableStateOf(false) }
     var noteOpen by remember { mutableStateOf(false) }
+    var aiSettingsOpen by remember { mutableStateOf(false) }
     var update by remember { mutableStateOf<UpdateInfo?>(null) }
     var updating by remember { mutableStateOf(false) }
     var moreOpen by remember { mutableStateOf(false) }
@@ -130,6 +134,10 @@ fun RecipeListScreen(
                             DropdownMenuItem(
                                 text = { Text("共享厨房") },
                                 onClick = { moreOpen = false; kitchenOpen = true },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("AI 设置") },
+                                onClick = { moreOpen = false; aiSettingsOpen = true },
                             )
                             DropdownMenuItem(
                                 text = { Text("检查更新") },
@@ -281,11 +289,26 @@ fun RecipeListScreen(
     if (noteOpen) {
         AiNoteDialog(
             needsKey = !app.aiSettings.hasKey,
+            initialProvider = app.aiSettings.provider,
             onDismiss = { noteOpen = false },
-            onConfirm = { note, key ->
-                if (key.isNotBlank()) app.aiSettings.geminiKey = key
+            onConfirm = { note, provider, key ->
+                if (key.isNotBlank()) {
+                    app.aiSettings.saveKey(provider, key)
+                    app.aiSettings.provider = provider
+                }
                 noteOpen = false
                 onImport(note, true)
+            },
+        )
+    }
+
+    if (aiSettingsOpen) {
+        AiKeyDialog(
+            confirmLabel = "保存",
+            onDismiss = { aiSettingsOpen = false },
+            onConfirm = {
+                aiSettingsOpen = false
+                scope.launch { snackbar.showSnackbar("已改用 ${app.aiSettings.provider.label}") }
             },
         )
     }
@@ -346,15 +369,21 @@ private fun PasteLinkDialog(onDismiss: () -> Unit, onConfirm: (String) -> Unit) 
     )
 }
 
-/** 粘贴手机笔记里的菜谱文字，交给 AI 整理；还没填 Gemini Key 时一起填 */
+/** 粘贴手机笔记里的菜谱文字，交给 AI 整理；还没填 Key 时一起选 AI、填 Key */
 @Composable
-private fun AiNoteDialog(needsKey: Boolean, onDismiss: () -> Unit, onConfirm: (note: String, key: String) -> Unit) {
+private fun AiNoteDialog(
+    needsKey: Boolean,
+    initialProvider: AiProvider,
+    onDismiss: () -> Unit,
+    onConfirm: (note: String, provider: AiProvider, key: String) -> Unit,
+) {
     val context = LocalContext.current
     var text by remember {
         val clip = (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).primaryClip
         val pasted = clip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(context)?.toString().orEmpty()
         mutableStateOf(if (UrlExtractor.isLinkShare(pasted)) "" else pasted)
     }
+    var provider by remember { mutableStateOf(initialProvider) }
     var key by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -377,23 +406,13 @@ private fun AiNoteDialog(needsKey: Boolean, onDismiss: () -> Unit, onConfirm: (n
                 )
                 if (needsKey) {
                     Spacer(Modifier.height(12.dp))
-                    Text(
-                        "需要 Gemini API Key：在 aistudio.google.com 免费申请，只保存在这台手机上。",
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                    OutlinedTextField(
-                        value = key,
-                        onValueChange = { key = it },
-                        label = { Text("API Key") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                    )
+                    AiKeyFields(provider, { provider = it }, key, { key = it })
                 }
             }
         },
         confirmButton = {
             TextButton(
-                onClick = { onConfirm(text, key) },
+                onClick = { onConfirm(text, provider, key) },
                 enabled = text.isNotBlank() && (!needsKey || key.isNotBlank()),
             ) { Text("整理") }
         },
