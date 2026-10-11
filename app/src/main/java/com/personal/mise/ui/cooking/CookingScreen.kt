@@ -78,10 +78,10 @@ import kotlinx.coroutines.launch
 private val BodySize = 24.sp
 private val ButtonHeight = 60.dp
 
-@OptIn(ExperimentalMaterial3Api::class)
 /** 别的手机翻了步骤后，等这么久再跟着翻 */
 private const val FOLLOW_DELAY_MS = 600L
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CookingScreen(initialRecipeId: Long, onBack: () -> Unit) {
     val app = rememberApp()
