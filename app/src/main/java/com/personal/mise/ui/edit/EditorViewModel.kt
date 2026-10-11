@@ -256,6 +256,10 @@ class EditorViewModel(
         steps += StepRow(nextKey())
     }
 
+    fun insertStepAfter(index: Int) {
+        steps.add(index + 1, StepRow(nextKey()))
+    }
+
     fun updateStepText(index: Int, text: String) {
         steps[index] = steps[index].copy(text = text)
     }

@@ -267,6 +267,9 @@ fun RecipeEditor(
                             Text("${index + 1}", color = MaterialTheme.colorScheme.background, fontFamily = SerifFamily, fontWeight = FontWeight.Bold)
                         }
                         Text("第 ${index + 1} 步", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f).padding(start = 10.dp))
+                        IconButton(onClick = { vm.insertStepAfter(index) }) {
+                            Icon(Icons.Filled.Add, contentDescription = "在下面插入步骤")
+                        }
                         IconButton(onClick = { vm.moveStep(index, -1) }, enabled = index > 0) {
                             Icon(Icons.Filled.KeyboardArrowUp, contentDescription = "上移")
                         }
