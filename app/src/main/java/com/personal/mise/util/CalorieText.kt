@@ -30,4 +30,11 @@ object CalorieText {
         val n = servingsCount(servings)
         return if (n == null || n == 1) format(calories) else "${format(calories)} · 每人约 ${(calories.toDouble() / n).roundToInt()}"
     }
+
+    /** 几个人分着吃，每人约多少千卡 */
+    fun perPerson(total: Int, diners: Int): Int = (total.toDouble() / diners.coerceAtLeast(1)).roundToInt()
+
+    /** 超过「人数 × 每人上限」多少千卡，没超返回 null */
+    fun overBy(total: Int, diners: Int, perPersonLimit: Int): Int? =
+        (total - diners.coerceAtLeast(1) * perPersonLimit).takeIf { it > 0 }
 }

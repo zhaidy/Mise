@@ -18,6 +18,7 @@ import com.personal.mise.ai.ClaudeClient
 import com.personal.mise.ai.GeminiClient
 import com.personal.mise.ai.SwitchableAiClient
 import com.personal.mise.backup.BackupManager
+import com.personal.mise.data.CalorieBudget
 import com.personal.mise.data.MiseDatabase
 import com.personal.mise.data.Pantry
 import com.personal.mise.data.RecipeRepository
@@ -51,6 +52,7 @@ class MiseApp : Application() {
     val updater: UpdateChecker by lazy { UpdateChecker(this) }
     val backup: BackupManager by lazy { BackupManager(this, database) }
     val pantry: Pantry by lazy { Pantry(this) }
+    val calorieBudget: CalorieBudget by lazy { CalorieBudget(this) }
     private val ai: AiClient by lazy {
         val cellular = CellularNetwork(this)
         val onCellularUsed = {
