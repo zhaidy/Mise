@@ -11,11 +11,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import org.json.JSONObject
+import org.json.JSONArray
 import java.io.File
 
-/** 新版本信息：build 号就是 CI 的 run number，同时也是 versionCode */
-data class UpdateInfo(val build: Long, val apkUrl: String)
+/**
+ * 新版本信息：build 号就是 CI 的 run number，同时也是 versionCode。
+ * [changes] 是当前版本之后每个 build 的更新内容，新的在前
+ */
+data class UpdateInfo(val build: Long, val apkUrl: String, val changes: List<String> = emptyList())
 
 /** 从 GitHub Releases 检查并安装新版本（CI 每次推 main 会发一个 build-N 的 Release） */
 class UpdateChecker(private val context: Context) {
@@ -23,26 +26,29 @@ class UpdateChecker(private val context: Context) {
 
     /** 有更新返回 [UpdateInfo]，已是最新返回 null；网络出错会抛异常 */
     suspend fun check(): UpdateInfo? = withContext(Dispatchers.IO) {
+        // 拉最近几十个 Release，把比当前版本新的那些的说明都拼起来，跳过好几个版本也不漏
         val request = Request.Builder()
-            .url("https://api.github.com/repos/$REPO/releases/latest")
+            .url("https://api.github.com/repos/$REPO/releases?per_page=30")
             .header("Accept", "application/vnd.github+json")
             .build()
         val body = client.newCall(request).execute().use { resp ->
             if (!resp.isSuccessful) error("HTTP ${resp.code}")
             resp.body.string()
         }
-        val json = JSONObject(body)
-        val build = json.getString("tag_name").removePrefix("build-").toLongOrNull()
-            ?: return@withContext null
-        if (build <= currentBuild()) return@withContext null
-        val assets = json.getJSONArray("assets")
-        for (i in 0 until assets.length()) {
-            val asset = assets.getJSONObject(i)
-            if (asset.getString("name").endsWith(".apk")) {
-                return@withContext UpdateInfo(build, asset.getString("browser_download_url"))
-            }
-        }
-        null
+        val current = currentBuild()
+        val releases = JSONArray(body).let { arr -> (0 until arr.length()).map { arr.getJSONObject(it) } }
+            .filter { !it.optBoolean("draft") && !it.optBoolean("prerelease") }
+            .mapNotNull { r -> r.getString("tag_name").removePrefix("build-").toLongOrNull()?.let { it to r } }
+            .filter { (build, _) -> build > current }
+            .sortedByDescending { (build, _) -> build }
+        val (build, latest) = releases.firstOrNull() ?: return@withContext null
+        val apkUrl = latest.getJSONArray("assets").let { assets ->
+            (0 until assets.length()).map { assets.getJSONObject(it) }
+                .firstOrNull { it.getString("name").endsWith(".apk") }
+                ?.getString("browser_download_url")
+        } ?: return@withContext null
+        val changes = releases.flatMap { (_, r) -> parseChanges(r.optString("body")) }.distinct()
+        UpdateInfo(build, apkUrl, changes)
     }
 
     /** 下载 APK 到缓存目录；先清掉以前下的包，最多只留一个 */
@@ -109,7 +115,13 @@ class UpdateChecker(private val context: Context) {
     private fun currentBuild(): Long =
         context.packageManager.getPackageInfo(context.packageName, 0).longVersionCode
 
-    private companion object {
+    internal companion object {
         const val REPO = "zhaidy/Mise"
+
+        /** Release 说明是 CI 用提交标题生成的 Markdown 列表，一行一条 */
+        fun parseChanges(body: String): List<String> =
+            body.lines()
+                .map { it.trim().removePrefix("- ").removePrefix("* ").trim() }
+                .filter { it.isNotEmpty() }
     }
 }

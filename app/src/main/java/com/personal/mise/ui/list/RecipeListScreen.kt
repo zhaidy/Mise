@@ -378,13 +378,20 @@ fun RecipeListScreen(
             onDismissRequest = { if (!updating) update = null },
             title = { Text("发现新版本 build ${info.build}") },
             text = {
-                Text(
-                    when {
-                        updating -> "正在下载安装…装好后应用会自动关闭，点通知就能回来。"
-                        timersRunning -> "数据会保留。注意：更新会中断正在进行的计时。"
-                        else -> "装好后应用会自动关闭，数据会保留。"
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    if (info.changes.isNotEmpty()) {
+                        Text("更新内容", style = MaterialTheme.typography.titleSmall)
+                        info.changes.forEach { Text("• $it", style = MaterialTheme.typography.bodyMedium) }
+                        Spacer(Modifier.height(12.dp))
                     }
-                )
+                    Text(
+                        when {
+                            updating -> "正在下载安装…装好后应用会自动关闭，点通知就能回来。"
+                            timersRunning -> "数据会保留。注意：更新会中断正在进行的计时。"
+                            else -> "装好后应用会自动关闭，数据会保留。"
+                        }
+                    )
+                }
             },
             confirmButton = {
                 TextButton(
