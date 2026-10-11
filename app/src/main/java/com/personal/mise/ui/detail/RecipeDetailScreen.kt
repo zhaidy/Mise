@@ -633,12 +633,19 @@ internal fun StepBowl(bowl: BowlFull, factor: Double) {
                 Text("倒入${bowl.bowl.label}", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
             }
             bowl.items.forEach { item ->
-                Row(Modifier.fillMaxWidth().padding(start = 24.dp)) {
-                    Text(item.name, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-                    Text(UnitText.display(AmountScaler.scale(item.amountText, factor)), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
-                }
+                BowlItemRow(item.name, UnitText.display(AmountScaler.scale(item.amountText, factor)), Modifier.padding(start = 24.dp))
             }
         }
+    }
+}
+
+/** 调料碗里的一样调料：名称靠左、用量靠右；用量太长放不下就换到下一行，不挤压名称 */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun BowlItemRow(name: String, amount: String, modifier: Modifier = Modifier) {
+    FlowRow(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(name, Modifier.padding(end = 12.dp), style = MaterialTheme.typography.bodyMedium)
+        Text(amount, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
     }
 }
 
@@ -712,10 +719,7 @@ fun BowlCard(bowl: BowlFull, subtitle: String?, factor: Double = 1.0, modifier: 
                 subtitle?.let { Text(it, style = MaterialTheme.typography.labelLarge) }
             }
             bowl.items.forEach { item ->
-                Row(Modifier.fillMaxWidth().padding(start = 28.dp, top = 2.dp)) {
-                    Text(item.name, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-                    Text(UnitText.display(AmountScaler.scale(item.amountText, factor)), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
-                }
+                BowlItemRow(item.name, UnitText.display(AmountScaler.scale(item.amountText, factor)), Modifier.padding(start = 28.dp, top = 2.dp))
             }
         }
     }
