@@ -40,6 +40,8 @@ data class RecipeDraft(
     val category: String? = null,
     val subcategory: String? = null,
     val tags: List<String> = emptyList(),
+    /** 翻译前的原文，没翻译过为空 */
+    val original: RecipeText? = null,
     val ingredients: List<IngredientDraft> = emptyList(),
     val steps: List<StepDraft> = emptyList(),
 )
@@ -110,6 +112,7 @@ class RecipeRepository(
             category = full.recipe.category,
             subcategory = full.recipe.subcategory,
             tags = full.recipe.tagList,
+            original = RecipeText.fromJson(full.recipe.original),
             ingredients = full.ingredients.map { IngredientDraft(it.id, it.name, it.amountText, it.kind) },
             steps = full.steps.map { StepDraft(it.id, it.text, it.image, it.timerSeconds) },
         )
@@ -130,6 +133,7 @@ class RecipeRepository(
                         category = draft.cleanCategory,
                         subcategory = draft.cleanSubcategory,
                         tags = RecipeTags.format(draft.tags),
+                        original = draft.original?.toJson()?.toString(),
                     )
                 )
             } else {
@@ -144,6 +148,7 @@ class RecipeRepository(
                         category = draft.cleanCategory,
                         subcategory = draft.cleanSubcategory,
                         tags = RecipeTags.format(draft.tags),
+                        original = draft.original?.toJson()?.toString(),
                         updatedAt = System.currentTimeMillis(),
                     )
                 )
@@ -296,6 +301,7 @@ class RecipeRepository(
                 category = remote.category,
                 subcategory = remote.subcategory,
                 tags = RecipeTags.format(remote.tags),
+                original = remote.original,
             )
             val recipeId = if (existing == null) dao.insert(row) else { dao.update(row); existing.id }
 

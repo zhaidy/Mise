@@ -33,6 +33,8 @@ data class Recipe(
     val subcategory: String? = null,
     /** 标签，逗号分隔，如「荤菜,好吃」；见 RecipeTags */
     val tags: String = "",
+    /** 从英文网站导入、翻译成中文的菜谱留着原文（RecipeText 的 JSON），详情页可以切过去看；空表示没翻译过 */
+    val original: String? = null,
 )
 
 @Entity(

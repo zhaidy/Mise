@@ -2,7 +2,7 @@ package com.personal.mise.importer
 
 import com.personal.mise.ai.AiRecipeOrganizer
 import com.personal.mise.ai.AiRecipeTranslator
-import com.personal.mise.ai.RecipeText
+import com.personal.mise.data.RecipeText
 import com.personal.mise.bowl.SeasoningDictionary
 import com.personal.mise.data.IngredientDraft
 import com.personal.mise.data.IngredientKind
@@ -155,6 +155,7 @@ class RecipeImporter(
             coverImage = cover,
             sourceUrl = recipeId?.let { XiachufangParser.desktopUrl(it) } ?: finalUrl,
             servings = text.servings,
+            original = original.takeIf { text !== original },
             ingredients = text.ingredients.map { (name, amount) ->
                 IngredientDraft(
                     name = name,

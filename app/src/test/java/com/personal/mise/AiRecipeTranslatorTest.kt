@@ -1,11 +1,12 @@
 package com.personal.mise
 
 import com.personal.mise.ai.AiRecipeTranslator
-import com.personal.mise.ai.RecipeText
+import com.personal.mise.data.RecipeText
 import com.personal.mise.importer.ImportException
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -62,5 +63,19 @@ class AiRecipeTranslatorTest {
     fun `条数对不上时报错`() {
         val reply = JSONObject("""{"title":"蒜香黄油虾","ingredients":[],"steps":["化开黄油","放入虾"]}""")
         assertThrows(ImportException::class.java) { AiRecipeTranslator.parseResponse(reply, english) }
+    }
+
+    @Test
+    fun `原文存成 JSON 再读回来不变`() {
+        assertEquals(english, RecipeText.fromJson(english.toJson().toString()))
+        val noServings = english.copy(servings = null)
+        assertEquals(noServings, RecipeText.fromJson(noServings.toJson().toString()))
+    }
+
+    @Test
+    fun `原文为空或格式不对时读成 null`() {
+        assertNull(RecipeText.fromJson(null))
+        assertNull(RecipeText.fromJson(""))
+        assertNull(RecipeText.fromJson("{oops"))
     }
 }

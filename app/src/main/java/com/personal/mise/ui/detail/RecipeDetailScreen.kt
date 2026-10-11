@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -84,6 +85,7 @@ import androidx.compose.foundation.clickable
 import com.personal.mise.data.BowlFull
 import com.personal.mise.data.Ingredient
 import com.personal.mise.data.IngredientKind
+import com.personal.mise.data.RecipeText
 import com.personal.mise.ui.common.BottomActionBar
 import com.personal.mise.ui.common.CircleIconButton
 import com.personal.mise.ui.common.FieldShape
@@ -133,6 +135,8 @@ fun RecipeDetailScreen(
     var askingKey by remember { mutableStateOf(false) }
     var logOpen by remember { mutableStateOf(false) }
     var classifyOpen by remember { mutableStateOf(false) }
+    /** 翻译过的菜谱切到原文看 */
+    var showOriginal by remember { mutableStateOf(false) }
     val cookDates by remember(recipeId) { app.repository.observeCookDates(recipeId) }.collectAsStateWithLifecycle(emptyList())
     val factor = app.scaleOf(recipeId)
 
@@ -189,6 +193,8 @@ fun RecipeDetailScreen(
         val cookStart = remember(data.steps) { StepPhase.cookStart(data.steps.map { it.text }) }
         val mains = data.ingredients.filter { it.kind != IngredientKind.SEASONING }
         val seasonings = data.ingredients.filter { it.kind == IngredientKind.SEASONING }
+        val original = remember(data.recipe.original) { RecipeText.fromJson(data.recipe.original) }
+        val originalShown = original?.takeIf { showOriginal }
 
         val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
 
@@ -222,7 +228,7 @@ fun RecipeDetailScreen(
                             .padding(start = 20.dp, end = 20.dp, top = 26.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
-                        Text(data.recipe.title, style = MaterialTheme.typography.headlineMedium)
+                        Text(originalShown?.title?.takeIf { it.isNotBlank() } ?: data.recipe.title, style = MaterialTheme.typography.headlineMedium)
                         FlowRow(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -256,6 +262,21 @@ fun RecipeDetailScreen(
                             if (factor != 1.0) {
                                 TextButton(onClick = { app.scales.remove(recipeId) }) { Text("恢复原量") }
                             }
+                            if (original != null) {
+                                Surface(
+                                    onClick = { showOriginal = !showOriginal },
+                                    shape = CircleShape,
+                                    color = if (showOriginal) MaterialTheme.colorScheme.secondary else Color.Transparent,
+                                    contentColor = if (showOriginal) MaterialTheme.colorScheme.onSecondary else MaterialTheme.colorScheme.secondary,
+                                    border = androidx.compose.foundation.BorderStroke(1.5.dp, MaterialTheme.colorScheme.secondary),
+                                ) {
+                                    Text(
+                                        if (showOriginal) "看中文" else "看原文",
+                                        style = MaterialTheme.typography.labelLarge,
+                                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
+                                    )
+                                }
+                            }
                         }
                         SoftCard(Modifier.fillMaxWidth().padding(top = 4.dp), shape = RoundedCornerShape(20.dp)) {
                             Column {
@@ -287,90 +308,94 @@ fun RecipeDetailScreen(
                 }
             }
 
-            item(key = "mains-title") { SectionHeader("主料", Modifier.padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 4.dp)) }
-            item(key = "mains") { IngredientTable(mains, factor) }
-            item(key = "seasonings-title") {
-                SectionHeader(
-                    "调料",
-                    Modifier.padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 4.dp),
-                    accent = MaterialTheme.colorScheme.secondary,
-                )
-            }
-            item(key = "seasonings") { IngredientTable(seasonings, factor) }
-
-            item(key = "bowls-title") {
-                SectionHeader(
-                    "调料碗",
-                    Modifier.padding(start = 20.dp, end = 8.dp, top = 20.dp, bottom = 4.dp),
-                    accent = MaterialTheme.colorScheme.tertiary,
-                ) {
-                    TextButton(onClick = onEditBowls) { Text("调整") }
-                }
-            }
-            if (data.bowls.isEmpty()) {
-                item(key = "bowls-empty") {
-                    Text(
-                        "没有需要提前配的调料碗",
-                        Modifier.padding(horizontal = 20.dp),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+            if (originalShown != null) {
+                originalItems(originalShown)
+            } else {
+                item(key = "mains-title") { SectionHeader("主料", Modifier.padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 4.dp)) }
+                item(key = "mains") { IngredientTable(mains, factor) }
+                item(key = "seasonings-title") {
+                    SectionHeader(
+                        "调料",
+                        Modifier.padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 4.dp),
+                        accent = MaterialTheme.colorScheme.secondary,
                     )
                 }
-            } else {
-                data.bowls.forEach { bowl ->
-                    item(key = "bowl-${bowl.bowl.id}") {
-                        val stepIndex = data.steps.indexOfFirst { it.id == bowl.bowl.stepId }
-                        BowlCard(bowl, if (stepIndex >= 0) StepPhase.bowlStepLabel(stepIndex, cookStart, data.steps[stepIndex].text) else null, factor)
+                item(key = "seasonings") { IngredientTable(seasonings, factor) }
+
+                item(key = "bowls-title") {
+                    SectionHeader(
+                        "调料碗",
+                        Modifier.padding(start = 20.dp, end = 8.dp, top = 20.dp, bottom = 4.dp),
+                        accent = MaterialTheme.colorScheme.tertiary,
+                    ) {
+                        TextButton(onClick = onEditBowls) { Text("调整") }
                     }
                 }
-            }
-
-            item(key = "steps-title") {
-                SectionHeader(
-                    "步骤",
-                    Modifier.padding(start = 20.dp, end = 20.dp, top = 24.dp, bottom = 12.dp),
-                    accent = MaterialTheme.colorScheme.secondary,
-                )
-            }
-            itemsIndexed(data.steps, key = { _, s -> "step-${s.id}" }) { index, step ->
-                Column {
-                    if (cookStart != null && (index == 0 || index == cookStart)) {
-                        PhaseLabel(if (index == 0) "备料 · 开火前" else "开火", prep = index == 0)
+                if (data.bowls.isEmpty()) {
+                    item(key = "bowls-empty") {
+                        Text(
+                            "没有需要提前配的调料碗",
+                            Modifier.padding(horizontal = 20.dp),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
-                    Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min).padding(horizontal = 20.dp)) {
-                        Column(Modifier.fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally) {
-                            Box(
-                                Modifier.size(32.dp).background(MaterialTheme.colorScheme.onSurface, CircleShape),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Text(
-                                    "${index + 1}",
-                                    color = MaterialTheme.colorScheme.background,
-                                    fontFamily = SerifFamily,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 15.sp,
-                                )
-                            }
-                            // 备料最后一步和开火第一步之间断开
-                            if (index < data.steps.lastIndex && index + 1 != cookStart) {
-                                Box(
-                                    Modifier.padding(vertical = 4.dp).width(2.dp).weight(1f)
-                                        .background(MaterialTheme.colorScheme.outlineVariant),
-                                )
-                            }
+                } else {
+                    data.bowls.forEach { bowl ->
+                        item(key = "bowl-${bowl.bowl.id}") {
+                            val stepIndex = data.steps.indexOfFirst { it.id == bowl.bowl.stepId }
+                            BowlCard(bowl, if (stepIndex >= 0) StepPhase.bowlStepLabel(stepIndex, cookStart, data.steps[stepIndex].text) else null, factor)
                         }
-                        Spacer(Modifier.width(14.dp))
-                        Column(Modifier.weight(1f).padding(top = 4.dp, bottom = 20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text(step.text, style = MaterialTheme.typography.bodyLarge)
-                            data.bowlsForStep(step.id).forEach { StepBowl(it, factor) }
-                            step.timerSeconds?.let {
-                                InfoPill(
-                                    "计时 ${TimeText.describe(it)}",
-                                    container = MaterialTheme.colorScheme.tertiaryContainer,
-                                    content = MaterialTheme.colorScheme.onTertiaryContainer,
-                                )
+                    }
+                }
+
+                item(key = "steps-title") {
+                    SectionHeader(
+                        "步骤",
+                        Modifier.padding(start = 20.dp, end = 20.dp, top = 24.dp, bottom = 12.dp),
+                        accent = MaterialTheme.colorScheme.secondary,
+                    )
+                }
+                itemsIndexed(data.steps, key = { _, s -> "step-${s.id}" }) { index, step ->
+                    Column {
+                        if (cookStart != null && (index == 0 || index == cookStart)) {
+                            PhaseLabel(if (index == 0) "备料 · 开火前" else "开火", prep = index == 0)
+                        }
+                        Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min).padding(horizontal = 20.dp)) {
+                            Column(Modifier.fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally) {
+                                Box(
+                                    Modifier.size(32.dp).background(MaterialTheme.colorScheme.onSurface, CircleShape),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Text(
+                                        "${index + 1}",
+                                        color = MaterialTheme.colorScheme.background,
+                                        fontFamily = SerifFamily,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 15.sp,
+                                    )
+                                }
+                                // 备料最后一步和开火第一步之间断开
+                                if (index < data.steps.lastIndex && index + 1 != cookStart) {
+                                    Box(
+                                        Modifier.padding(vertical = 4.dp).width(2.dp).weight(1f)
+                                            .background(MaterialTheme.colorScheme.outlineVariant),
+                                    )
+                                }
                             }
-                            if (app.hasImage(step.image)) {
-                                LocalImage(step.image, Modifier.fillMaxWidth().aspectRatio(4f / 3f).clip(RoundedCornerShape(16.dp)))
+                            Spacer(Modifier.width(14.dp))
+                            Column(Modifier.weight(1f).padding(top = 4.dp, bottom = 20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text(step.text, style = MaterialTheme.typography.bodyLarge)
+                                data.bowlsForStep(step.id).forEach { StepBowl(it, factor) }
+                                step.timerSeconds?.let {
+                                    InfoPill(
+                                        "计时 ${TimeText.describe(it)}",
+                                        container = MaterialTheme.colorScheme.tertiaryContainer,
+                                        content = MaterialTheme.colorScheme.onTertiaryContainer,
+                                    )
+                                }
+                                if (app.hasImage(step.image)) {
+                                    LocalImage(step.image, Modifier.fillMaxWidth().aspectRatio(4f / 3f).clip(RoundedCornerShape(16.dp)))
+                                }
                             }
                         }
                     }
@@ -438,6 +463,49 @@ fun RecipeDetailScreen(
             },
             dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("取消") } },
         )
+    }
+}
+
+/** 翻译前的原文：用料和步骤都只有文字，没有调料碗、计时和图片 */
+private fun LazyListScope.originalItems(original: RecipeText) {
+    original.servings?.takeIf { it.isNotBlank() }?.let { servings ->
+        item(key = "original-servings") {
+            Text(servings, Modifier.padding(start = 20.dp, end = 20.dp, top = 20.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+    item(key = "original-ingredients-title") { SectionHeader("Ingredients", Modifier.padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 4.dp)) }
+    item(key = "original-ingredients") {
+        IngredientTable(
+            original.ingredients.mapIndexed { i, (name, amount) ->
+                Ingredient(id = -1L - i, recipeId = 0, name = name, amountText = amount, kind = IngredientKind.MAIN, order = i)
+            },
+            1.0,
+        )
+    }
+    item(key = "original-steps-title") {
+        SectionHeader(
+            "Steps",
+            Modifier.padding(start = 20.dp, end = 20.dp, top = 24.dp, bottom = 12.dp),
+            accent = MaterialTheme.colorScheme.secondary,
+        )
+    }
+    itemsIndexed(original.steps, key = { i, _ -> "original-step-$i" }) { index, text ->
+        Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, bottom = 20.dp)) {
+            Box(
+                Modifier.size(32.dp).background(MaterialTheme.colorScheme.onSurface, CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    "${index + 1}",
+                    color = MaterialTheme.colorScheme.background,
+                    fontFamily = SerifFamily,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.sp,
+                )
+            }
+            Spacer(Modifier.width(14.dp))
+            Text(text, Modifier.weight(1f).padding(top = 4.dp), style = MaterialTheme.typography.bodyLarge)
+        }
     }
 }
 

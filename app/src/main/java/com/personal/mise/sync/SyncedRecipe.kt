@@ -24,6 +24,8 @@ data class SyncedRecipe(
     val ingredients: List<SyncedIngredient>,
     val steps: List<SyncedStep>,
     val bowls: List<SyncedBowl>,
+    /** 翻译前的原文（RecipeText 的 JSON），没翻译过为空 */
+    val original: String? = null,
 ) {
     fun toMap(): Map<String, Any?> = mapOf(
         "schema" to SCHEMA,
@@ -39,6 +41,7 @@ data class SyncedRecipe(
         "category" to category,
         "subcategory" to subcategory,
         "tags" to tags,
+        "original" to original,
         "ingredients" to ingredients.map { mapOf("name" to it.name, "amountText" to it.amountText, "kind" to it.kind) },
         "steps" to steps.map { mapOf("text" to it.text, "image" to it.image, "timerSeconds" to it.timerSeconds) },
         "bowls" to bowls.map { bowl ->
@@ -71,6 +74,7 @@ data class SyncedRecipe(
                 category = r.category,
                 subcategory = r.subcategory,
                 tags = r.tagList,
+                original = r.original,
                 ingredients = full.ingredients.map { SyncedIngredient(it.name, it.amountText, it.kind) },
                 steps = full.steps.map { SyncedStep(it.text, it.image, it.timerSeconds) },
                 bowls = full.bowls.map { b ->
@@ -119,6 +123,7 @@ data class SyncedRecipe(
                 category = data["category"] as String?,
                 subcategory = data["subcategory"] as String?,
                 tags = (data["tags"] as List<*>?).orEmpty().map { it as String },
+                original = data["original"] as String?,
                 ingredients = ingredients,
                 steps = steps,
                 bowls = bowls,
