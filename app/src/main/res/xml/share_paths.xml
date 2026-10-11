@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 导出的菜谱、菜单图片先写到 cache/shared/，再通过 FileProvider 分享出去 -->
+<paths>
+    <cache-path name="shared" path="shared/" />
+</paths>

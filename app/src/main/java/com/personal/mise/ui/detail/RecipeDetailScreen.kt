@@ -35,6 +35,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DatePicker
@@ -96,6 +97,8 @@ import com.personal.mise.ui.common.OutlinePillButton
 import com.personal.mise.ui.common.PillButton
 import com.personal.mise.ui.common.RecipeCover
 import com.personal.mise.ui.common.SectionHeader
+import com.personal.mise.ui.common.ShareImageDialog
+import com.personal.mise.share.ShareImage
 import com.personal.mise.ui.common.SoftCard
 import com.personal.mise.importer.ImportException
 import com.personal.mise.ui.edit.AiKeyDialog
@@ -135,6 +138,7 @@ fun RecipeDetailScreen(
     var askingKey by remember { mutableStateOf(false) }
     var logOpen by remember { mutableStateOf(false) }
     var classifyOpen by remember { mutableStateOf(false) }
+    var shareOpen by remember { mutableStateOf(false) }
     /** 翻译过的菜谱切到原文看 */
     var showOriginal by remember { mutableStateOf(false) }
     val cookDates by remember(recipeId) { app.repository.observeCookDates(recipeId) }.collectAsStateWithLifecycle(emptyList())
@@ -217,6 +221,7 @@ fun RecipeDetailScreen(
                     ) {
                         CircleIconButton(Icons.AutoMirrored.Filled.ArrowBack, "返回", onBack, container = glass)
                         Spacer(Modifier.weight(1f))
+                        CircleIconButton(Icons.Filled.Share, "导出图片", { shareOpen = true }, container = glass)
                         CircleIconButton(Icons.Filled.Edit, "编辑", onEdit, container = glass)
                         CircleIconButton(Icons.Filled.Delete, "删除", { confirmDelete = true }, container = glass)
                     }
@@ -441,6 +446,27 @@ fun RecipeDetailScreen(
                 scaleOpen = false
             },
         )
+    }
+
+    if (shareOpen) {
+        full?.let { data ->
+            ShareImageDialog(
+                title = "导出菜谱图片",
+                name = data.recipe.title,
+                key = data to factor,
+                render = { ShareImage.recipe(data, factor, app.images) },
+                onDismiss = { shareOpen = false },
+                options = {
+                    if (factor != 1.0) {
+                        Text(
+                            "用量按 ${AmountScaler.label(factor)} 换算",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                },
+            )
+        }
     }
 
     if (classifyOpen) {
