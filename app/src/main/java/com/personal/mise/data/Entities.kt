@@ -5,8 +5,9 @@ import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import java.util.UUID
 
-@Entity(tableName = "recipe")
+@Entity(tableName = "recipe", indices = [Index(value = ["uid"], unique = true)])
 data class Recipe(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val title: String,
@@ -18,6 +19,12 @@ data class Recipe(
     val createdAt: Long = System.currentTimeMillis(),
     /** 用户手动调整过调料碗后为 true，之后保存菜谱不再自动覆盖 */
     val bowlsManual: Boolean = false,
+    /** 跨设备的身份，同步时用它对应同一道菜；本地 id 只在这台手机上有意义 */
+    val uid: String = UUID.randomUUID().toString(),
+    /** 菜谱本身、用料、步骤或调料碗改动时更新，同步时按它判断谁新 */
+    val updatedAt: Long = System.currentTimeMillis(),
+    /** 删除只做标记并清空内容，好让删除也能同步到别的设备 */
+    val deleted: Boolean = false,
 )
 
 @Entity(

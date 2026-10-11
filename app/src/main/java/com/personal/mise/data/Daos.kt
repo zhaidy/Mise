@@ -9,13 +9,13 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface RecipeDao {
-    @Query("SELECT * FROM recipe WHERE title LIKE '%' || :query || '%' ORDER BY createdAt DESC")
+    @Query("SELECT * FROM recipe WHERE deleted = 0 AND title LIKE '%' || :query || '%' ORDER BY createdAt DESC")
     fun search(query: String): Flow<List<Recipe>>
 
-    @Query("SELECT * FROM recipe WHERE id = :id")
+    @Query("SELECT * FROM recipe WHERE id = :id AND deleted = 0")
     fun observe(id: Long): Flow<Recipe?>
 
-    @Query("SELECT * FROM recipe WHERE id = :id")
+    @Query("SELECT * FROM recipe WHERE id = :id AND deleted = 0")
     suspend fun get(id: Long): Recipe?
 
     @Insert
@@ -24,8 +24,18 @@ interface RecipeDao {
     @Update
     suspend fun update(recipe: Recipe)
 
-    @Query("DELETE FROM recipe WHERE id = :id")
-    suspend fun delete(id: Long)
+    /** 只留下 uid 和删除标记，内容由调用方另行清掉 */
+    @Query("UPDATE recipe SET deleted = 1, coverImage = NULL, updatedAt = :now WHERE id = :id")
+    suspend fun markDeleted(id: Long, now: Long)
+
+    @Query("UPDATE recipe SET updatedAt = :now WHERE id = :id")
+    suspend fun touch(id: Long, now: Long)
+
+    @Query("DELETE FROM ingredient WHERE recipeId = :recipeId")
+    suspend fun deleteIngredients(recipeId: Long)
+
+    @Query("DELETE FROM step WHERE recipeId = :recipeId")
+    suspend fun deleteSteps(recipeId: Long)
 
     @Query("UPDATE recipe SET bowlsManual = :manual WHERE id = :id")
     suspend fun setBowlsManual(id: Long, manual: Boolean)
