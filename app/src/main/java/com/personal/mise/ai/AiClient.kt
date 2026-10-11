@@ -5,8 +5,8 @@ import org.json.JSONObject
 
 /** 让大模型按 JSON Schema 返回 JSON；Gemini 和 Claude 各有一个实现 */
 interface AiClient {
-    /** 返回模型回复里的 JSON 对象，出错时抛 ImportException */
-    suspend fun generate(prompt: String, schema: JSONObject): JSONObject
+    /** 返回模型回复里的 JSON 对象，出错时抛 ImportException；images 是一起发给模型看的 JPEG 图片 */
+    suspend fun generate(prompt: String, schema: JSONObject, images: List<ByteArray> = emptyList()): JSONObject
 }
 
 /** 按设置里选的服务商转给对应的客户端，每次调用时才读设置，切换后立即生效 */
@@ -15,10 +15,11 @@ class SwitchableAiClient(
     private val gemini: AiClient,
     private val claude: AiClient,
 ) : AiClient {
-    override suspend fun generate(prompt: String, schema: JSONObject): JSONObject = when (settings.provider) {
-        AiProvider.GEMINI -> gemini
-        AiProvider.CLAUDE -> claude
-    }.generate(prompt, schema)
+    override suspend fun generate(prompt: String, schema: JSONObject, images: List<ByteArray>): JSONObject =
+        when (settings.provider) {
+            AiProvider.GEMINI -> gemini
+            AiProvider.CLAUDE -> claude
+        }.generate(prompt, schema, images)
 }
 
 /** 标准 JSON Schema 的小工具；Claude 直接用，Gemini 由 [GeminiClient.toGeminiSchema] 转成它自己的格式 */

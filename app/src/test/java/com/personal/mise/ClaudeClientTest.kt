@@ -29,6 +29,18 @@ class ClaudeClientTest {
     }
 
     @Test
+    fun `图片放在文字前面`() {
+        val body = ClaudeClient.requestBody("看图整理", AiSchema.obj(), listOf(byteArrayOf(1, 2, 3)))
+        val content = body.getJSONArray("messages").getJSONObject(0).getJSONArray("content")
+        assertEquals(2, content.length())
+        val source = content.getJSONObject(0).getJSONObject("source")
+        assertEquals("base64", source.getString("type"))
+        assertEquals("image/jpeg", source.getString("media_type"))
+        assertEquals("AQID", source.getString("data"))
+        assertEquals("看图整理", content.getJSONObject(1).getString("text"))
+    }
+
+    @Test
     fun `可空字段用 anyOf，对象不允许多余字段`() {
         val schema = AiSchema.obj("n" to AiSchema.number(nullable = true))
         assertEquals(false, schema.get("additionalProperties"))

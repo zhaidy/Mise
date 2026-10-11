@@ -56,14 +56,14 @@ fun RecipeEditScreen(recipeId: Long, onDone: (savedId: Long?) -> Unit) {
     )
 }
 
-/** 导入预览：解析下厨房链接，或让 AI 整理笔记文字，确认或修改后再保存 */
+/** 导入预览：解析下厨房链接，或让 AI 整理笔记文字、小红书笔记，确认或修改后再保存 */
 @Composable
 fun ImportScreen(sharedText: String, aiNote: Boolean, onDone: (savedId: Long?) -> Unit) {
     val app = rememberApp()
     val vm: EditorViewModel = viewModel(key = "import-$aiNote-$sharedText") { EditorViewModel(app, 0L, sharedText, aiNote) }
     EditorScaffold(
         vm = vm,
-        title = if (aiNote) "AI 整理预览" else "导入预览",
+        title = if (vm.aiImport) "AI 整理预览" else "导入预览",
         saveLabel = "保存",
         discardMessage = "放弃导入吗？已下载的图片会被删除。",
         onDone = onDone,
@@ -76,14 +76,14 @@ fun ImportScreen(sharedText: String, aiNote: Boolean, onDone: (savedId: Long?) -
                     Column(Modifier.padding(16.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Filled.Warning, contentDescription = null)
-                            Text(if (aiNote) "  有些内容没整理出来" else "  有些内容没解析出来", style = MaterialTheme.typography.titleSmall)
+                            Text(if (vm.aiImport) "  有些内容没整理出来" else "  有些内容没解析出来", style = MaterialTheme.typography.titleSmall)
                         }
                         vm.warnings.forEach { Text("· $it", style = MaterialTheme.typography.bodyMedium) }
                     }
                 }
             } else {
                 Text(
-                    if (aiNote) "AI 已整理完成，请对照原文检查用料和步骤再保存" else "已解析完成，检查一下再保存",
+                    if (vm.aiImport) "AI 已整理完成，请对照原文检查用料和步骤再保存" else "已解析完成，检查一下再保存",
                     Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -148,6 +148,7 @@ private fun EditorScaffold(
                     Text(
                         when {
                             vm.aiNote -> "AI 正在整理菜谱，大约需要十几秒…"
+                            vm.isXhsLink -> "正在读取小红书笔记，AI 看图整理大约需要半分钟…"
                             vm.isImport -> "正在读取网页和下载图片…"
                             else -> "加载中…"
                         },

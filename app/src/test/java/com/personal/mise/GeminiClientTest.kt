@@ -29,6 +29,17 @@ class GeminiClientTest {
     }
 
     @Test
+    fun `图片放在文字前面`() {
+        val body = GeminiClient.requestBody("看图整理", AiSchema.obj(), listOf(byteArrayOf(1, 2, 3)))
+        val parts = body.getJSONArray("contents").getJSONObject(0).getJSONArray("parts")
+        assertEquals(2, parts.length())
+        val image = parts.getJSONObject(0).getJSONObject("inlineData")
+        assertEquals("image/jpeg", image.getString("mimeType"))
+        assertEquals("AQID", image.getString("data"))
+        assertEquals("看图整理", parts.getJSONObject(1).getString("text"))
+    }
+
+    @Test
     fun `取出回复里的 JSON`() {
         val body = """{"candidates":[{"content":{"parts":[{"text":${JSONObject.quote("""{"steps":[]}""")}}]}}]}"""
         assertEquals(0, GeminiClient.replyJson(body).getJSONArray("steps").length())

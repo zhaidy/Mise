@@ -16,6 +16,8 @@ import com.personal.mise.data.IngredientKind
 import com.personal.mise.data.RecipeDraft
 import com.personal.mise.data.StepDraft
 import com.personal.mise.importer.ImportException
+import com.personal.mise.importer.UrlExtractor
+import com.personal.mise.importer.XiaohongshuParser
 import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicLong
 
@@ -48,7 +50,7 @@ sealed interface LoadState {
 /**
  * 菜谱编辑页和导入预览页共用的状态。
  * recipeId = 0 且 importText 不为空时是导入预览：aiNote = true 时 importText 是笔记文字，交给 AI 整理，
- * 否则是下厨房链接。
+ * 否则是下厨房或小红书链接（小红书笔记也由 AI 整理）。
  */
 class EditorViewModel(
     private val app: MiseApp,
@@ -81,6 +83,7 @@ class EditorViewModel(
     var cover by mutableStateOf<String?>(null)
         private set
     private var sourceUrl: String? = null
+    private var aiOrganized = false
     val ingredients = mutableStateListOf<IngredientRow>()
     val steps = mutableStateListOf<StepRow>()
 
@@ -88,6 +91,12 @@ class EditorViewModel(
     private val addedImages = mutableSetOf<String>()
 
     val isImport: Boolean get() = importText != null
+
+    /** 小红书链接：抓到笔记后交给 AI 整理 */
+    val isXhsLink: Boolean = !aiNote && importText?.let { UrlExtractor.firstUrl(it) }?.let { XiaohongshuParser.isNoteUrl(it) } == true
+
+    /** 导入内容由 AI 整理（笔记文字或小红书），需要 Key */
+    val aiImport: Boolean get() = aiNote || isXhsLink
 
     init {
         load()
@@ -99,8 +108,11 @@ class EditorViewModel(
             try {
                 val draft = when {
                     importText != null -> {
+                        // 没填 Key 时先别去抓网页、下图片
+                        if (isXhsLink && !app.aiSettings.hasKey) throw ImportException("小红书笔记要用 AI 整理，请先填写 AI 的 API Key")
                         val result = if (aiNote) app.noteOrganizer.organize(importText) else app.importer.import(importText)
                         warnings = result.warnings
+                        aiOrganized = aiNote || result.aiOrganized
                         addedImages += listOfNotNull(result.draft.coverImage) + result.draft.steps.mapNotNull { it.image }
                         result.draft
                     }
@@ -114,10 +126,10 @@ class EditorViewModel(
                 loadState = LoadState.Ready
                 // 导入的菜谱里有「适量」、没写用量或不是按克写的，有 Key 就顺手让 AI 估一下用量和克重
                 if (importText != null && hasAiKey && canEstimate) aiEstimateAmounts()
-                // 下厨房链接导入的步骤常常几件事挤在一步里，有 Key 就自动用 AI 拆一下（笔记整理时 AI 已经分好步了）
-                if (importText != null && !aiNote && hasAiKey && steps.any { it.text.isNotBlank() }) aiSplitSteps(auto = true)
+                // 下厨房链接导入的步骤常常几件事挤在一步里，有 Key 就自动用 AI 拆一下（AI 整理时已经分好步了）
+                if (importText != null && !aiOrganized && hasAiKey && steps.any { it.text.isNotBlank() }) aiSplitSteps(auto = true)
             } catch (e: ImportException) {
-                loadState = LoadState.Failed(e.message ?: "导入失败", needsKey = aiNote && !app.aiSettings.hasKey)
+                loadState = LoadState.Failed(e.message ?: "导入失败", needsKey = aiImport && !app.aiSettings.hasKey)
             } catch (e: Exception) {
                 loadState = LoadState.Failed("出错了：${e.message ?: e.javaClass.simpleName}")
             }

@@ -47,7 +47,7 @@ import com.personal.mise.ui.today.TodayScreen
 import kotlinx.coroutines.flow.MutableStateFlow
 
 sealed interface NavRequest {
-    /** aiNote = true 时交给 AI 整理笔记文字，否则按下厨房链接导入 */
+    /** aiNote = true 时交给 AI 整理笔记文字，否则按下厨房或小红书链接导入 */
     data class Import(val text: String, val aiNote: Boolean = false) : NavRequest
     data class Cooking(val recipeId: Long) : NavRequest
 }

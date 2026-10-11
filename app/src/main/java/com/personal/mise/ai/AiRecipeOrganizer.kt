@@ -19,7 +19,7 @@ data class AiRecipe(
     val steps: List<AiStep>,
 )
 
-/** 把手机笔记里随手记的菜谱（格式不固定）交给 AI，整理成菜名、用料和步骤。 */
+/** 把手机笔记里随手记的菜谱、小红书笔记（格式不固定）交给 AI，整理成菜名、用料和步骤。 */
 class AiRecipeOrganizer(private val ai: AiClient) {
 
     suspend fun organize(note: String): ImportResult {
@@ -27,6 +27,13 @@ class AiRecipeOrganizer(private val ai: AiClient) {
         if (text.isEmpty()) throw ImportException("没有可以整理的文字")
         if (text.length > MAX_LENGTH) throw ImportException("文字太长了（超过 $MAX_LENGTH 字），请只粘贴一道菜")
         return toImportResult(parseResponse(ai.generate(PROMPT + text, schema)), text)
+    }
+
+    /** 小红书笔记：标题、正文，加上笔记配图（用料和步骤常常只写在图上） */
+    suspend fun organizeXhs(title: String, desc: String, images: List<ByteArray>): AiRecipe {
+        val text = xhsText(title, desc)
+        if (text.isEmpty() && images.isEmpty()) throw ImportException("这篇笔记没有文字也没有图片")
+        return parseResponse(ai.generate(xhsPrompt(images.size) + text, schema, images))
     }
 
     companion object {
@@ -45,6 +52,31 @@ class AiRecipeOrganizer(private val ai: AiClient) {
             "5. 只整理原文的内容，不要编造原文没有的食材、用量、时间或步骤，保留原文的数字。\n" +
             "6. 如果文字里有好几道菜，只整理第一道。如果完全不是菜谱，所有字段都返回空。\n\n" +
             "笔记原文：\n"
+
+        private const val XHS_PROMPT = "下面是一篇小红书上的中文菜谱笔记。小红书的排版很随意：标题常常是「绝了！」「一口气吃三碗」这类吸引眼球的话，" +
+            "正文夹杂大量表情、话题标签（#xxx）、口语和与做法无关的闲聊，用料和步骤可能写在正文里，也可能只写在配图上。" +
+            "请把它整理成一份规范的菜谱。\n" +
+            "要求：\n" +
+            "1. title：规范、简短的菜名（如「可乐鸡翅」），不要照抄标题里的感叹、形容和表情。\n" +
+            "2. servings：写了几人份或份量就填，没写留空。\n" +
+            "3. ingredients：所有用到的食材和调料，每样一条，name 只写名称，amount 写用量原文（如「300克」「2勺」「适量」），" +
+            "没写用量就留空字符串。做法里提到但用料里没列的也要收进来。同一样东西只列一次。\n" +
+            "4. steps：按先后顺序的做法，每一步只做一件主要的事，text 用简洁的一两句话，不要带序号和表情。" +
+            "明确写了某一步要等待或加热的时长（如「焖10分钟」）时，把分钟数填进 timerMinutes，否则留空。" +
+            "小贴士、注意事项放进相关的那一步里。\n" +
+            "5. 只整理笔记里写了的内容（正文和图片上的文字），不要编造没有写的食材、用量、时间或步骤，保留原来的数字。" +
+            "不要根据成品图或步骤图的画面去猜用料和用量。\n" +
+            "6. 正文和图片上的文字有出入时，以图片上写的用料和用量为准。去掉话题标签、@、求关注和广告。\n" +
+            "7. 如果笔记里有好几道菜，只整理第一道。如果完全不是菜谱，所有字段都返回空。\n\n"
+
+        /** 有图时告诉模型图片是按顺序排的笔记配图 */
+        private fun xhsPrompt(imageCount: Int) = XHS_PROMPT +
+            (if (imageCount > 0) "前面的 $imageCount 张图片是这篇笔记的配图，按笔记里的顺序排列。\n\n" else "") +
+            "笔记原文：\n"
+
+        fun xhsText(title: String, desc: String): String =
+            listOf(title.trim().takeIf { it.isNotEmpty() }?.let { "标题：$it" }, desc.trim().takeIf { it.isNotEmpty() })
+                .filterNotNull().joinToString("\n")
 
         private val schema
             get() = AiSchema.obj(

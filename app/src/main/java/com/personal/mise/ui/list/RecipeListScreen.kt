@@ -185,7 +185,7 @@ fun RecipeListScreen(
             if (recipes.isEmpty()) {
                 Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
                     Text(
-                        if (query.isEmpty()) "还没有菜谱。点右下角的加号，手动新建、粘贴下厨房链接，或者让 AI 整理笔记里的菜谱。" else "没有找到「$query」",
+                        if (query.isEmpty()) "还没有菜谱。点右下角的加号，手动新建、粘贴下厨房或小红书链接，或者让 AI 整理笔记里的菜谱。" else "没有找到「$query」",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
@@ -342,7 +342,7 @@ private fun PasteLinkDialog(onDismiss: () -> Unit, onConfirm: (String) -> Unit) 
     }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("粘贴下厨房链接") },
+        title = { Text("粘贴下厨房或小红书链接") },
         text = {
             OutlinedTextField(
                 value = text,
