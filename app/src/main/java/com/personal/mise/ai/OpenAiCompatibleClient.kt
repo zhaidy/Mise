@@ -23,6 +23,9 @@ abstract class OpenAiCompatibleClient(
     /** 是否用 JSON 模式（response_format: json_object），服务商支持才开 */
     protected abstract val jsonMode: Boolean
 
+    /** 是否在请求里关掉思考模式（thinking: disabled），服务商认这个参数才开 */
+    protected open val disableThinking = false
+
     /** 出错时的异常；额度、余额、服务器忙这类换个模型能解决的用 [AiUnavailableException] */
     protected abstract fun error(code: Int, detail: String?): ImportException
 
@@ -33,7 +36,7 @@ abstract class OpenAiCompatibleClient(
         val request = Request.Builder()
             .url(endpoint)
             .header("Authorization", "Bearer $key")
-            .post(requestBody(model, prompt, schema, images, jsonMode).toString().toRequestBody("application/json".toMediaType()))
+            .post(requestBody(model, prompt, schema, images, jsonMode, disableThinking).toString().toRequestBody("application/json".toMediaType()))
             .build()
         val reply = http.execute(request, provider.label)
         if (!reply.isSuccessful) throw error(reply.code, errorDetail(reply.body))
@@ -47,10 +50,12 @@ abstract class OpenAiCompatibleClient(
             schema: JSONObject,
             images: List<ByteArray> = emptyList(),
             jsonMode: Boolean = true,
+            disableThinking: Boolean = false,
         ): JSONObject = JSONObject()
             .put("model", model)
             .put("temperature", 0.2)
             .put("max_tokens", 8000)
+            .apply { if (disableThinking) put("thinking", JSONObject().put("type", "disabled")) }
             .apply { if (jsonMode) put("response_format", JSONObject().put("type", "json_object")) }
             .put(
                 "messages",

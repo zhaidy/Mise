@@ -49,6 +49,13 @@ class DeepSeekClientTest {
     }
 
     @Test
+    fun `要求关掉思考时带上 thinking disabled`() {
+        assertFalse(OpenAiCompatibleClient.requestBody("agnes-2.5-flash", "分碗", AiSchema.obj()).has("thinking"))
+        val body = OpenAiCompatibleClient.requestBody("deepseek-flash", "分碗", AiSchema.obj(), disableThinking = true)
+        assertEquals("disabled", body.getJSONObject("thinking").getString("type"))
+    }
+
+    @Test
     fun `不开 JSON 模式时不带 response_format`() {
         val body = OpenAiCompatibleClient.requestBody("agnes-2.5-flash", "拆分步骤", AiSchema.obj(), jsonMode = false)
         assertFalse(body.has("response_format"))
