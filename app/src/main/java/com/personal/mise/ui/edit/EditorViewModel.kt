@@ -77,9 +77,17 @@ class EditorViewModel(
     var estimating by mutableStateOf(false)
         private set
     var estimateMessage by mutableStateOf<String?>(null)
+    var estimatingCalories by mutableStateOf(false)
+        private set
+    var caloriesMessage by mutableStateOf<String?>(null)
 
     var title by mutableStateOf("")
     var servings by mutableStateOf("")
+    /** 整道菜的千卡，空表示还没算 */
+    var calories by mutableStateOf("")
+        private set
+    /** 填热量时的用料；之后用料改过，就提示热量可能要重新估 */
+    private var caloriesBasis: List<Pair<String, String>> = emptyList()
     var cover by mutableStateOf<String?>(null)
         private set
     private var sourceUrl: String? = null
@@ -124,8 +132,12 @@ class EditorViewModel(
                 }
                 fill(draft)
                 loadState = LoadState.Ready
-                // 导入的菜谱里有「适量」、没写用量或不是按克写的，有 Key 就顺手让 AI 估一下用量和克重
-                if (importText != null && hasAiKey && canEstimate) aiEstimateAmounts()
+                // 导入的菜谱里有「适量」、没写用量或不是按克写的，有 Key 就顺手让 AI 估一下用量和克重，
+                // 再按估好的用量算热量
+                if (importText != null && hasAiKey) viewModelScope.launch {
+                    if (canEstimate) estimateAmounts()
+                    if (calories.isBlank()) estimateCalories()
+                }
                 // 下厨房链接导入的步骤常常几件事挤在一步里，有 Key 就自动用 AI 拆一下（AI 整理时已经分好步了）
                 if (importText != null && !aiOrganized && hasAiKey && steps.any { it.text.isNotBlank() }) aiSplitSteps(auto = true)
             } catch (e: ImportException) {
@@ -149,6 +161,8 @@ class EditorViewModel(
         steps += draft.steps.map {
             StepRow(nextKey(), it.id, it.text, it.image, it.timerSeconds?.let { s -> formatMinutes(s) }.orEmpty())
         }
+        calories = draft.calories?.toString().orEmpty()
+        caloriesBasis = ingredientBasis()
     }
 
     // 用料
@@ -214,39 +228,79 @@ class EditorViewModel(
      * 不是按克写的用量后面补上「≈X克」。估算期间改过的用量不覆盖。
      */
     fun aiEstimateAmounts() {
+        viewModelScope.launch { estimateAmounts() }
+    }
+
+    private suspend fun estimateAmounts() {
         if (estimating) return
         estimating = true
         estimateMessage = null
-        viewModelScope.launch {
-            try {
-                val snapshot = ingredients.toList()
-                val result = app.amountEstimator.estimate(
-                    title,
-                    servings,
-                    snapshot.map { it.name to it.amount },
-                    steps.map { it.text },
-                )
-                var estimated = 0
-                var grams = 0
-                result.forEach { (i, amount) ->
-                    val old = snapshot[i]
-                    val index = ingredients.indexOfFirst { it.key == old.key }
-                    if (index >= 0 && ingredients[index].amount == old.amount) {
-                        ingredients[index] = ingredients[index].copy(amount = amount)
-                        if (AiAmountEstimator.needsEstimate(old.name, old.amount)) estimated++ else grams++
-                    }
+        try {
+            val snapshot = ingredients.toList()
+            val result = app.amountEstimator.estimate(
+                title,
+                servings,
+                snapshot.map { it.name to it.amount },
+                steps.map { it.text },
+            )
+            var estimated = 0
+            var grams = 0
+            result.forEach { (i, amount) ->
+                val old = snapshot[i]
+                val index = ingredients.indexOfFirst { it.key == old.key }
+                if (index >= 0 && ingredients[index].amount == old.amount) {
+                    ingredients[index] = ingredients[index].copy(amount = amount)
+                    if (AiAmountEstimator.needsEstimate(old.name, old.amount)) estimated++ else grams++
                 }
-                estimateMessage = if (estimated + grams == 0) "估算期间用量改过了，没有覆盖" else listOfNotNull(
-                    "估算了 $estimated 样用料的用量，标了「估算」".takeIf { estimated > 0 },
-                    "给 $grams 样用料补了大概克重（≈）".takeIf { grams > 0 },
-                ).joinToString("，", prefix = "AI ", postfix = "，可以再改")
-            } catch (e: ImportException) {
-                estimateMessage = e.message
-            } catch (e: Exception) {
-                estimateMessage = "AI 估算失败：${e.message ?: e.javaClass.simpleName}"
-            } finally {
-                estimating = false
             }
+            estimateMessage = if (estimated + grams == 0) "估算期间用量改过了，没有覆盖" else listOfNotNull(
+                "估算了 $estimated 样用料的用量，标了「估算」".takeIf { estimated > 0 },
+                "给 $grams 样用料补了大概克重（≈）".takeIf { grams > 0 },
+            ).joinToString("，", prefix = "AI ", postfix = "，可以再改")
+        } catch (e: ImportException) {
+            estimateMessage = e.message
+        } catch (e: Exception) {
+            estimateMessage = "AI 估算失败：${e.message ?: e.javaClass.simpleName}"
+        } finally {
+            estimating = false
+        }
+    }
+
+    // 热量
+
+    private fun ingredientBasis() = ingredients.filter { it.name.isNotBlank() }.map { it.name.trim() to it.amount.trim() }
+
+    /** 填了热量之后用料又改过 */
+    val caloriesStale: Boolean get() = calories.isNotBlank() && ingredientBasis() != caloriesBasis
+
+    val canEstimateCalories: Boolean get() = ingredients.any { it.name.isNotBlank() }
+
+    fun updateCalories(text: String) {
+        calories = text.filter { it.isDigit() }.take(5)
+        caloriesBasis = ingredientBasis()
+    }
+
+    /** 让 AI 按现在的用料估算整道菜的千卡 */
+    fun aiEstimateCalories() {
+        viewModelScope.launch { estimateCalories() }
+    }
+
+    private suspend fun estimateCalories() {
+        if (estimatingCalories || !canEstimateCalories) return
+        estimatingCalories = true
+        caloriesMessage = null
+        try {
+            val basis = ingredientBasis()
+            val kcal = app.calorieEstimator.estimate(title, servings, ingredients.map { it.name to it.amount }, steps.map { it.text })
+            calories = kcal.toString()
+            caloriesBasis = basis
+            caloriesMessage = "AI 估算整道菜约 $kcal 千卡，可以再改"
+        } catch (e: ImportException) {
+            caloriesMessage = e.message
+        } catch (e: Exception) {
+            caloriesMessage = "AI 估算热量失败：${e.message ?: e.javaClass.simpleName}"
+        } finally {
+            estimatingCalories = false
         }
     }
 
@@ -363,6 +417,7 @@ class EditorViewModel(
         coverImage = cover,
         sourceUrl = sourceUrl,
         servings = servings,
+        calories = calories.toIntOrNull()?.takeIf { it > 0 },
         ingredients = ingredients.map { IngredientDraft(it.id, it.name, it.amount, it.kind) },
         steps = steps.map { row ->
             val seconds = row.timerMinutes.toDoubleOrNull()?.let { (it * 60).toInt() }?.takeIf { it > 0 }

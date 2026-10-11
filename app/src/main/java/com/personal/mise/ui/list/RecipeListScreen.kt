@@ -70,6 +70,7 @@ import com.personal.mise.ui.common.rememberApp
 import com.personal.mise.ui.edit.AiKeyDialog
 import com.personal.mise.ui.edit.AiKeyFields
 import com.personal.mise.update.UpdateInfo
+import com.personal.mise.util.CalorieText
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
@@ -335,8 +336,12 @@ private fun RecipeCard(recipe: Recipe, onClick: () -> Unit, onLongClick: () -> U
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
-                recipe.servings?.takeIf { it.isNotBlank() }?.let {
-                    Text("份量：$it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                val info = listOfNotNull(
+                    recipe.servings?.takeIf { it.isNotBlank() }?.let { "份量：$it" },
+                    recipe.calories?.let { CalorieText.format(it) },
+                ).joinToString(" · ")
+                if (info.isNotEmpty()) {
+                    Text(info, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }

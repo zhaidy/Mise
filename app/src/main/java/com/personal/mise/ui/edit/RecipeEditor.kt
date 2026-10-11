@@ -63,17 +63,21 @@ fun RecipeEditor(
         if (uri != null && key != null) vm.pickStepImage(key, uri)
         pickingStepKey = null
     }
-    // 填完 Key 后要接着做的 AI 操作：split 拆分步骤、estimate 估算用量和克重
+    // 填完 Key 后要接着做的 AI 操作：split 拆分步骤、estimate 估算用量和克重、calories 估算热量
     var askingKeyFor by rememberSaveable { mutableStateOf<String?>(null) }
     val imageOnly = PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
 
     askingKeyFor?.let { action ->
         AiKeyDialog(
-            confirmLabel = if (action == "estimate") "保存并估算" else "保存并拆分",
+            confirmLabel = if (action == "split") "保存并拆分" else "保存并估算",
             onDismiss = { askingKeyFor = null },
             onConfirm = {
                 askingKeyFor = null
-                if (action == "estimate") vm.aiEstimateAmounts() else vm.aiSplitSteps()
+                when (action) {
+                    "estimate" -> vm.aiEstimateAmounts()
+                    "calories" -> vm.aiEstimateCalories()
+                    else -> vm.aiSplitSteps()
+                }
             },
         )
     }
@@ -112,6 +116,35 @@ fun RecipeEditor(
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                 )
+                Spacer(Modifier.height(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(
+                        value = vm.calories,
+                        onValueChange = vm::updateCalories,
+                        label = { Text("整道菜热量（千卡，可不填）") },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    if (vm.estimatingCalories) {
+                        CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                    } else {
+                        TextButton(
+                            enabled = vm.canEstimateCalories,
+                            onClick = { if (vm.hasAiKey) vm.aiEstimateCalories() else askingKeyFor = "calories" },
+                        ) { Text(if (vm.calories.isBlank()) "AI 估算" else "重新估算") }
+                    }
+                }
+                val caloriesHint = if (vm.caloriesStale && !vm.estimatingCalories) "用料改过了，热量可能要重新估算" else vm.caloriesMessage
+                caloriesHint?.let {
+                    Text(
+                        it,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (vm.caloriesStale) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    )
+                }
             }
         }
 

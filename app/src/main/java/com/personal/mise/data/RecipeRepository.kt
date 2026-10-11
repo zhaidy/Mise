@@ -29,6 +29,8 @@ data class RecipeDraft(
     val coverImage: String? = null,
     val sourceUrl: String? = null,
     val servings: String? = null,
+    /** 整道菜的千卡 */
+    val calories: Int? = null,
     val ingredients: List<IngredientDraft> = emptyList(),
     val steps: List<StepDraft> = emptyList(),
 )
@@ -80,6 +82,7 @@ class RecipeRepository(
             coverImage = full.recipe.coverImage,
             sourceUrl = full.recipe.sourceUrl,
             servings = full.recipe.servings,
+            calories = full.recipe.calories,
             ingredients = full.ingredients.map { IngredientDraft(it.id, it.name, it.amountText, it.kind) },
             steps = full.steps.map { StepDraft(it.id, it.text, it.image, it.timerSeconds) },
         )
@@ -96,6 +99,7 @@ class RecipeRepository(
                         coverImage = draft.coverImage,
                         sourceUrl = draft.sourceUrl,
                         servings = draft.servings?.takeIf { it.isNotBlank() },
+                        calories = draft.calories,
                     )
                 )
             } else {
@@ -106,6 +110,7 @@ class RecipeRepository(
                         coverImage = draft.coverImage,
                         sourceUrl = draft.sourceUrl,
                         servings = draft.servings?.takeIf { it.isNotBlank() },
+                        calories = draft.calories,
                         updatedAt = System.currentTimeMillis(),
                     )
                 )
@@ -147,6 +152,9 @@ class RecipeRepository(
         }
         paths.forEach { images.delete(it) }
     }
+
+    /** 只改热量，不动用料和调料碗；会同步到别的手机 */
+    suspend fun setCalories(id: Long, calories: Int?) = dao.setCalories(id, calories, System.currentTimeMillis())
 
     private suspend fun imagesOf(id: Long): Set<String> {
         val recipe = dao.get(id) ?: return emptySet()
@@ -227,6 +235,7 @@ class RecipeRepository(
                 uid = remote.uid,
                 updatedAt = remote.updatedAt,
                 deleted = remote.deleted,
+                calories = remote.calories,
             )
             val recipeId = if (existing == null) dao.insert(row) else { dao.update(row); existing.id }
 

@@ -25,6 +25,8 @@ data class Recipe(
     val updatedAt: Long = System.currentTimeMillis(),
     /** 删除只做标记并清空内容，好让删除也能同步到别的设备 */
     val deleted: Boolean = false,
+    /** 整道菜（按菜谱原文的份量）大约多少千卡，AI 估算或手填；空表示还没算 */
+    val calories: Int? = null,
 )
 
 @Entity(
@@ -151,6 +153,7 @@ data class TodayRow(
     val title: String,
     val coverImage: String?,
     val stepCount: Int,
+    val calories: Int?,
 )
 
 data class RecipeStamp(val uid: String, val updatedAt: Long)

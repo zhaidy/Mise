@@ -25,12 +25,12 @@ abstract class MiseDatabase : RoomDatabase() {
     abstract fun todayDao(): TodayDao
 
     companion object {
-        const val VERSION = 3
+        const val VERSION = 4
         const val NAME = "mise.db"
 
         fun create(context: Context): MiseDatabase =
             Room.databaseBuilder(context, MiseDatabase::class.java, NAME)
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                 .build()
     }
 }
@@ -57,5 +57,12 @@ val MIGRATION_2_3 = object : Migration(2, 3) {
     override fun migrate(db: SupportSQLiteDatabase) {
         db.execSQL("ALTER TABLE today_menu ADD COLUMN updatedAt INTEGER NOT NULL DEFAULT 0")
         db.execSQL("ALTER TABLE today_menu ADD COLUMN removed INTEGER NOT NULL DEFAULT 0")
+    }
+}
+
+/** v4：菜谱加 calories，整道菜的热量 */
+val MIGRATION_3_4 = object : Migration(3, 4) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE recipe ADD COLUMN calories INTEGER")
     }
 }

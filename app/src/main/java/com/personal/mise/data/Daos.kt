@@ -49,6 +49,9 @@ interface RecipeDao {
     @Query("UPDATE recipe SET updatedAt = :now WHERE id = :id")
     suspend fun touch(id: Long, now: Long)
 
+    @Query("UPDATE recipe SET calories = :calories, updatedAt = :now WHERE id = :id AND deleted = 0")
+    suspend fun setCalories(id: Long, calories: Int?, now: Long)
+
     @Query("DELETE FROM ingredient WHERE recipeId = :recipeId")
     suspend fun deleteIngredients(recipeId: Long)
 
@@ -145,6 +148,7 @@ interface TodayDao {
         """
         SELECT t.recipeId AS recipeId, t.sortOrder AS position, t.currentStep AS currentStep,
                t.bowlsChecked AS bowlsChecked, r.title AS title, r.coverImage AS coverImage,
+               r.calories AS calories,
                (SELECT COUNT(*) FROM step s WHERE s.recipeId = t.recipeId) AS stepCount
         FROM today_menu t JOIN recipe r ON r.id = t.recipeId
         WHERE t.removed = 0
