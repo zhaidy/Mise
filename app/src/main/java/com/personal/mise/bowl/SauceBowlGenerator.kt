@@ -7,7 +7,10 @@ import com.personal.mise.data.IngredientKind
  *
  * 规则：每一种用料（调料、配料、主料都算）都要进某个碗。
  * 一起下锅、或者短时间内依次下锅的用料合成一个碗：连续几步都用到用料、中间没有别的步骤隔开的，算同一个碗；
- * 没有提到用料的步骤，以及带计时的步骤（腌制、等待），会把前后分开。
+ * 没有提到用料的步骤，带计时的步骤（腌制、等待），以及要在锅里炒一会儿的步骤（煸炒出油、炒至变色、爆香），
+ * 会把前后分开。
+ * 只是切配的步骤不算下锅：碗的下锅步骤取组里第一个真正下锅的步骤；葱姜蒜在切配步骤里出现、后面还会再用到的，
+ * 不进切配所在的碗。
  * 炒菜用的油不进碗。同一种调料分几个碗时标「分次加入」；
  * 主料、配料只进最后一个用到它的碗（备料时切好、下锅时才放的那一次）。
  */
@@ -47,17 +50,23 @@ object SauceBowlGenerator {
                 return@forEachIndexed
             }
             run += stepIndex
-            if (timers.getOrNull(stepIndex) != null) flush()
+            if (timers.getOrNull(stepIndex) != null || needsCookingTime(steps[stepIndex])) flush()
         }
         flush()
 
+        val prepSteps = steps.map { isPrepOnly(it) }
         val membersPerGroup = groups.map { group -> group.flatMap { matchesPerStep[it] }.distinct() }
         val lastGroupOf = IntArray(ingredients.size) { -1 }
         membersPerGroup.forEachIndexed { g, members -> members.forEach { lastGroupOf[it] = g } }
 
-        // 主料、配料只进最后一个碗；调料、爆香料每个出现过的碗都进
+        // 主料、配料只进最后一个碗；调料、爆香料每个下锅用到的碗都进，只在切配步骤里出现的那次不算
         val finalMembers = membersPerGroup.mapIndexed { g, members ->
-            members.filter { isSplittable(ingredients[it]) || lastGroupOf[it] == g }
+            members.filter { idx ->
+                lastGroupOf[idx] == g || (
+                    isSplittable(ingredients[idx]) &&
+                        groups[g].any { step -> !prepSteps[step] && idx in matchesPerStep[step] }
+                    )
+            }
         }
         val appearances = IntArray(ingredients.size)
         finalMembers.forEach { members -> members.forEach { appearances[it]++ } }
@@ -71,9 +80,26 @@ object SauceBowlGenerator {
                     val text = if (appearances[idx] > 1 && amount !in vagueAmounts) "分次加入，共 $amount" else amount
                     GeneratedItem(idx, text)
                 }
-                GeneratedBowl(label(bowlIndex), groups[g].first(), items)
+                val potStep = groups[g].firstOrNull { !prepSteps[it] } ?: groups[g].first()
+                GeneratedBowl(label(bowlIndex), potStep, items)
             }
     }
+
+    /** 下锅后要炒、煎、炖一阵子才能放下一样的说法 */
+    private val cookingTimeWords = listOf(
+        "出油", "煸", "煎", "炸", "炖", "焖", "煮", "爆香", "炒香", "出香", "出味", "炒软", "炒熟", "断生",
+        "变色", "变软", "金黄", "焦黄", "收汁", "至",
+    )
+
+    /** 切配用的说法；带了这些又没提到开火、下锅的步骤只是备料 */
+    private val prepWords = listOf("切", "剁", "剪", "拍", "削", "掰", "撕", "去皮", "去籽", "洗净")
+    private val heatWords = listOf("锅", "炒", "煸", "煎", "炸", "炖", "焖", "煮", "蒸", "烧", "爆", "焯", "烤", "火")
+
+    fun needsCookingTime(stepText: String): Boolean =
+        !isPrepOnly(stepText) && cookingTimeWords.any { it in stepText }
+
+    fun isPrepOnly(stepText: String): Boolean =
+        prepWords.any { it in stepText } && heatWords.none { it in stepText }
 
     private fun isSplittable(ingredient: IngredientInput): Boolean =
         ingredient.kind == IngredientKind.SEASONING || SeasoningDictionary.isAromatic(ingredient.name)
