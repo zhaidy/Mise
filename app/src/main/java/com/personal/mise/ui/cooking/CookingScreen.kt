@@ -21,7 +21,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
@@ -63,6 +65,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
@@ -72,6 +75,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.personal.mise.data.BowlFull
+import com.personal.mise.data.IngredientKind
+import com.personal.mise.data.RecipeFull
 import com.personal.mise.data.Step
 import com.personal.mise.data.TodayRow
 import com.personal.mise.timer.CookingTimer
@@ -83,9 +88,12 @@ import com.personal.mise.ui.common.LocalImage
 import com.personal.mise.ui.common.MiseIcons
 import com.personal.mise.ui.common.OutlinePillButton
 import com.personal.mise.ui.common.PillButton
+import com.personal.mise.ui.common.SectionHeader
 import com.personal.mise.ui.common.hasImage
 import com.personal.mise.ui.common.miseFieldColors
 import com.personal.mise.ui.common.rememberApp
+import com.personal.mise.ui.detail.BowlCard
+import com.personal.mise.ui.detail.IngredientTable
 import com.personal.mise.ui.theme.LocalMiseColors
 import com.personal.mise.ui.theme.SerifFamily
 import com.personal.mise.util.AmountScaler
@@ -125,6 +133,8 @@ fun CookingScreen(initialRecipeId: Long, onBack: () -> Unit) {
     }
     val snackbar = remember { SnackbarHostState() }
     var selectedId by rememberSaveable { mutableLongStateOf(initialRecipeId) }
+    // 做菜时随时切到整份菜谱看看用料和全部步骤，切回来还在原来那一步
+    var showRecipe by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(initialRecipeId) { if (initialRecipeId > 0) selectedId = initialRecipeId }
 
     val list = rows
@@ -178,6 +188,8 @@ fun CookingScreen(initialRecipeId: Long, onBack: () -> Unit) {
                 timers = timers.filter { it.recipeId == selected.recipeId },
                 now = now,
                 snackbar = snackbar,
+                showRecipe = showRecipe,
+                onShowRecipe = { showRecipe = it },
                 modifier = Modifier.padding(padding),
             )
         }
@@ -222,6 +234,8 @@ private fun RecipePager(
     timers: List<CookingTimer>,
     now: Long,
     snackbar: SnackbarHostState,
+    showRecipe: Boolean,
+    onShowRecipe: (Boolean) -> Unit,
     modifier: Modifier,
 ) {
     val app = rememberApp()
@@ -233,12 +247,20 @@ private fun RecipePager(
         return
     }
     val steps = data.steps
+    val factor = app.scaleOf(row.recipeId)
+    val cookStart = remember(steps) { StepPhase.cookStart(steps.map { it.text }) }
     if (steps.isEmpty()) {
-        EmptyState("步", "这道菜还没有步骤", "去菜谱详情里编辑，加上步骤再来。", modifier)
+        Column(modifier.fillMaxSize()) {
+            ModeSwitch(showRecipe, onShowRecipe)
+            if (showRecipe) {
+                RecipeOverview(data, factor, cookStart, currentStep = -1, onJump = {}, modifier = Modifier.weight(1f))
+            } else {
+                EmptyState("步", "这道菜还没有步骤", "去菜谱详情里编辑，加上步骤再来。", Modifier.weight(1f))
+            }
+        }
         return
     }
 
-    val cookStart = remember(steps) { StepPhase.cookStart(steps.map { it.text }) }
     val pagerState = rememberPagerState(initialPage = row.currentStep.coerceIn(0, steps.lastIndex)) { steps.size }
     LaunchedEffect(pagerState) {
         snapshotFlow { pagerState.currentPage }.collect { app.repository.setCurrentStep(row.recipeId, it) }
@@ -250,58 +272,205 @@ private fun RecipePager(
         if (!pagerState.isScrollInProgress && pagerState.currentPage != target) pagerState.animateScrollToPage(target)
     }
 
+    // 在菜谱里点了某一步，切回做菜后翻到那一步
+    var jumpTo by remember { mutableStateOf<Int?>(null) }
+
     Column(modifier.fillMaxSize()) {
-        HorizontalPager(state = pagerState, modifier = Modifier.weight(1f).fillMaxWidth()) { page ->
-            val step = steps[page]
-            StepPage(
-                step = step,
-                index = page,
-                total = steps.size,
-                phase = when {
-                    cookStart == null -> null
-                    page < cookStart -> "备料 · 还没开火"
-                    page == cookStart -> "开火"
-                    else -> null
+        ModeSwitch(showRecipe, onShowRecipe)
+        if (showRecipe) {
+            RecipeOverview(
+                data = data,
+                factor = factor,
+                cookStart = cookStart,
+                currentStep = pagerState.currentPage,
+                onJump = { page ->
+                    jumpTo = page
+                    onShowRecipe(false)
                 },
-                bowls = data.bowlsForStep(step.id),
-                factor = app.scaleOf(row.recipeId),
-                timers = timers.filter { it.stepIndex == page },
-                now = now,
-                onStartTimer = { seconds -> app.timers.start(row.recipeId, row.title, page, seconds) },
-                onCancelTimer = { app.timers.cancel(it) },
+                modifier = Modifier.weight(1f),
+            )
+        } else {
+            LaunchedEffect(jumpTo) {
+                jumpTo?.let {
+                    pagerState.scrollToPage(it)
+                    jumpTo = null
+                }
+            }
+            HorizontalPager(state = pagerState, modifier = Modifier.weight(1f).fillMaxWidth()) { page ->
+                val step = steps[page]
+                StepPage(
+                    step = step,
+                    index = page,
+                    total = steps.size,
+                    phase = when {
+                        cookStart == null -> null
+                        page < cookStart -> "备料 · 还没开火"
+                        page == cookStart -> "开火"
+                        else -> null
+                    },
+                    bowls = data.bowlsForStep(step.id),
+                    factor = factor,
+                    timers = timers.filter { it.stepIndex == page },
+                    now = now,
+                    onStartTimer = { seconds -> app.timers.start(row.recipeId, row.title, page, seconds) },
+                    onCancelTimer = { app.timers.cancel(it) },
+                )
+            }
+            Row(
+                Modifier.fillMaxWidth().navigationBarsPadding().padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                OutlinePillButton(
+                    "上一步",
+                    onClick = { scope.launch { pagerState.animateScrollToPage(pagerState.currentPage - 1) } },
+                    enabled = pagerState.currentPage > 0,
+                    modifier = Modifier.weight(1f),
+                    height = ButtonHeight,
+                )
+                val last = pagerState.currentPage >= steps.lastIndex
+                PillButton(
+                    if (last) "做好了" else "下一步",
+                    onClick = {
+                        scope.launch {
+                            if (!last) {
+                                pagerState.animateScrollToPage(pagerState.currentPage + 1)
+                            } else {
+                                // 最后一步点「做好了」记一笔，记录页能看到哪天做过
+                                val logged = app.repository.logCooked(row.recipeId)
+                                snackbar.showSnackbar(if (logged) "已记下：今天做了${row.title}" else "今天已经记过了")
+                            }
+                        }
+                    },
+                    modifier = Modifier.weight(1.4f),
+                    height = ButtonHeight,
+                    icon = if (last) Icons.Filled.Check else MiseIcons.ChevronRight,
+                    container = if (last) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.primary,
+                    content = if (last) MaterialTheme.colorScheme.onSecondary else MaterialTheme.colorScheme.onPrimary,
+                )
+            }
+        }
+    }
+}
+
+/** 「做菜 / 菜谱」切换：做菜是一步一页，菜谱是整份用料和全部步骤 */
+@Composable
+private fun ModeSwitch(showRecipe: Boolean, onChange: (Boolean) -> Unit) {
+    Surface(
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp),
+    ) {
+        Row(Modifier.padding(4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            ModeOption("做菜", selected = !showRecipe, onClick = { onChange(false) }, modifier = Modifier.weight(1f))
+            ModeOption("菜谱", selected = showRecipe, onClick = { onChange(true) }, modifier = Modifier.weight(1f))
+        }
+    }
+}
+
+@Composable
+private fun ModeOption(label: String, selected: Boolean, onClick: () -> Unit, modifier: Modifier) {
+    val ink = LocalMiseColors.current
+    Surface(
+        onClick = onClick,
+        shape = CircleShape,
+        color = if (selected) ink.ink else Color.Transparent,
+        contentColor = if (selected) ink.onInk else MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = modifier.height(44.dp),
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Text(label, fontSize = 17.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium)
+        }
+    }
+}
+
+/** 整份菜谱：主料、调料、调料碗、全部步骤；正在做的那步高亮，点哪步就切回做菜翻到哪步 */
+@Composable
+private fun RecipeOverview(
+    data: RecipeFull,
+    factor: Double,
+    cookStart: Int?,
+    currentStep: Int,
+    onJump: (Int) -> Unit,
+    modifier: Modifier,
+) {
+    val mains = data.ingredients.filter { it.kind != IngredientKind.SEASONING }
+    val seasonings = data.ingredients.filter { it.kind == IngredientKind.SEASONING }
+    LazyColumn(modifier.fillMaxWidth(), contentPadding = PaddingValues(bottom = 24.dp)) {
+        item(key = "mains-title") { SectionHeader("主料", Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 4.dp)) }
+        item(key = "mains") { IngredientTable(mains, factor) }
+        item(key = "seasonings-title") {
+            SectionHeader(
+                "调料",
+                Modifier.padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 4.dp),
+                accent = MaterialTheme.colorScheme.secondary,
             )
         }
-        Row(
-            Modifier.fillMaxWidth().navigationBarsPadding().padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            OutlinePillButton(
-                "上一步",
-                onClick = { scope.launch { pagerState.animateScrollToPage(pagerState.currentPage - 1) } },
-                enabled = pagerState.currentPage > 0,
-                modifier = Modifier.weight(1f),
-                height = ButtonHeight,
-            )
-            val last = pagerState.currentPage >= steps.lastIndex
-            PillButton(
-                if (last) "做好了" else "下一步",
-                onClick = {
-                    scope.launch {
-                        if (!last) {
-                            pagerState.animateScrollToPage(pagerState.currentPage + 1)
-                        } else {
-                            // 最后一步点「做好了」记一笔，记录页能看到哪天做过
-                            val logged = app.repository.logCooked(row.recipeId)
-                            snackbar.showSnackbar(if (logged) "已记下：今天做了${row.title}" else "今天已经记过了")
+        item(key = "seasonings") { IngredientTable(seasonings, factor) }
+        if (data.bowls.isNotEmpty()) {
+            item(key = "bowls-title") {
+                SectionHeader(
+                    "调料碗",
+                    Modifier.padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 4.dp),
+                    accent = MaterialTheme.colorScheme.tertiary,
+                )
+            }
+            items(data.bowls, key = { "bowl-${it.bowl.id}" }) { bowl ->
+                val stepIndex = data.steps.indexOfFirst { it.id == bowl.bowl.stepId }
+                BowlCard(bowl, if (stepIndex >= 0) StepPhase.bowlStepLabel(stepIndex, cookStart, data.steps[stepIndex].text) else null, factor)
+            }
+        }
+        if (data.steps.isNotEmpty()) {
+            item(key = "steps-title") {
+                SectionHeader(
+                    "步骤",
+                    Modifier.padding(start = 20.dp, end = 20.dp, top = 24.dp, bottom = 8.dp),
+                    accent = MaterialTheme.colorScheme.secondary,
+                    hint = "点一步，回到做菜从这步接着做",
+                )
+            }
+            itemsIndexed(data.steps, key = { _, s -> "step-${s.id}" }) { index, step ->
+                val current = index == currentStep
+                Surface(
+                    onClick = { onJump(index) },
+                    shape = RoundedCornerShape(20.dp),
+                    color = if (current) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+                    contentColor = if (current) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
+                ) {
+                    Row(Modifier.padding(horizontal = 12.dp, vertical = 12.dp)) {
+                        Box(
+                            Modifier.size(32.dp).background(
+                                if (current) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                                CircleShape,
+                            ),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                "${index + 1}",
+                                color = if (current) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.background,
+                                fontFamily = SerifFamily,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 15.sp,
+                            )
+                        }
+                        Spacer(Modifier.width(14.dp))
+                        Column(Modifier.weight(1f).padding(top = 4.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            when {
+                                current -> Text("正在做", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                                cookStart != null && index == cookStart -> Text("开火", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                            }
+                            Text(step.text, style = MaterialTheme.typography.bodyLarge)
+                            data.bowlsForStep(step.id).forEach { bowl ->
+                                Text(
+                                    "倒入${bowl.bowl.label}",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = MaterialTheme.colorScheme.tertiary,
+                                )
+                            }
                         }
                     }
-                },
-                modifier = Modifier.weight(1.4f),
-                height = ButtonHeight,
-                icon = if (last) Icons.Filled.Check else MiseIcons.ChevronRight,
-                container = if (last) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.primary,
-                content = if (last) MaterialTheme.colorScheme.onSecondary else MaterialTheme.colorScheme.onPrimary,
-            )
+                }
+            }
         }
     }
 }

@@ -521,7 +521,7 @@ private fun StatRow(label: String, value: String, muted: Boolean, action: @Compo
 
 /** 用料表：名称 ······ 用量 */
 @Composable
-private fun IngredientTable(items: List<Ingredient>, factor: Double) {
+internal fun IngredientTable(items: List<Ingredient>, factor: Double) {
     if (items.isEmpty()) {
         Text("无", Modifier.padding(horizontal = 20.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
         return
