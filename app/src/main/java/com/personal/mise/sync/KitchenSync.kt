@@ -12,6 +12,7 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.FirebaseFirestoreException
 import com.google.firebase.firestore.MetadataChanges
 import com.google.firebase.firestore.QuerySnapshot
+import com.personal.mise.data.CookLog
 import com.personal.mise.data.RecipeRepository
 import com.personal.mise.data.RecipeStamp
 import com.personal.mise.image.ImageStore
@@ -39,7 +40,8 @@ import java.security.SecureRandom
 /**
  * 共享厨房：同一个厨房里的手机共用一份菜谱。
  *
- * 云端是 kitchens/{邀请码}/recipes/{uid}（每道菜一个文档）、kitchens/{邀请码}/today/{uid}（今日菜单）
+ * 云端是 kitchens/{邀请码}/recipes/{uid}（每道菜一个文档）、kitchens/{邀请码}/today/{uid}（今日菜单）、
+ * kitchens/{邀请码}/history/{菜谱 uid_日期}（做菜记录）
  * 和 kitchens/{邀请码}/images/{文件名}（图片）。本地和云端任何一边变了，
  * 就逐道菜比较 updatedAt，新的覆盖旧的。Firestore 自带离线缓存，没网时的改动联网后补传。
  */
@@ -138,7 +140,7 @@ class KitchenSync(
         }
     }
 
-    /** 菜谱、今日菜单、图片各自同步，任何一个出错就整体重来 */
+    /** 菜谱、今日菜单、做菜记录、图片各自同步，任何一个出错就整体重来 */
     private suspend fun sync(code: String, kitchen: DocumentReference) {
         coroutineScope {
             launch {
@@ -159,6 +161,16 @@ class KitchenSync(
                     updatedAt = { it.updatedAt },
                     apply = { repository.applyRemoteToday(it) },
                     load = { uid -> repository.loadTodayForSync(uid)?.toMap() },
+                )
+            }
+            launch {
+                syncCollection<CookLog>(
+                    collection = kitchen.collection(HISTORY),
+                    localStamps = repository.observeCookLogStamps(),
+                    parse = { uid, data -> SyncedCookLog.fromMap(uid, data) },
+                    updatedAt = { it.updatedAt },
+                    apply = { repository.applyRemoteCookLog(it) },
+                    load = { uid -> repository.loadCookLogForSync(uid)?.let(SyncedCookLog::toMap) },
                 )
             }
             launch { syncImages(code, kitchen.collection(IMAGES)) }
@@ -227,7 +239,7 @@ class KitchenSync(
     }
 
     /**
-     * 一个集合里每个文档对应本地一条记录（文档 id 是菜谱 uid）。
+     * 一个集合里每个文档对应本地一条记录（文档 id 是菜谱 uid，做菜记录是记录的 uid）。
      * 本地或云端有变化就逐条比较 updatedAt，新的覆盖旧的。
      */
     @OptIn(FlowPreview::class)
@@ -279,6 +291,7 @@ class KitchenSync(
         const val RECIPES = "recipes"
         const val TODAY = "today"
         const val IMAGES = "images"
+        const val HISTORY = "history"
         const val KEY_UPLOADED_PREFIX = "images_done_"
         const val IMAGE_TIMEOUT_MS = 60_000L
         const val IMAGE_RETRY_FIRST_MS = 5_000L

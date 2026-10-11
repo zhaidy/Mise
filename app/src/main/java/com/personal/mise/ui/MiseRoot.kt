@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
@@ -41,6 +42,7 @@ import com.personal.mise.ui.cooking.CookingScreen
 import com.personal.mise.ui.detail.RecipeDetailScreen
 import com.personal.mise.ui.edit.ImportScreen
 import com.personal.mise.ui.edit.RecipeEditScreen
+import com.personal.mise.ui.history.HistoryScreen
 import com.personal.mise.ui.list.RecipeListScreen
 import com.personal.mise.ui.prep.PrepListScreen
 import com.personal.mise.ui.today.TodayScreen
@@ -56,6 +58,7 @@ object Routes {
     const val RECIPES = "recipes"
     const val TODAY = "today"
     const val PREP = "prep"
+    const val HISTORY = "history"
     fun detail(id: Long) = "detail/$id"
     fun edit(id: Long) = "edit/$id"
     fun bowls(id: Long) = "bowls/$id"
@@ -107,7 +110,7 @@ fun MiseRoot(navRequests: MutableStateFlow<NavRequest?>) {
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         bottomBar = {
-            if (route == Routes.RECIPES || route == Routes.TODAY) {
+            if (route == Routes.RECIPES || route == Routes.TODAY || route == Routes.HISTORY) {
                 NavigationBar {
                     NavigationBarItem(
                         selected = route == Routes.RECIPES,
@@ -120,6 +123,12 @@ fun MiseRoot(navRequests: MutableStateFlow<NavRequest?>) {
                         onClick = { nav.switchTab(Routes.TODAY) },
                         icon = { Icon(Icons.AutoMirrored.Filled.List, contentDescription = null) },
                         label = { Text("今日菜单") },
+                    )
+                    NavigationBarItem(
+                        selected = route == Routes.HISTORY,
+                        onClick = { nav.switchTab(Routes.HISTORY) },
+                        icon = { Icon(Icons.Filled.DateRange, contentDescription = null) },
+                        label = { Text("做过") },
                     )
                 }
             }
@@ -143,6 +152,9 @@ fun MiseRoot(navRequests: MutableStateFlow<NavRequest?>) {
                     onPrep = { nav.navigate(Routes.PREP) },
                     onCook = { nav.navigate(Routes.cooking()) },
                 )
+            }
+            composable(Routes.HISTORY) {
+                HistoryScreen(onOpenRecipe = { nav.navigate(Routes.detail(it)) })
             }
             composable(
                 "detail/{id}",

@@ -6,8 +6,12 @@ import com.personal.mise.image.ImageStore
 import com.personal.mise.sync.SyncedRecipe
 import com.personal.mise.sync.SyncedTodayEntry
 import com.personal.mise.sync.TodayKeys
+import com.personal.mise.util.DayText
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 
 data class IngredientDraft(
     val id: Long = 0,
@@ -46,6 +50,7 @@ class RecipeRepository(
 ) {
     private val dao = db.recipeDao()
     private val todayDao = db.todayDao()
+    private val cookLogDao = db.cookLogDao()
 
     fun search(query: String): Flow<List<Recipe>> = dao.search(query.trim())
 
@@ -325,6 +330,34 @@ class RecipeRepository(
             )
         )
     }
+
+    // 做菜记录
+
+    fun observeCookLog(): Flow<List<CookLogRow>> = cookLogDao.observeAll()
+
+    /** 这道菜做过的日子，新的在前 */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun observeCookDates(recipeId: Long): Flow<List<String>> =
+        dao.observe(recipeId).flatMapLatest { r ->
+            if (r == null) flowOf(emptyList()) else cookLogDao.observeDates(r.uid)
+        }
+
+    /** 记一笔：这天做了这道菜。这天已经记过返回 false */
+    suspend fun logCooked(recipeId: Long, date: String = DayText.today()): Boolean = db.withTransaction {
+        val recipe = dao.get(recipeId) ?: return@withTransaction false
+        val uid = CookLog.uidOf(recipe.uid, date)
+        if (cookLogDao.get(uid)?.deleted == false) return@withTransaction false
+        cookLogDao.upsert(CookLog(uid = uid, recipeUid = recipe.uid, title = recipe.title, date = date))
+        true
+    }
+
+    suspend fun deleteCookLog(uid: String) = cookLogDao.markDeleted(uid, System.currentTimeMillis())
+
+    fun observeCookLogStamps(): Flow<List<RecipeStamp>> = cookLogDao.observeStamps()
+
+    suspend fun loadCookLogForSync(uid: String): CookLog? = cookLogDao.get(uid)
+
+    suspend fun applyRemoteCookLog(remote: CookLog) = cookLogDao.upsert(remote)
 }
 
 fun parseChecked(value: String): Set<String> =

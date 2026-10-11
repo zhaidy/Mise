@@ -184,3 +184,36 @@ interface TodayDao {
     @Query("UPDATE today_menu SET bowlsChecked = :checked, updatedAt = :now WHERE recipeId = :recipeId AND bowlsChecked != :checked")
     suspend fun setChecked(recipeId: Long, checked: String, now: Long)
 }
+
+@Dao
+interface CookLogDao {
+    /** 菜谱还在就用现在的菜名 */
+    @Query(
+        """
+        SELECT c.uid AS uid, c.date AS date, COALESCE(r.title, c.title) AS title,
+               r.id AS recipeId, r.coverImage AS coverImage
+        FROM cook_log c LEFT JOIN recipe r ON r.uid = c.recipeUid AND r.deleted = 0
+        WHERE c.deleted = 0
+        ORDER BY c.date DESC, c.updatedAt DESC
+        """
+    )
+    fun observeAll(): Flow<List<CookLogRow>>
+
+    /** 这道菜做过的日子，新的在前 */
+    @Query("SELECT date FROM cook_log WHERE recipeUid = :recipeUid AND deleted = 0 ORDER BY date DESC")
+    fun observeDates(recipeUid: String): Flow<List<String>>
+
+    /** 包括已删除的 */
+    @Query("SELECT * FROM cook_log WHERE uid = :uid")
+    suspend fun get(uid: String): CookLog?
+
+    /** 包括已删除的，同步时比较两边谁新 */
+    @Query("SELECT uid, updatedAt FROM cook_log")
+    fun observeStamps(): Flow<List<RecipeStamp>>
+
+    @Upsert
+    suspend fun upsert(log: CookLog)
+
+    @Query("UPDATE cook_log SET deleted = 1, updatedAt = :now WHERE uid = :uid AND deleted = 0")
+    suspend fun markDeleted(uid: String, now: Long)
+}
