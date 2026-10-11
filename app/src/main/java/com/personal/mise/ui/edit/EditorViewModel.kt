@@ -8,8 +8,8 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.personal.mise.MiseApp
-import com.personal.mise.ai.GeminiAmountEstimator
-import com.personal.mise.ai.GeminiStepSplitter
+import com.personal.mise.ai.AiAmountEstimator
+import com.personal.mise.ai.AiStepSplitter
 import com.personal.mise.bowl.SeasoningDictionary
 import com.personal.mise.data.IngredientDraft
 import com.personal.mise.data.IngredientKind
@@ -41,7 +41,7 @@ data class StepRow(
 sealed interface LoadState {
     data object Loading : LoadState
     data object Ready : LoadState
-    /** needsKey：AI 整理时还没填 Gemini API Key */
+    /** needsKey：AI 整理时还没填 AI 的 API Key */
     data class Failed(val message: String, val needsKey: Boolean = false) : LoadState
 }
 
@@ -113,9 +113,9 @@ class EditorViewModel(
                 fill(draft)
                 loadState = LoadState.Ready
                 // 导入的菜谱里有「适量」、没写用量或不是按克写的，有 Key 就顺手让 AI 估一下用量和克重
-                if (importText != null && hasGeminiKey && canEstimate) aiEstimateAmounts()
+                if (importText != null && hasAiKey && canEstimate) aiEstimateAmounts()
                 // 下厨房链接导入的步骤常常几件事挤在一步里，有 Key 就自动用 AI 拆一下（笔记整理时 AI 已经分好步了）
-                if (importText != null && !aiNote && hasGeminiKey && steps.any { it.text.isNotBlank() }) aiSplitSteps(auto = true)
+                if (importText != null && !aiNote && hasAiKey && steps.any { it.text.isNotBlank() }) aiSplitSteps(auto = true)
             } catch (e: ImportException) {
                 loadState = LoadState.Failed(e.message ?: "导入失败", needsKey = aiNote && !app.aiSettings.hasKey)
             } catch (e: Exception) {
@@ -191,18 +191,14 @@ class EditorViewModel(
         steps.removeAt(index)
     }
 
-    val hasGeminiKey: Boolean get() = app.aiSettings.hasKey
-
-    fun saveGeminiKey(key: String) {
-        app.aiSettings.geminiKey = key
-    }
+    val hasAiKey: Boolean get() = app.aiSettings.hasKey
 
     /** 有「适量」、「少许」、没写用量或不是按克写的用料 */
     val canEstimate: Boolean
-        get() = ingredients.any { GeminiAmountEstimator.needsWork(it.name, it.amount) }
+        get() = ingredients.any { AiAmountEstimator.needsWork(it.name, it.amount) }
 
     /**
-     * 让 Gemini 给「适量」或没写用量的用料估一个具体用量，标上「（估算）」；
+     * 让 AI 给「适量」或没写用量的用料估一个具体用量，标上「（估算）」；
      * 不是按克写的用量后面补上「≈X克」。估算期间改过的用量不覆盖。
      */
     fun aiEstimateAmounts() {
@@ -225,7 +221,7 @@ class EditorViewModel(
                     val index = ingredients.indexOfFirst { it.key == old.key }
                     if (index >= 0 && ingredients[index].amount == old.amount) {
                         ingredients[index] = ingredients[index].copy(amount = amount)
-                        if (GeminiAmountEstimator.needsEstimate(old.name, old.amount)) estimated++ else grams++
+                        if (AiAmountEstimator.needsEstimate(old.name, old.amount)) estimated++ else grams++
                     }
                 }
                 estimateMessage = if (estimated + grams == 0) "估算期间用量改过了，没有覆盖" else listOfNotNull(
@@ -243,7 +239,7 @@ class EditorViewModel(
     }
 
     /**
-     * 把现有步骤文字交给 Gemini 重新拆分。原来每步的图片和计时跟到拆出来的第一步；
+     * 把现有步骤文字交给 AI 重新拆分。原来每步的图片和计时跟到拆出来的第一步；
      * 带图的步骤对应不上时不改动，免得把图弄丢。auto = 导入时自动拆分。
      */
     fun aiSplitSteps(auto: Boolean = false) {
@@ -254,7 +250,7 @@ class EditorViewModel(
             try {
                 val old = steps.toList()
                 val result = app.stepSplitter.split(old.map { it.text })
-                val carry = GeminiStepSplitter.carryOver(old.map { it.image != null }, result)
+                val carry = AiStepSplitter.carryOver(old.map { it.image != null }, result)
                 if (carry == null) {
                     aiMessage = "AI 拆分后对不上原来的步骤图，${if (auto) "保留了下厨房原来的步骤" else "步骤没有改动"}"
                     return@launch

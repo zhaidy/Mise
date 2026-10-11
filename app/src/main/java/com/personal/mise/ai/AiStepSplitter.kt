@@ -1,17 +1,18 @@
 package com.personal.mise.ai
 
 import com.personal.mise.importer.ImportException
+import org.json.JSONObject
 
 /** source：拆分时这一步来自原文第几步（从 1 开始），整理笔记时为空 */
 data class AiStep(val text: String, val timerMinutes: Double?, val source: Int? = null)
 
-/** 把下厨房上挤成一段的做法，交给 Gemini 拆成一步一步的清晰步骤。 */
-class GeminiStepSplitter(private val gemini: GeminiClient) {
+/** 把下厨房上挤成一段的做法，交给 AI 拆成一步一步的清晰步骤。 */
+class AiStepSplitter(private val ai: AiClient) {
 
     suspend fun split(rawSteps: List<String>): List<AiStep> {
         val text = numbered(rawSteps)
         if (text.isEmpty()) throw ImportException("没有可以拆分的步骤文字")
-        return parseResponse(gemini.generate(PROMPT + text, schema))
+        return parseResponse(ai.generate(PROMPT + text, schema))
     }
 
     companion object {
@@ -24,24 +25,24 @@ class GeminiStepSplitter(private val gemini: GeminiClient) {
             "source 填这一步的内容来自原文第几步（来自好几步时填最前面那一步）。\n\n做法原文：\n"
 
         private val schema
-            get() = GeminiClient.obj(
-                "steps" to GeminiClient.array(
-                    GeminiClient.stepSchema.apply {
-                        getJSONObject("properties").put("source", GeminiClient.integer(nullable = true))
+            get() = AiSchema.obj(
+                "steps" to AiSchema.array(
+                    AiSchema.stepSchema.apply {
+                        getJSONObject("properties").put("source", AiSchema.integer(nullable = true))
                     },
                 ),
                 required = listOf("steps"),
             )
 
-        /** 空步骤不发给 Gemini，但编号保持原来的位置，source 才对得上 */
+        /** 空步骤不发给 AI，但编号保持原来的位置，source 才对得上 */
         fun numbered(rawSteps: List<String>): String = rawSteps.mapIndexedNotNull { i, s ->
             s.trim().takeIf { it.isNotEmpty() }?.let { "${i + 1}. ${it.replace('\n', ' ')}" }
         }.joinToString("\n")
 
-        fun parseResponse(body: String): List<AiStep> {
-            val steps = GeminiClient.replyJson(body).optJSONArray("steps")
-                ?: throw ImportException("Gemini 返回的格式不对，请重试")
-            return GeminiClient.parseSteps(steps).ifEmpty { throw ImportException("Gemini 没有拆出步骤，请重试") }
+        fun parseResponse(reply: JSONObject): List<AiStep> {
+            val steps = reply.optJSONArray("steps")
+                ?: throw ImportException("AI 返回的格式不对，请重试")
+            return AiSchema.parseSteps(steps).ifEmpty { throw ImportException("AI 没有拆出步骤，请重试") }
         }
 
         /**

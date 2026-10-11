@@ -1,21 +1,22 @@
 package com.personal.mise.ai
 
 import com.personal.mise.importer.ImportException
+import org.json.JSONObject
 
 /** AI 分好的一个碗：[stepIndex] 是下锅的步骤（从 0 开始），items 是 用料序号 to 这碗的用量 */
 data class AiBowl(val stepIndex: Int?, val items: List<Pair<Int, String>>)
 
 /**
- * 把用料和步骤交给 Gemini，按「同一时刻一起下锅」分调料碗。
+ * 把用料和步骤交给 AI，按「同一时刻一起下锅」分调料碗。
  * 本地规则只能看步骤里提到了哪些用料，分不清腌料、碗汁和爆香料，这里让 AI 按烹饪常识来分。
  */
-class GeminiBowlOrganizer(private val gemini: GeminiClient) {
+class AiBowlOrganizer(private val ai: AiClient) {
 
     /** [ingredients] 是 名称 to 用量 */
     suspend fun organize(ingredients: List<Pair<String, String>>, steps: List<String>): List<AiBowl> {
         if (ingredients.isEmpty()) throw ImportException("还没有用料，没法分调料碗")
         if (steps.none { it.isNotBlank() }) throw ImportException("还没有步骤，没法分调料碗")
-        return parseResponse(gemini.generate(prompt(ingredients, steps), schema), ingredients.size, steps.size)
+        return parseResponse(ai.generate(prompt(ingredients, steps), schema), ingredients.size, steps.size)
     }
 
     companion object {
@@ -44,14 +45,14 @@ class GeminiBowlOrganizer(private val gemini: GeminiClient) {
         }
 
         private val schema
-            get() = GeminiClient.obj(
-                "bowls" to GeminiClient.array(
-                    GeminiClient.obj(
-                        "step" to GeminiClient.number(nullable = true),
-                        "items" to GeminiClient.array(
-                            GeminiClient.obj(
-                                "ingredient" to GeminiClient.number(),
-                                "amount" to GeminiClient.string(),
+            get() = AiSchema.obj(
+                "bowls" to AiSchema.array(
+                    AiSchema.obj(
+                        "step" to AiSchema.number(nullable = true),
+                        "items" to AiSchema.array(
+                            AiSchema.obj(
+                                "ingredient" to AiSchema.number(),
+                                "amount" to AiSchema.string(),
                                 required = listOf("ingredient", "amount"),
                             ),
                         ),
@@ -62,9 +63,9 @@ class GeminiBowlOrganizer(private val gemini: GeminiClient) {
             )
 
         /** 序号越界的用料丢掉，同一碗里重复的只留一次，空碗不留 */
-        fun parseResponse(body: String, ingredientCount: Int, stepCount: Int): List<AiBowl> {
-            val arr = GeminiClient.replyJson(body).optJSONArray("bowls")
-                ?: throw ImportException("Gemini 返回的格式不对，请重试")
+        fun parseResponse(reply: JSONObject, ingredientCount: Int, stepCount: Int): List<AiBowl> {
+            val arr = reply.optJSONArray("bowls")
+                ?: throw ImportException("AI 返回的格式不对，请重试")
             val bowls = (0 until arr.length()).mapNotNull { i ->
                 val bowl = arr.optJSONObject(i) ?: return@mapNotNull null
                 val step = bowl.optDouble("step", Double.NaN).takeIf { !it.isNaN() }?.toInt()?.minus(1)
@@ -78,7 +79,7 @@ class GeminiBowlOrganizer(private val gemini: GeminiClient) {
                 }.distinctBy { it.first }
                 if (items.isEmpty()) null else AiBowl(step, items)
             }
-            return bowls.ifEmpty { throw ImportException("Gemini 没有分出调料碗，请重试") }
+            return bowls.ifEmpty { throw ImportException("AI 没有分出调料碗，请重试") }
         }
     }
 }

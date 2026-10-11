@@ -64,7 +64,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.personal.mise.data.Ingredient
 import com.personal.mise.data.IngredientKind
 import com.personal.mise.ui.common.rememberApp
-import com.personal.mise.ui.edit.GeminiKeyDialog
+import com.personal.mise.ui.edit.AiKeyDialog
 import com.personal.mise.util.UnitText
 import kotlin.math.roundToInt
 
@@ -160,7 +160,7 @@ fun BowlEditScreen(recipeId: Long, onBack: () -> Unit) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     OutlinedButton(
                         enabled = vm.loaded && !vm.aiBusy,
-                        onClick = { if (vm.hasGeminiKey) vm.aiOrganize() else askingKey = true },
+                        onClick = { if (vm.hasAiKey) vm.aiOrganize() else askingKey = true },
                     ) { Text("AI 按下锅时机分碗") }
                     Spacer(Modifier.weight(1f))
                     if (vm.aiBusy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
@@ -326,11 +326,10 @@ fun BowlEditScreen(recipeId: Long, onBack: () -> Unit) {
     }
 
     if (askingKey) {
-        GeminiKeyDialog(
+        AiKeyDialog(
             confirmLabel = "保存并分碗",
             onDismiss = { askingKey = false },
             onConfirm = {
-                vm.saveGeminiKey(it)
                 askingKey = false
                 vm.aiOrganize()
             },
