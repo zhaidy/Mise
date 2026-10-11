@@ -28,6 +28,7 @@ import com.personal.mise.image.ImageStore
 import com.personal.mise.sync.KitchenSync
 import com.personal.mise.importer.RecipeImporter
 import com.personal.mise.importer.WebPageLoader
+import com.personal.mise.importer.WebViewCookieJar
 import com.personal.mise.timer.Notifications
 import com.personal.mise.timer.TimerManager
 import com.personal.mise.update.UpdateChecker
@@ -49,7 +50,7 @@ class MiseApp : Application() {
         private set
     /** 跟着进程走的后台任务，比如同步 */
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-    val importer: RecipeImporter by lazy { RecipeImporter(images, noteOrganizer, WebPageLoader(this)) }
+    val importer: RecipeImporter by lazy { RecipeImporter(images, noteOrganizer, WebPageLoader(this), WebViewCookieJar()) }
     val aiSettings: AiSettings by lazy { AiSettings(this) }
     val updater: UpdateChecker by lazy { UpdateChecker(this) }
     val backup: BackupManager by lazy { BackupManager(this, database) }

@@ -19,6 +19,7 @@ import com.personal.mise.data.StepDraft
 import com.personal.mise.importer.ImportException
 import com.personal.mise.ui.common.ClassifyState
 import com.personal.mise.importer.ImportResult
+import com.personal.mise.importer.NeedsVerificationException
 import com.personal.mise.importer.UrlExtractor
 import com.personal.mise.importer.XiaohongshuParser
 import kotlinx.coroutines.launch
@@ -46,8 +47,8 @@ data class StepRow(
 sealed interface LoadState {
     data object Loading : LoadState
     data object Ready : LoadState
-    /** needsKey：AI 整理时还没填 AI 的 API Key */
-    data class Failed(val message: String, val needsKey: Boolean = false) : LoadState
+    /** needsKey：AI 整理时还没填 AI 的 API Key；verifyUrl：被网站拦住了，可以在网页里打开这个地址手动验证 */
+    data class Failed(val message: String, val needsKey: Boolean = false, val verifyUrl: String? = null) : LoadState
 }
 
 /**
@@ -123,32 +124,45 @@ class EditorViewModel(
         load()
     }
 
-    fun load() {
+    fun load() = loadWith {
+        when {
+            imageImport -> {
+                val result = importImages()
+                warnings = result.warnings
+                aiOrganized = true
+                result.draft
+            }
+            importText != null -> {
+                // 没填 Key 时先别去抓网页、下图片
+                if (isXhsLink && !app.aiSettings.hasKey) throw ImportException("小红书笔记要用 AI 整理，请先填写 AI 的 API Key")
+                val result = if (aiNote) app.noteOrganizer.organize(importText) else app.importer.import(importText)
+                warnings = result.warnings
+                aiOrganized = aiNote || result.aiOrganized
+                addedImages += listOfNotNull(result.draft.coverImage) + result.draft.steps.mapNotNull { it.image }
+                result.draft
+            }
+            recipeId != 0L -> app.repository.loadDraft(recipeId) ?: throw ImportException("菜谱不存在")
+            else -> RecipeDraft(
+                ingredients = List(3) { IngredientDraft() },
+                steps = List(3) { StepDraft() },
+            )
+        }
+    }
+
+    /** 用户在网页里手动过了下厨房的验证，用网页里的内容导入 */
+    fun importVerifiedPage(pageUrl: String, html: String) = loadWith {
+        val result = app.importer.importPage(importText.orEmpty(), pageUrl, html)
+        warnings = result.warnings
+        aiOrganized = false
+        addedImages += listOfNotNull(result.draft.coverImage) + result.draft.steps.mapNotNull { it.image }
+        result.draft
+    }
+
+    private fun loadWith(getDraft: suspend () -> RecipeDraft) {
         loadState = LoadState.Loading
         viewModelScope.launch {
             try {
-                val draft = when {
-                    imageImport -> {
-                        val result = importImages()
-                        warnings = result.warnings
-                        aiOrganized = true
-                        result.draft
-                    }
-                    importText != null -> {
-                        // 没填 Key 时先别去抓网页、下图片
-                        if (isXhsLink && !app.aiSettings.hasKey) throw ImportException("小红书笔记要用 AI 整理，请先填写 AI 的 API Key")
-                        val result = if (aiNote) app.noteOrganizer.organize(importText) else app.importer.import(importText)
-                        warnings = result.warnings
-                        aiOrganized = aiNote || result.aiOrganized
-                        addedImages += listOfNotNull(result.draft.coverImage) + result.draft.steps.mapNotNull { it.image }
-                        result.draft
-                    }
-                    recipeId != 0L -> app.repository.loadDraft(recipeId) ?: throw ImportException("菜谱不存在")
-                    else -> RecipeDraft(
-                        ingredients = List(3) { IngredientDraft() },
-                        steps = List(3) { StepDraft() },
-                    )
-                }
+                val draft = getDraft()
                 fill(draft)
                 loadState = LoadState.Ready
                 // 导入的菜谱里有「适量」、没写用量或不是按克写的，有 Key 就顺手让 AI 估一下用量和克重，
@@ -159,6 +173,8 @@ class EditorViewModel(
                 }
                 // 下厨房链接导入的步骤常常几件事挤在一步里，有 Key 就自动用 AI 拆一下（AI 整理时已经分好步了）
                 if (isImport && !aiOrganized && hasAiKey && steps.any { it.text.isNotBlank() }) aiSplitSteps(auto = true)
+            } catch (e: NeedsVerificationException) {
+                loadState = LoadState.Failed(e.message ?: "导入失败", verifyUrl = e.url)
             } catch (e: ImportException) {
                 loadState = LoadState.Failed(e.message ?: "导入失败", needsKey = aiImport && !app.aiSettings.hasKey)
             } catch (e: Exception) {

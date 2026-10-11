@@ -13,12 +13,12 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
-import okhttp3.Cookie
 import okhttp3.CookieJar
-import okhttp3.HttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.IOException
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 
 open class ImportException(message: String) : Exception(message)
@@ -27,6 +27,11 @@ open class ImportException(message: String) : Exception(message)
 class HttpStatusException(val code: Int) : ImportException(
     if (code == 429) "网站暂时限制了访问（HTTP 429），过几分钟再试" else "打开链接失败（HTTP $code）",
 )
+
+/**
+ * 自动打开被网站拦住了（限流、验证页），可以让用户在网页里打开 [url]，手动过了验证再导入
+ */
+class NeedsVerificationException(val url: String, message: String) : ImportException(message)
 
 /** aiOrganized：内容已经是 AI 整理过的（步骤已经分好，不用再拆） */
 data class ImportResult(val draft: RecipeDraft, val warnings: List<String>, val aiOrganized: Boolean = false)
@@ -39,25 +44,15 @@ class RecipeImporter(
     private val images: ImageStore,
     private val organizer: AiRecipeOrganizer,
     private val browser: WebPageLoader,
+    private val cookieJar: CookieJar = MemoryCookieJar(),
 ) {
 
     // 下厨房有防爬虫验证：第一次访问只下发 cookie（或返回验证页），带上 cookie 再访问才是正常页面。
     // 没有 cookie jar 时每次请求都是「第一次」，就会出现要手动重试好几次才成功的情况。
-    private val cookieJar = object : CookieJar {
-        private val store = mutableMapOf<String, Cookie>()
+    // cookie 和 WebView 共用，WebView 里过了验证，直接请求也能用上。
 
-        @Synchronized
-        override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
-            cookies.forEach { store["${it.domain}|${it.path}|${it.name}"] = it }
-        }
-
-        @Synchronized
-        override fun loadForRequest(url: HttpUrl): List<Cookie> {
-            val now = System.currentTimeMillis()
-            store.values.removeAll { it.expiresAt < now }
-            return store.values.filter { it.matches(url) }
-        }
-    }
+    /** 返回过 429/403 的网站 →（到什么时候之前不再直接请求, 状态码）；冷却期内再请求只会延长限流 */
+    private val blocked = ConcurrentHashMap<String, Pair<Long, Int>>()
 
     private val client = OkHttpClient.Builder()
         .cookieJar(cookieJar)
@@ -74,12 +69,39 @@ class RecipeImporter(
         // 先直接抓；被防爬虫拦住（429、验证页）时先试 MIP 页面，再用 WebView 打开，让它跑完验证
         val direct = runCatching { fetchAndParse(url, MOBILE_UA) }
         val urlRecipeId = XiachufangParser.recipeId(url)
-        val (finalUrl, firstParsed) = direct.getOrNull()?.takeUnless { it.second.isEmpty }
+        val (finalUrl, parsed) = direct.getOrNull()?.takeUnless { it.second.isEmpty }
             ?: urlRecipeId?.let { fetchMip(it) }
             ?: loadInBrowser(url)
-            ?: direct.getOrThrow()
+            ?: throw blockedError(url, direct.exceptionOrNull())
+        (cookieJar as? WebViewCookieJar)?.flush()
+        buildResult(finalUrl, parsed, XiachufangParser.recipeId(finalUrl) ?: urlRecipeId)
+    }
+
+    /**
+     * 用户在网页里手动过了验证，用网页里渲染出来的内容导入。
+     * 验证拿到的 cookie 已经存在 WebView 里，之前的限流冷却也清掉，后面补抓电脑版、下次导入都能直接请求。
+     */
+    suspend fun importPage(sourceUrl: String, pageUrl: String, html: String): ImportResult = withContext(Dispatchers.IO) {
+        blocked.clear()
+        (cookieJar as? WebViewCookieJar)?.flush()
+        buildResult(pageUrl, XiachufangParser.parse(html, pageUrl), XiachufangParser.recipeId(pageUrl) ?: XiachufangParser.recipeId(sourceUrl))
+    }
+
+    /** 直接请求、MIP、WebView 都没拿到菜谱时报的错；网络本身不通就直说，被拦住了就提示可以去网页里验证 */
+    private fun blockedError(url: String, directError: Throwable?): Throwable = when {
+        directError is HttpStatusException && directError.code in BLOCKED_CODES -> NeedsVerificationException(
+            url,
+            "下厨房暂时限制了访问（HTTP ${directError.code}），马上重试还会被拦。可以点「网页验证」在网页里打开，过了验证会自动导入",
+        )
+        directError != null -> directError
+        else -> NeedsVerificationException(
+            url,
+            "没能从这个页面解析出菜谱，可能是下厨房要验证。可以点「网页验证」在网页里打开，过了验证会自动导入",
+        )
+    }
+
+    private suspend fun buildResult(finalUrl: String, firstParsed: ParsedRecipe, recipeId: String?): ImportResult {
         var parsed = firstParsed
-        val recipeId = XiachufangParser.recipeId(finalUrl) ?: urlRecipeId
 
         // 手机版页面解析不全、或者步骤一张图都没有（多半是步骤退回了不带图的 JSON-LD）时，
         // 用电脑版页面再试一次（电脑版结构已经验证过）
@@ -125,7 +147,7 @@ class RecipeImporter(
             },
             steps = parsed.steps.mapIndexed { i, step -> StepDraft(text = step.text, image = stepImages[i]) },
         )
-        ImportResult(draft, warnings)
+        return ImportResult(draft, warnings)
     }
 
     private suspend fun importXiaohongshu(url: String): ImportResult {
@@ -175,7 +197,7 @@ class RecipeImporter(
 
     private suspend fun loadInBrowser(url: String): Pair<String, ParsedRecipe>? {
         val (finalUrl, html) = runCatching {
-            browser.load(url) { pageUrl, html ->
+            browser.load(url, userAgent = MOBILE_UA) { pageUrl, html ->
                 withContext(Dispatchers.Default) { !XiachufangParser.parse(html, pageUrl).isEmpty }
             }
         }.getOrNull() ?: return null
@@ -202,6 +224,11 @@ class RecipeImporter(
     }
 
     private fun fetchPage(url: String, userAgent: String): Pair<String, String> {
+        val host = url.toHttpUrlOrNull()?.host ?: throw ImportException("链接格式不对")
+        blocked[host]?.let { (until, code) ->
+            if (System.currentTimeMillis() < until) throw HttpStatusException(code)
+            blocked.remove(host)
+        }
         val request = Request.Builder()
             .url(url)
             .header("User-Agent", userAgent)
@@ -210,6 +237,7 @@ class RecipeImporter(
             .build()
         try {
             client.newCall(request).execute().use { response ->
+                if (response.code in BLOCKED_CODES) blocked[host] = System.currentTimeMillis() + BLOCK_COOLDOWN_MS to response.code
                 if (!response.isSuccessful) throw HttpStatusException(response.code)
                 return response.request.url.toString() to response.body.string()
             }
@@ -237,6 +265,7 @@ class RecipeImporter(
         private const val PAGE_ATTEMPTS = 3
         private const val RETRY_DELAY_MS = 800L
         private val BLOCKED_CODES = setOf(403, 429)
+        private const val BLOCK_COOLDOWN_MS = 3 * 60_000L
         private const val XCF_REFERER = "https://www.xiachufang.com/"
         private const val XHS_REFERER = "https://www.xiaohongshu.com/"
 
