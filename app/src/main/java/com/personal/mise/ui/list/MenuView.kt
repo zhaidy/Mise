@@ -25,6 +25,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -43,6 +45,7 @@ import com.personal.mise.data.Recipe
 import com.personal.mise.data.RecipeMenu
 import com.personal.mise.data.tagList
 import com.personal.mise.ui.common.Eyebrow
+import com.personal.mise.ui.common.RecipeCover
 import com.personal.mise.ui.theme.LocalMiseColors
 import com.personal.mise.ui.theme.SerifFamily
 import com.personal.mise.util.CalorieText
@@ -192,55 +195,66 @@ private fun DishRow(item: MenuItem, today: LocalDate, onClick: () -> Unit, onLon
     val recipe = item.recipe
     val leader = MaterialTheme.colorScheme.outline
     val meta = (recipe.tagList + listOfNotNull(recipe.calories?.let(CalorieText::format))).joinToString(" · ")
-    Column(
+    Row(
         Modifier.fillMaxWidth()
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
             .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(verticalAlignment = Alignment.Bottom) {
-            // 点线铺满菜名这一格，菜名带底色盖住前半截，长菜名就省略号截断
-            Box(
-                Modifier.weight(1f).drawBehind {
-                    val y = size.height - 7.dp.toPx()
-                    drawLine(
-                        leader,
-                        start = Offset(0f, y),
-                        end = Offset(size.width, y),
-                        strokeWidth = 2.dp.toPx(),
-                        cap = StrokeCap.Round,
-                        pathEffect = PathEffect.dashPathEffect(floatArrayOf(0.1f, 4.dp.toPx())),
+        // 左边一张小缩略图，没图就是和卡片一样的纯色首字
+        RecipeCover(
+            recipe.title,
+            recipe.coverImage,
+            Modifier.size(44.dp).clip(RoundedCornerShape(8.dp)),
+            initialSize = 20.sp,
+        )
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.Bottom) {
+                // 点线铺满菜名这一格，菜名带底色盖住前半截，长菜名就省略号截断
+                Box(
+                    Modifier.weight(1f).drawBehind {
+                        val y = size.height - 7.dp.toPx()
+                        drawLine(
+                            leader,
+                            start = Offset(0f, y),
+                            end = Offset(size.width, y),
+                            strokeWidth = 2.dp.toPx(),
+                            cap = StrokeCap.Round,
+                            pathEffect = PathEffect.dashPathEffect(floatArrayOf(0.1f, 4.dp.toPx())),
+                        )
+                    },
+                ) {
+                    Text(
+                        recipe.title,
+                        style = MaterialTheme.typography.titleMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.background(MaterialTheme.colorScheme.background).padding(end = 8.dp),
                     )
-                },
-            ) {
+                }
+                Spacer(Modifier.width(8.dp))
+                val never = item.freshness == Freshness.NEVER
                 Text(
-                    recipe.title,
-                    style = MaterialTheme.typography.titleMedium,
+                    RecipeMenu.whenText(item, today),
+                    fontFamily = SerifFamily,
+                    fontSize = if (never) 14.sp else 15.sp,
+                    fontWeight = if (never) FontWeight.Medium else FontWeight.Bold,
+                    fontStyle = if (never) FontStyle.Italic else FontStyle.Normal,
+                    color = freshnessColor(item.freshness),
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.background(MaterialTheme.colorScheme.background).padding(end = 8.dp),
                 )
             }
-            Spacer(Modifier.width(8.dp))
-            val never = item.freshness == Freshness.NEVER
-            Text(
-                RecipeMenu.whenText(item, today),
-                fontFamily = SerifFamily,
-                fontSize = if (never) 14.sp else 15.sp,
-                fontWeight = if (never) FontWeight.Medium else FontWeight.Bold,
-                fontStyle = if (never) FontStyle.Italic else FontStyle.Normal,
-                color = freshnessColor(item.freshness),
-                maxLines = 1,
-            )
-        }
-        if (meta.isNotEmpty()) {
-            Text(
-                meta,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(top = 2.dp),
-            )
+            if (meta.isNotEmpty()) {
+                Text(
+                    meta,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 2.dp),
+                )
+            }
         }
     }
 }
