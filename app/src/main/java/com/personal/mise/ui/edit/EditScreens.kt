@@ -43,12 +43,13 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.personal.mise.ui.common.MiseHeader
 import com.personal.mise.ui.common.OutlinePillButton
 import com.personal.mise.ui.common.PillButton
+import com.personal.mise.ui.common.SectionHeader
 import com.personal.mise.ui.common.rememberApp
 import kotlinx.coroutines.launch
 
 /** 手动新建（recipeId = 0）或编辑菜谱 */
 @Composable
-fun RecipeEditScreen(recipeId: Long, onDone: (savedId: Long?) -> Unit) {
+fun RecipeEditScreen(recipeId: Long, onDone: (savedId: Long?) -> Unit, onSavedEditBowls: (savedId: Long) -> Unit) {
     val app = rememberApp()
     val vm: EditorViewModel = viewModel(key = "edit-$recipeId") { EditorViewModel(app, recipeId, null) }
     EditorScaffold(
@@ -57,6 +58,7 @@ fun RecipeEditScreen(recipeId: Long, onDone: (savedId: Long?) -> Unit) {
         saveLabel = "保存",
         discardMessage = "放弃这次修改吗？",
         onDone = onDone,
+        onSavedEditBowls = onSavedEditBowls,
     )
 }
 
@@ -109,6 +111,7 @@ private fun EditorScaffold(
     discardMessage: String,
     onDone: (savedId: Long?) -> Unit,
     header: @Composable () -> Unit = {},
+    onSavedEditBowls: ((savedId: Long) -> Unit)? = null,
 ) {
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
@@ -181,7 +184,33 @@ private fun EditorScaffold(
                     }
                 }
             }
-            LoadState.Ready -> RecipeEditor(vm, Modifier.padding(padding).fillMaxSize(), header)
+            LoadState.Ready -> RecipeEditor(
+                vm,
+                Modifier.padding(padding).fillMaxSize(),
+                header,
+                footer = {
+                    // 调料碗按保存后的用料和步骤生成，所以先保存再去调整
+                    if (onSavedEditBowls != null) Column {
+                        SectionHeader(
+                            "调料碗",
+                            Modifier.padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 4.dp),
+                            hint = "先保存用料和步骤，再去分碗",
+                        )
+                        OutlinePillButton(
+                            "保存并调整调料碗",
+                            enabled = !vm.saving,
+                            height = 48.dp,
+                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+                            onClick = {
+                                vm.save(
+                                    onSaved = { onSavedEditBowls(it) },
+                                    onError = { msg -> scope.launch { snackbar.showSnackbar(msg) } },
+                                )
+                            },
+                        )
+                    }
+                },
+            )
         }
     }
 
