@@ -41,4 +41,10 @@ class AmountScalerTest {
         assertEquals("×1.5", AmountScaler.label(1.5))
         assertEquals("×2", AmountScaler.label(2.0))
     }
+
+    @Test
+    fun scalesAmountWithGrams() {
+        assertEquals("30毫升 ≈36克", AmountScaler.scale("15毫升 ≈18克", 2.0))
+        assertEquals("3个 ≈150克", AmountScaler.scale("2个 ≈100克", 1.5))
+    }
 }
