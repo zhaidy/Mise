@@ -36,8 +36,17 @@ class AiRecipeOrganizer(private val ai: AiClient) {
         return parseResponse(ai.generate(xhsPrompt(images.size) + text, schema, images))
     }
 
+    /** 从相册选的图片（截图、菜谱书页、手写笔记等），按选择的顺序发给 AI 整理 */
+    suspend fun organizeImages(images: List<ByteArray>): AiRecipe {
+        if (images.isEmpty()) throw ImportException("没有可以整理的图片")
+        return parseResponse(ai.generate(imagesPrompt(images.size), schema, images))
+    }
+
     companion object {
         const val MAX_LENGTH = 20_000
+
+        /** 一次最多发给 AI 的图片数 */
+        const val MAX_IMAGES = 9
 
         private const val PROMPT = "下面是我在手机笔记里随手记的一道中文菜谱，格式不固定：可能没有标题、" +
             "用料和做法混在一起、用口语或缩写、有错别字、带表情符号或无关的闲聊。请把它整理成一份规范的菜谱。\n" +
@@ -74,6 +83,25 @@ class AiRecipeOrganizer(private val ai: AiClient) {
             (if (imageCount > 0) "前面的 $imageCount 张图片是这篇笔记的配图，按笔记里的顺序排列。\n\n" else "") +
             "笔记原文：\n"
 
+        private const val IMAGES_PROMPT = "下面是一道中文菜谱的图片，可能是网页或 App 的截图、菜谱书的照片、手写的笔记，" +
+            "也可能夹杂成品图或步骤图。请读出图片上的文字，整理成一份规范的菜谱。\n" +
+            "要求：\n" +
+            "1. title：图片上写的菜名，规范、简短（如「可乐鸡翅」）。没写菜名时根据内容起一个简短常见的菜名。\n" +
+            "2. servings：写了几人份或份量就填，没写留空。\n" +
+            "3. ingredients：所有用到的食材和调料，每样一条，name 只写名称，amount 写用量原文（如「300克」「2勺」「适量」），" +
+            "没写用量就留空字符串。做法里提到但用料里没列的也要收进来。同一样东西只列一次。\n" +
+            "4. steps：按先后顺序的做法，每一步只做一件主要的事，text 用简洁的一两句话，不要带序号和表情。" +
+            "明确写了某一步要等待或加热的时长（如「焖10分钟」）时，把分钟数填进 timerMinutes，否则留空。" +
+            "小贴士、注意事项放进相关的那一步里。\n" +
+            "5. 只整理图片上写了的内容，不要编造没有写的食材、用量、时间或步骤，保留原来的数字。" +
+            "不要根据成品图或步骤图的画面去猜用料和用量。\n" +
+            "6. 多张图片是同一道菜的不同部分（比如一张写用料、一张写做法，或一篇长文的连续截图），按顺序合在一起整理，" +
+            "图片之间重复的内容只保留一次。忽略截图里的状态栏、按钮、评论、广告等与做法无关的内容。\n" +
+            "7. 如果图片里有好几道菜，只整理第一道。如果完全不是菜谱，所有字段都返回空。\n\n"
+
+        private fun imagesPrompt(imageCount: Int) = IMAGES_PROMPT +
+            if (imageCount > 1) "一共 $imageCount 张图片，按顺序排列。" else "只有这一张图片。"
+
         fun xhsText(title: String, desc: String): String =
             listOf(title.trim().takeIf { it.isNotEmpty() }?.let { "标题：$it" }, desc.trim().takeIf { it.isNotEmpty() })
                 .filterNotNull().joinToString("\n")
@@ -98,7 +126,7 @@ class AiRecipeOrganizer(private val ai: AiClient) {
                 }
             }.orEmpty()
             val steps = AiSchema.parseSteps(json.optJSONArray("steps"))
-            if (ingredients.isEmpty() && steps.isEmpty()) throw ImportException("没能从这段文字里整理出菜谱，请确认内容是一道菜的做法")
+            if (ingredients.isEmpty() && steps.isEmpty()) throw ImportException("没能整理出菜谱，请确认内容是一道菜的做法")
             return AiRecipe(
                 title = json.optString("title").trim().nullIfNull(),
                 servings = json.optString("servings").trim().nullIfNull().takeIf { it.isNotEmpty() },
