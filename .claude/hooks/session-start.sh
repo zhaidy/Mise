@@ -6,6 +6,9 @@ if [ "${CLAUDE_CODE_REMOTE:-}" != "true" ]; then
   exit 0
 fi
 
+# 后台运行，会话不用等安装完才启动；刚开会话就编译的话，可能要等它跑完
+echo '{"async": true, "asyncTimeout": 600000}'
+
 cd "$CLAUDE_PROJECT_DIR"
 
 # 测试名有中文，默认 POSIX locale 下 Kotlin 编译器写不出这些 class 文件
