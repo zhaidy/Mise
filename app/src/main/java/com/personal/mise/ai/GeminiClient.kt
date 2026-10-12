@@ -29,7 +29,7 @@ class GeminiClient(private val settings: AiSettings, private val usage: AiUsage,
         val request = Request.Builder()
             .url("$ENDPOINT/$model:generateContent")
             .header("x-goog-api-key", key)
-            .post(requestBody(prompt, schema, images).toString().toRequestBody("application/json".toMediaType()))
+            .post(requestBody(model, prompt, schema, images).toString().toRequestBody("application/json".toMediaType()))
             .build()
         val reply = http.execute(request, "Gemini")
         if (reply.isSuccessful) {
@@ -80,15 +80,27 @@ class GeminiClient(private val settings: AiSettings, private val usage: AiUsage,
         /** 免费额度算在哪一天（太平洋时间的日期，比如 2026-10-10） */
         fun quotaDay(nowMillis: Long): String = Instant.ofEpochMilli(nowMillis).atZone(QUOTA_ZONE).toLocalDate().toString()
 
-        fun requestBody(prompt: String, schema: JSONObject, images: List<ByteArray> = emptyList()): JSONObject = JSONObject()
+        fun requestBody(model: String, prompt: String, schema: JSONObject, images: List<ByteArray> = emptyList()): JSONObject = JSONObject()
             .put("contents", JSONArray().put(JSONObject().put("parts", parts(prompt, images))))
             .put(
                 "generationConfig",
                 JSONObject()
                     .put("temperature", 0.2)
                     .put("responseMimeType", "application/json")
-                    .put("responseSchema", toGeminiSchema(schema)),
+                    .put("responseSchema", toGeminiSchema(schema))
+                    .apply { thinkingConfig(model)?.let { put("thinkingConfig", it) } },
             )
+
+        /**
+         * Flash 默认先思考再回答，估热量这种照格式整理的活要等十几秒；把思考调到最低。
+         * Gemini 3 系列用 thinkingLevel，有的型号不认 minimal 会报错，用 low；
+         * 2.5 系列用 thinkingBudget，0 是不思考。不认识的型号不设，免得被拒。
+         */
+        fun thinkingConfig(model: String): JSONObject? = when {
+            model.startsWith("gemini-3") -> JSONObject().put("thinkingLevel", "low")
+            model.startsWith("gemini-2.5-flash") -> JSONObject().put("thinkingBudget", 0)
+            else -> null
+        }
 
         /** 图片在前、文字在后 */
         private fun parts(prompt: String, images: List<ByteArray>): JSONArray {

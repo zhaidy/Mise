@@ -33,13 +33,24 @@ class GeminiClientTest {
 
     @Test
     fun `图片放在文字前面`() {
-        val body = GeminiClient.requestBody("看图整理", AiSchema.obj(), listOf(byteArrayOf(1, 2, 3)))
+        val body = GeminiClient.requestBody("gemini-3.8-flash", "看图整理", AiSchema.obj(), listOf(byteArrayOf(1, 2, 3)))
         val parts = body.getJSONArray("contents").getJSONObject(0).getJSONArray("parts")
         assertEquals(2, parts.length())
         val image = parts.getJSONObject(0).getJSONObject("inlineData")
         assertEquals("image/jpeg", image.getString("mimeType"))
         assertEquals("AQID", image.getString("data"))
         assertEquals("看图整理", parts.getJSONObject(1).getString("text"))
+    }
+
+    @Test
+    fun `把思考调到最低`() {
+        fun thinking(model: String) =
+            GeminiClient.requestBody(model, "估热量", AiSchema.obj()).getJSONObject("generationConfig").optJSONObject("thinkingConfig")
+        assertEquals("low", thinking("gemini-3.8-flash")!!.getString("thinkingLevel"))
+        assertEquals("low", thinking("gemini-3-flash-preview")!!.getString("thinkingLevel"))
+        assertEquals(0, thinking("gemini-2.5-flash")!!.getInt("thinkingBudget"))
+        assertEquals(0, thinking("gemini-2.5-flash-lite")!!.getInt("thinkingBudget"))
+        assertEquals(null, thinking("gemini-future"))
     }
 
     @Test
