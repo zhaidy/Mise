@@ -24,6 +24,10 @@ object SauceBowlGenerator {
 
     private val vagueAmounts = setOf("", "适量", "少许", "少量", "一点", "若干", "根据口味")
 
+    /** 同一样用料分几个碗时每个碗都写这个；用量是「适量」这类说不出总数的就照抄 */
+    fun splitAmountText(amount: String): String =
+        if (amount.trim() in vagueAmounts) amount.trim() else "分次加入，共 ${amount.trim()}"
+
     fun label(index: Int): String =
         if (index < 26) "调料碗 ${'A' + index}" else "调料碗 ${index + 1}"
 
@@ -77,7 +81,7 @@ object SauceBowlGenerator {
             .mapIndexed { bowlIndex, g ->
                 val items = finalMembers[g].map { idx ->
                     val amount = ingredients[idx].amountText.trim()
-                    val text = if (appearances[idx] > 1 && amount !in vagueAmounts) "分次加入，共 $amount" else amount
+                    val text = if (appearances[idx] > 1) splitAmountText(amount) else amount
                     GeneratedItem(idx, text)
                 }
                 val potStep = groups[g].firstOrNull { !prepSteps[it] } ?: groups[g].first()

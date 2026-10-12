@@ -38,6 +38,28 @@ class AiBowlOrganizerTest {
     }
 
     @Test
+    fun `同一样用料进了好几个碗时每个碗都标分次加入`() {
+        val bowls = AiBowlOrganizer.unifySplitAmounts(
+            listOf(
+                AiBowl(3, listOf(0 to "1结", 1 to "1粒")),
+                AiBowl(4, listOf(0 to "分次加入，共 约20克")),
+                AiBowl(5, listOf(2 to "少许")),
+                AiBowl(6, listOf(2 to "少许")),
+            ),
+            listOf("1结", "1粒", "适量"),
+        )
+        assertEquals(
+            listOf(
+                AiBowl(3, listOf(0 to "分次加入，共 1结", 1 to "1粒")),
+                AiBowl(4, listOf(0 to "分次加入，共 1结")),
+                AiBowl(5, listOf(2 to "适量")),
+                AiBowl(6, listOf(2 to "适量")),
+            ),
+            bowls,
+        )
+    }
+
+    @Test
     fun `返回内容不对时报错`() {
         assertThrows(ImportException::class.java) { AiBowlOrganizer.parseResponse(reply("{}"), 1, 1) }
         assertThrows(ImportException::class.java) { AiBowlOrganizer.parseResponse(reply("""{"bowls":[]}"""), 1, 1) }
