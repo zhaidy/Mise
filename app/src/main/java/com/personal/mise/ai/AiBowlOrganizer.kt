@@ -1,5 +1,6 @@
 package com.personal.mise.ai
 
+import com.personal.mise.bowl.SauceBowlGenerator
 import com.personal.mise.importer.ImportException
 import com.personal.mise.util.StepPhase
 import com.personal.mise.util.UnitText
@@ -18,7 +19,8 @@ class AiBowlOrganizer(private val ai: AiClient) {
     suspend fun organize(ingredients: List<Pair<String, String>>, steps: List<String>): List<AiBowl> {
         if (ingredients.isEmpty()) throw ImportException("还没有用料，没法分调料碗")
         if (steps.none { it.isNotBlank() }) throw ImportException("还没有步骤，没法分调料碗")
-        return parseResponse(ai.generate(prompt(ingredients, steps), schema), ingredients.size, steps.size)
+        val bowls = parseResponse(ai.generate(prompt(ingredients, steps), schema), ingredients.size, steps.size)
+        return unifySplitAmounts(bowls, ingredients.map { UnitText.normalize(it.second) })
     }
 
     companion object {
@@ -30,8 +32,8 @@ class AiBowlOrganizer(private val ai: AiClient) {
             "下锅爆香的花椒、干辣椒、葱姜蒜一碗；出锅前撒的葱花、香油单独一碗。" +
             "要先下锅炒一会儿（煸炒出油、煎至金黄、炒至变色）再放后面用料的，前后必须分碗，" +
             "例如五花肉先下锅煸出油，再下干辣椒、姜蒜：五花肉一碗，干辣椒、姜蒜一碗。\n" +
-            "2. 炒菜用的油不进碗。同一样用料分几次用时，可以出现在多个碗里，amount 写这一碗的用量；" +
-            "原文没有分开写用量就写「分次加入，共 X」。只出现一次的 amount 直接照抄用料的用量，没有用量留空字符串。\n" +
+            "2. 炒菜用的油不进碗。同一样用料分几次用时，可以出现在多个碗里，每个碗的 amount 都写「分次加入，共 X」，X 是用料的总用量。" +
+            "只出现一次的 amount 直接照抄用料的用量，没有用量留空字符串。\n" +
             "3. 每个碗的 step 填这碗在第几步下锅（步骤序号，从 1 开始）。\n" +
             "4. ingredient 填用料序号（从 1 开始），只用下面列出的用料，不要编造。\n" +
             "5. 按下锅的先后顺序排列碗。\n" +
@@ -72,6 +74,25 @@ class AiBowlOrganizer(private val ai: AiClient) {
                 ),
                 required = listOf("bowls"),
             )
+
+        /**
+         * 同一样用料进了好几个碗时，每个碗都统一写「分次加入，共 总用量」。
+         * AI 有时一个碗照抄总用量、另一个碗才写分次加入，看着像要放两份。
+         */
+        fun unifySplitAmounts(bowls: List<AiBowl>, amounts: List<String>): List<AiBowl> {
+            val appearances = bowls.flatMap { bowl -> bowl.items.map { it.first } }.groupingBy { it }.eachCount()
+            return bowls.map { bowl ->
+                bowl.copy(
+                    items = bowl.items.map { (index, amount) ->
+                        if ((appearances[index] ?: 0) > 1) {
+                            index to SauceBowlGenerator.splitAmountText(amounts.getOrElse(index) { "" })
+                        } else {
+                            index to amount
+                        }
+                    },
+                )
+            }
+        }
 
         /** 序号越界的用料丢掉，同一碗里重复的只留一次，空碗不留 */
         fun parseResponse(reply: JSONObject, ingredientCount: Int, stepCount: Int): List<AiBowl> {
