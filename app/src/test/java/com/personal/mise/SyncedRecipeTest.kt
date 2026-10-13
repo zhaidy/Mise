@@ -91,6 +91,14 @@ class SyncedRecipeTest {
     }
 
     @Test
+    fun `AI 估的步骤时长跟着同步`() {
+        val json = """{"切块":{"seconds":120,"handsOff":false}}"""
+        val map = SyncedRecipe.from(full.copy(recipe = full.recipe.copy(stepTimes = json))).toMap()
+        assertEquals(json, SyncedRecipe.fromMap("u-1", firestoreLike(map))?.stepTimes)
+        assertNull(SyncedRecipe.fromMap("u-1", firestoreLike(map - "stepTimes"))?.stepTimes)
+    }
+
+    @Test
     fun `旧版本的文档没有分类`() {
         val map = SyncedRecipe.from(full).toMap()
         assertEquals("家常菜", SyncedRecipe.fromMap("u-1", firestoreLike(map))?.category)

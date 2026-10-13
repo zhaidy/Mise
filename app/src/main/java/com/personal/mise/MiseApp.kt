@@ -21,6 +21,7 @@ import com.personal.mise.ai.AiRecipeReviewer
 import com.personal.mise.ai.AiRecipeTranslator
 import com.personal.mise.ai.AiSettings
 import com.personal.mise.ai.AiStepSplitter
+import com.personal.mise.ai.AiStepTimer
 import com.personal.mise.ai.AiUsage
 import com.personal.mise.ai.CellularNetwork
 import com.personal.mise.ai.DeepSeekClient
@@ -120,6 +121,7 @@ class MiseApp : Application() {
         }
     }
     val stepSplitter: AiStepSplitter by lazy { AiStepSplitter(ai) }
+    val stepTimer: AiStepTimer by lazy { AiStepTimer(ai) }
     val noteOrganizer: AiRecipeOrganizer by lazy { AiRecipeOrganizer(ai) }
     val bowlOrganizer: AiBowlOrganizer by lazy { AiBowlOrganizer(ai) }
     val amountEstimator: AiAmountEstimator by lazy { AiAmountEstimator(ai) }

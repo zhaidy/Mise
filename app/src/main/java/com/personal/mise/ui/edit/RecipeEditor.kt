@@ -280,6 +280,14 @@ fun RecipeEditor(
                         modifier = Modifier.padding(horizontal = 8.dp),
                     )
                 }
+                if (vm.estimatingTimes) {
+                    Text(
+                        "AI 正在估每一步要多久，多菜时间线会按它排…",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 8.dp),
+                    )
+                }
             }
         }
         itemsIndexed(vm.steps, key = { _, row -> "step-${row.key}" }) { index, row ->

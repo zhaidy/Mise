@@ -28,6 +28,22 @@ object StepPhase {
     /** [index] 这一步是不是开火前的备料 */
     fun isPrep(index: Int, cookStart: Int?): Boolean = cookStart != null && index < cookStart
 
+    /** 这些步骤大部分时间可以走开 */
+    private val handsOffWords = listOf("炖", "焖", "煲", "蒸", "烤", "腌", "泡", "静置", "醒", "冷藏", "冷冻", "卤", "煮", "发酵", "晾")
+
+    /** 带这些字的要一直动手或盯着 */
+    private val busyWords = listOf("炒", "煎", "炸", "翻", "搅", "不停", "收汁")
+
+    /** 至少这么久才算能走开，几十秒的「蒸一下」不算 */
+    private const val HANDS_OFF_MIN_SECONDS = 300
+
+    /** 没让 AI 估过时，按文字猜这一步能不能走开：炖、焖、腌这类够久的，又不用翻炒的 */
+    fun isHandsOff(text: String, seconds: Int): Boolean {
+        if (seconds < HANDS_OFF_MIN_SECONDS) return false
+        val cleaned = notHeat.fold(text) { acc, w -> acc.replace(w, "") }
+        return handsOffWords.any { cleaned.contains(it) } && busyWords.none { cleaned.contains(it) }
+    }
+
     /** 不动火、要腌一会儿的步骤 */
     fun isMarinateStep(text: String): Boolean = text.contains("腌") && !isHeatStep(text)
 

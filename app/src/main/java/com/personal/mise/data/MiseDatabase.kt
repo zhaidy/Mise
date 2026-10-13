@@ -30,12 +30,12 @@ abstract class MiseDatabase : RoomDatabase() {
     abstract fun chatDao(): ChatDao
 
     companion object {
-        const val VERSION = 13
+        const val VERSION = 14
         const val NAME = "mise.db"
 
         fun create(context: Context): MiseDatabase =
             Room.databaseBuilder(context, MiseDatabase::class.java, NAME)
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14)
                 .build()
     }
 }
@@ -181,5 +181,12 @@ val MIGRATION_12_13 = object : Migration(12, 13) {
                 "fromUser INTEGER NOT NULL, text TEXT NOT NULL, card TEXT, model TEXT, createdAt INTEGER NOT NULL)"
         )
         db.execSQL("CREATE INDEX IF NOT EXISTS index_ai_chat_message_thread ON ai_chat_message (thread)")
+    }
+}
+
+/** v14：菜谱加 stepTimes，AI 估的每一步时长 */
+val MIGRATION_13_14 = object : Migration(13, 14) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE recipe ADD COLUMN stepTimes TEXT")
     }
 }
