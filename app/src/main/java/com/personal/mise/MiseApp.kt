@@ -12,6 +12,7 @@ import com.personal.mise.ai.AiAmountEstimator
 import com.personal.mise.ai.AiBowlOrganizer
 import com.personal.mise.ai.AiCalorieEstimator
 import com.personal.mise.ai.AiClassifier
+import com.personal.mise.ai.AiCookFeedback
 import com.personal.mise.ai.AiChatClient
 import com.personal.mise.ai.AiClient
 import com.personal.mise.ai.AiHttp
@@ -128,6 +129,7 @@ class MiseApp : Application() {
     val stepTimer: AiStepTimer by lazy { AiStepTimer(ai) }
     val classifier: AiClassifier by lazy { AiClassifier(ai) }
     val substituter: AiSubstituter by lazy { AiSubstituter(ai) }
+    val cookFeedback: AiCookFeedback by lazy { AiCookFeedback(ai) }
     val shoppingOrganizer: AiShoppingOrganizer by lazy { AiShoppingOrganizer(ai) }
     /** AI 整理过的购物清单，按清单内容记着，这次运行里回来看不用再等 AI */
     val shoppingGroups = mutableMapOf<List<String>, List<ShoppingList.AiGroup>>()

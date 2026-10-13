@@ -1,5 +1,7 @@
 package com.personal.mise.ui.cooking
 
+import com.personal.mise.util.NoteText
+import com.personal.mise.ui.common.CookFeedbackDialog
 import com.personal.mise.data.Ingredient
 import com.personal.mise.ui.common.SubstituteAsk
 import com.personal.mise.ui.common.SubstituteDialog
@@ -293,6 +295,16 @@ private fun RecipePager(
 
     // 在菜谱里点了某一步，切回做菜后翻到那一步
     var jumpTo by remember { mutableStateOf<Int?>(null) }
+    // 点「做好了」后问一句做得怎么样
+    var feedbackOpen by remember { mutableStateOf(false) }
+    if (feedbackOpen) {
+        CookFeedbackDialog(
+            recipeId = row.recipeId,
+            title = row.title,
+            onDismiss = { feedbackOpen = false },
+            onSaved = { scope.launch { snackbar.showSnackbar(it) } },
+        )
+    }
     // 计时到点是只响铃，还是自动翻到下一步接着计时；记在本机，下次还是这个
     var autoNext by rememberSavedView("timer_auto_next")
 
@@ -331,6 +343,7 @@ private fun RecipePager(
                         else -> null
                     },
                     bowls = data.bowlsForStep(step.id),
+                    reminders = NoteText.forStep(data.recipe.note, page),
                     factor = factor,
                     timers = timers.filter { it.stepIndex == page },
                     now = now,
@@ -366,6 +379,7 @@ private fun RecipePager(
                                     snackbar.showSnackbar("${row.title}已经标成做完了")
                                 } else {
                                     app.repository.setTodayDone(row.recipeId, true)
+                                    feedbackOpen = true
                                     snackbar.showSnackbar("${row.title}做完了，已记下")
                                 }
                             }
@@ -586,6 +600,8 @@ private fun StepPage(
     /** 备料阶段、开火那一步给个提示，其余不显示 */
     phase: String?,
     bowls: List<BowlFull>,
+    /** 批注里写给这一步的提醒，如「鸡腿多炖 5 分钟」 */
+    reminders: List<String>,
     factor: Double,
     timers: List<CookingTimer>,
     now: Long,
@@ -652,6 +668,19 @@ private fun StepPage(
                             Text(UnitText.display(AmountScaler.scale(item.amountText, factor)), fontSize = 19.sp, fontWeight = FontWeight.Bold)
                         }
                     }
+                }
+            }
+        }
+
+        if (reminders.isNotEmpty()) {
+            Surface(
+                shape = RoundedCornerShape(18.dp),
+                color = MaterialTheme.colorScheme.tertiaryContainer,
+                contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+            ) {
+                Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)) {
+                    Text("我的批注", style = MaterialTheme.typography.labelMedium)
+                    reminders.forEach { Text(it, fontSize = 19.sp, fontWeight = FontWeight.Medium) }
                 }
             }
         }
