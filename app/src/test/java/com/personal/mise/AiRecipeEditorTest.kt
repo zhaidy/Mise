@@ -129,4 +129,19 @@ class AiRecipeEditorTest {
         assertEquals(listOf(StepDraft(10, "豆腐切块", "a.jpg", null), StepDraft(12, "小火煮", null, 360)), after.steps)
         assertEquals(setOf("b.jpg"), AiRecipeEditor.droppedImages(draft, after))
     }
+
+    @Test
+    fun `没改就没有修改建议，改了用料提醒重估热量`() {
+        val same = AiRecipeEditor.editable(draft)
+        assertNull(AiRecipeEditor.propose(draft, com.personal.mise.ai.AiRecipeEdit(same, "不用改")))
+        val changed = same.copy(
+            ingredients = listOf(EditIngredient("豆腐", "2块", 1), EditIngredient("花椒", "1茶匙", 2)),
+            steps = same.steps.mapIndexed { i, step -> step.copy(source = i + 1) },
+        )
+        val proposal = AiRecipeEditor.propose(draft, com.personal.mise.ai.AiRecipeEdit(changed, "豆腐加倍"), fromReview = true)!!
+        assertEquals("豆腐加倍", proposal.summary)
+        assertEquals(listOf("豆腐：1块 → 2块", "用料变了，热量可以重新估算"), proposal.changes)
+        assertTrue(proposal.fromReview)
+        assertEquals("2块", proposal.after.ingredients.first().amountText)
+    }
 }
