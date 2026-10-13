@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -21,6 +22,7 @@ import com.personal.mise.ai.RecipeReview
 /**
  * AI 对菜谱的评价：分数、一句话总评、亮点和要注意的地方。
  * [review] 为空时只显示 [busy] 的进度或 [message]；[onRefresh] 为空时没有「重新评价」按钮。
+ * [onFix] 不为空、评价里有要注意的地方时，显示「照评价修改」；[fixing] 时 AI 正在改。
  */
 @Composable
 fun RecipeReviewCard(
@@ -29,11 +31,13 @@ fun RecipeReviewCard(
     busy: Boolean = false,
     message: String? = null,
     onRefresh: (() -> Unit)? = null,
+    fixing: Boolean = false,
+    onFix: (() -> Unit)? = null,
 ) {
     SoftCard(modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp)) {
         Column(Modifier.padding(start = 16.dp, end = 4.dp, top = 8.dp, bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("✨ AI 评价", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                Text("✨ AI 口味评价", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                 if (review != null) {
                     Text(
                         "  ${review.score}",
@@ -58,12 +62,22 @@ fun RecipeReviewCard(
                         review.highlights.forEach { ReviewLine("👍", it) }
                         review.concerns.forEach { ReviewLine("⚠️", it) }
                     }
-                    busy -> Text("正在让 AI 评价这份菜谱…", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    busy -> Text("正在让 AI 尝尝这份菜谱的味道…", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     else -> Text(
                         message ?: "还没评价",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                }
+                if (review != null && review.concerns.isNotEmpty() && onFix != null) {
+                    if (fixing) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                            Text("AI 正在照评价修改…", style = MaterialTheme.typography.bodySmall)
+                        }
+                    } else {
+                        OutlinedButton(onClick = onFix, enabled = !busy) { Text("✨ 照评价修改") }
+                    }
                 }
                 if (review != null && message != null && !busy) {
                     Text(message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
