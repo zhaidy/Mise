@@ -10,6 +10,7 @@ import androidx.lifecycle.viewModelScope
 import com.personal.mise.MiseApp
 import com.personal.mise.ai.AiAmountEstimator
 import com.personal.mise.ai.AiRecipeOrganizer
+import com.personal.mise.ai.RecipeReview
 import com.personal.mise.ai.AiStepSplitter
 import com.personal.mise.bowl.SeasoningDictionary
 import com.personal.mise.data.IngredientDraft
@@ -87,6 +88,12 @@ class EditorViewModel(
     var estimatingCalories by mutableStateOf(false)
         private set
     var caloriesMessage by mutableStateOf<String?>(null)
+    /** 导入时 AI 给的评价，保存时一起存下 */
+    var review by mutableStateOf<RecipeReview?>(null)
+        private set
+    var reviewing by mutableStateOf(false)
+        private set
+    var reviewMessage by mutableStateOf<String?>(null)
 
     var title by mutableStateOf("")
     var servings by mutableStateOf("")
@@ -174,6 +181,8 @@ class EditorViewModel(
                     if (canEstimate) estimateAmounts()
                     if (calories.isBlank()) estimateCalories()
                 }
+                // 导入时顺手让 AI 评价一下这份菜谱，和估用量同时进行
+                if (isImport && hasAiKey) aiReview()
                 // 下厨房链接导入的步骤常常几件事挤在一步里，有 Key 就自动用 AI 拆一下（AI 整理时已经分好步了）
                 if (isImport && !aiOrganized && hasAiKey && steps.any { it.text.isNotBlank() }) aiSplitSteps(auto = true)
             } catch (e: NeedsVerificationException) {
@@ -370,6 +379,26 @@ class EditorViewModel(
         }
     }
 
+    // 评价
+
+    /** 让 AI 按现在的用料和做法评价这份菜谱 */
+    fun aiReview() {
+        if (reviewing) return
+        reviewing = true
+        reviewMessage = null
+        viewModelScope.launch {
+            try {
+                review = app.recipeReviewer.review(title, servings, ingredients.map { it.name to it.amount }, steps.map { it.text })
+            } catch (e: ImportException) {
+                reviewMessage = e.message
+            } catch (e: Exception) {
+                reviewMessage = "AI 评价失败：${e.message ?: e.javaClass.simpleName}"
+            } finally {
+                reviewing = false
+            }
+        }
+    }
+
     /**
      * 把现有步骤文字交给 AI 重新拆分。原来每步的图片和计时跟到拆出来的第一步；
      * 带图的步骤对应不上时不改动，免得把图弄丢。auto = 导入时自动拆分。
@@ -448,8 +477,8 @@ class EditorViewModel(
 
     // 保存
 
-    /** 导入后 AI 还在拆步骤、估用量或热量，结果会改内容，等它做完再保存 */
-    val importAiRunning: Boolean get() = isImport && (aiBusy || estimating || estimatingCalories)
+    /** 导入后 AI 还在拆步骤、估用量、热量或评价，结果会改内容，等它做完再保存 */
+    val importAiRunning: Boolean get() = isImport && (aiBusy || estimating || estimatingCalories || reviewing)
 
     val canSave: Boolean get() = !saving && !importAiRunning
 
@@ -464,6 +493,7 @@ class EditorViewModel(
             try {
                 val draft = toDraft()
                 val id = app.repository.save(draft)
+                if (isImport) review?.let { app.repository.setReview(id, it) }
                 val kept = listOfNotNull(draft.coverImage) + draft.steps.mapNotNull { it.image }
                 (addedImages - kept.toSet()).forEach { app.images.delete(it) }
                 addedImages.clear()
