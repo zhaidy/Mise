@@ -1,5 +1,7 @@
 package com.personal.mise.ui.detail
 
+import com.personal.mise.ui.common.SubstituteAsk
+import com.personal.mise.ui.common.SubstituteDialog
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -152,6 +154,7 @@ fun RecipeDetailScreen(
     var proposal by remember { mutableStateOf<AiEditProposal?>(null) }
     var askingKey by remember { mutableStateOf(false) }
     var chatOpen by remember { mutableStateOf(false) }
+    var substitute by remember { mutableStateOf<SubstituteAsk?>(null) }
     var logOpen by remember { mutableStateOf(false) }
     var planOpen by remember { mutableStateOf(false) }
     var classifyOpen by remember { mutableStateOf(false) }
@@ -279,6 +282,7 @@ fun RecipeDetailScreen(
         val original = remember(data.recipe.original) { RecipeText.fromJson(data.recipe.original) }
         val originalShown = original?.takeIf { showOriginal }
         val review = remember(data.recipe.review) { RecipeReview.fromJson(data.recipe.review) }
+        val askSubstitute: (Ingredient, String) -> Unit = { ing, amount -> substitute = SubstituteAsk(recipeId, ing.name, amount) }
 
         val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
 
@@ -428,7 +432,7 @@ fun RecipeDetailScreen(
                 originalItems(originalShown)
             } else {
                 item(key = "mains-title") { SectionHeader("主料", Modifier.padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 4.dp)) }
-                item(key = "mains") { IngredientTable(mains, factor) }
+                item(key = "mains") { IngredientTable(mains, factor, onAsk = askSubstitute) }
                 item(key = "seasonings-title") {
                     SectionHeader(
                         "调料",
@@ -436,7 +440,17 @@ fun RecipeDetailScreen(
                         accent = MaterialTheme.colorScheme.secondary,
                     )
                 }
-                item(key = "seasonings") { IngredientTable(seasonings, factor) }
+                item(key = "seasonings") { IngredientTable(seasonings, factor, onAsk = askSubstitute) }
+                if (data.ingredients.isNotEmpty()) {
+                    item(key = "substitute-hint") {
+                        Text(
+                            "家里缺哪样，点一下问 AI 用什么代替",
+                            Modifier.padding(start = 20.dp, end = 20.dp, top = 6.dp),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
 
                 item(key = "bowls-title") {
                     SectionHeader(
@@ -530,6 +544,8 @@ fun RecipeDetailScreen(
             }
         }
     }
+
+    substitute?.let { SubstituteDialog(it, onDismiss = { substitute = null }) }
 
     if (chatOpen) {
         full?.let { current ->
@@ -816,7 +832,7 @@ private fun StatRow(label: String, value: String, muted: Boolean, action: @Compo
 
 /** 用料表：名称 ······ 用量 */
 @Composable
-internal fun IngredientTable(items: List<Ingredient>, factor: Double) {
+internal fun IngredientTable(items: List<Ingredient>, factor: Double, onAsk: ((Ingredient, String) -> Unit)? = null) {
     if (items.isEmpty()) {
         Text("无", Modifier.padding(horizontal = 20.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
         return
@@ -824,7 +840,12 @@ internal fun IngredientTable(items: List<Ingredient>, factor: Double) {
     val dots = MaterialTheme.colorScheme.outline
     Column(Modifier.padding(horizontal = 20.dp)) {
         items.forEach { ing ->
-            Row(Modifier.fillMaxWidth().heightIn(min = 36.dp), verticalAlignment = Alignment.CenterVertically) {
+            val amount = UnitText.display(AmountScaler.scale(ing.amountText, factor))
+            Row(
+                Modifier.fillMaxWidth().heightIn(min = 36.dp)
+                    .then(if (onAsk != null) Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClickLabel = "问 AI 用什么代替") { onAsk(ing, amount) } else Modifier),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 Text(ing.name, style = MaterialTheme.typography.bodyLarge)
                 Box(
                     Modifier.weight(1f).height(12.dp).padding(horizontal = 10.dp).drawBehind {
@@ -839,7 +860,7 @@ internal fun IngredientTable(items: List<Ingredient>, factor: Double) {
                     },
                 )
                 Text(
-                    UnitText.display(AmountScaler.scale(ing.amountText, factor)),
+                    amount,
                     style = MaterialTheme.typography.bodyLarge,
                     fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
