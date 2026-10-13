@@ -60,6 +60,29 @@ class AiBowlOrganizerTest {
     }
 
     @Test
+    fun `腌过的主料只留在腌料碗，下锅时只剩它的碗不留`() {
+        val steps = listOf("牛肉加盐、淀粉腌 15 分钟", "爆香蒜，加盐", "下牛肉炒熟")
+        val bowls = listOf(
+            AiBowl(0, listOf(0 to "250克", 1 to "分次加入，共 5克", 2 to "8克")),
+            AiBowl(1, listOf(3 to "2瓣", 1 to "")),
+            AiBowl(2, listOf(0 to "")),
+        )
+        val result = AiBowlOrganizer.keepSingleOnce(bowls, listOf(true, false, false, false), steps)
+        assertEquals(2, result.size)
+        assertEquals(listOf(0, 1, 2), result[0].items.map { it.first })
+        assertEquals(listOf(3, 1), result[1].items.map { it.first })
+    }
+
+    @Test
+    fun `没腌过的主料留在最后一碗`() {
+        val steps = listOf("土豆切丝", "土豆丝下锅，加醋")
+        val bowls = listOf(AiBowl(0, listOf(0 to "1个")), AiBowl(1, listOf(0 to "", 1 to "1勺")))
+        val result = AiBowlOrganizer.keepSingleOnce(bowls, listOf(true, false), steps)
+        assertEquals(1, result.size)
+        assertEquals(listOf(0, 1), result[0].items.map { it.first })
+    }
+
+    @Test
     fun `返回内容不对时报错`() {
         assertThrows(ImportException::class.java) { AiBowlOrganizer.parseResponse(reply("{}"), 1, 1) }
         assertThrows(ImportException::class.java) { AiBowlOrganizer.parseResponse(reply("""{"bowls":[]}"""), 1, 1) }

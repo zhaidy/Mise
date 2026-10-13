@@ -135,6 +135,18 @@ class SauceBowlGeneratorTest {
     }
 
     @Test
+    fun `腌过的主料跟腌料一碗，下锅时不再单独分一碗`() {
+        val ingredients = listOf(ing("牛肉", "250克"), ing("生抽", "1 汤匙"), ing("淀粉", "1 茶匙"), ing("芹菜", "3 根"))
+        val steps = listOf("牛肉切片，加生抽、淀粉抓匀腌 15 分钟", "芹菜切段", "热锅下油，下牛肉炒至变色", "加芹菜炒熟")
+        val bowls = SauceBowlGenerator.generate(ingredients, steps, listOf(900, null, null, null))
+        assertEquals(2, bowls.size)
+        assertEquals(0, bowls[0].stepIndex)
+        assertEquals(listOf("牛肉", "生抽", "淀粉"), names(ingredients, bowls[0]))
+        assertEquals("250克", bowls[0].items[0].amountText)
+        assertEquals(listOf("芹菜"), names(ingredients, bowls[1]))
+    }
+
+    @Test
     fun `较长的调料名优先匹配`() {
         val ingredients = listOf(ing("冰糖", "20克"), ing("白糖", "5克"), ing("老抽", "1 汤匙"))
         val found = SauceBowlGenerator.findIngredients("加冰糖和老抽", ingredients)

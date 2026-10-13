@@ -12,7 +12,8 @@ import com.personal.mise.data.IngredientKind
  * 只是切配的步骤不算下锅：碗的下锅步骤取组里第一个真正下锅的步骤；葱姜蒜在切配步骤里出现、后面还会再用到的，
  * 不进切配所在的碗。
  * 炒菜用的油不进碗。同一种调料分几个碗时标「分次加入」；
- * 主料、配料只进最后一个用到它的碗（备料时切好、下锅时才放的那一次）。
+ * 主料、配料只进一个碗：腌过的跟腌料一碗（腌好后连碗一起倒进锅），没腌过的进最后一个用到它的碗
+ * （备料时切好、下锅时才放的那一次）。
  */
 object SauceBowlGenerator {
 
@@ -54,19 +55,27 @@ object SauceBowlGenerator {
                 return@forEachIndexed
             }
             run += stepIndex
-            if (timers.getOrNull(stepIndex) != null || needsCookingTime(steps[stepIndex])) flush()
+            val text = steps[stepIndex]
+            if (timers.getOrNull(stepIndex) != null || needsCookingTime(text) || isMarinating(text)) flush()
         }
         flush()
 
-        val prepSteps = steps.map { isPrepOnly(it) }
+        // 腌制也算把用料混进碗里，不像单纯切配那样不算数
+        val prepSteps = steps.map { isPrepOnly(it) && !isMarinating(it) }
         val membersPerGroup = groups.map { group -> group.flatMap { matchesPerStep[it] }.distinct() }
-        val lastGroupOf = IntArray(ingredients.size) { -1 }
-        membersPerGroup.forEachIndexed { g, members -> members.forEach { lastGroupOf[it] = g } }
+        val marinateGroups = groups.map { group -> group.any { isMarinating(steps[it]) } }
+        val homeGroupOf = IntArray(ingredients.size) { -1 }
+        membersPerGroup.forEachIndexed { g, members -> members.forEach { homeGroupOf[it] = g } }
+        // 腌过的主料、配料留在腌料碗里，后面下锅时倒的就是这一碗
+        ingredients.indices.forEach { idx ->
+            val marinated = membersPerGroup.indices.firstOrNull { g -> marinateGroups[g] && idx in membersPerGroup[g] }
+            if (marinated != null && !isSplittable(ingredients[idx])) homeGroupOf[idx] = marinated
+        }
 
-        // 主料、配料只进最后一个碗；调料、爆香料每个下锅用到的碗都进，只在切配步骤里出现的那次不算
+        // 主料、配料只进自己那一碗；调料、爆香料每个下锅用到的碗都进，只在切配步骤里出现的那次不算
         val finalMembers = membersPerGroup.mapIndexed { g, members ->
             members.filter { idx ->
-                lastGroupOf[idx] == g || (
+                homeGroupOf[idx] == g || (
                     isSplittable(ingredients[idx]) &&
                         groups[g].any { step -> !prepSteps[step] && idx in matchesPerStep[step] }
                     )
@@ -75,7 +84,7 @@ object SauceBowlGenerator {
         val appearances = IntArray(ingredients.size)
         finalMembers.forEach { members -> members.forEach { appearances[it]++ } }
 
-        // 主料挪到后面的碗之后，前面的碗可能空了，空碗不留
+        // 主料只留在自己那一碗，别的碗可能空了，空碗不留
         return groups.indices
             .filter { finalMembers[it].isNotEmpty() }
             .mapIndexed { bowlIndex, g ->
@@ -105,8 +114,16 @@ object SauceBowlGenerator {
     fun isPrepOnly(stepText: String): Boolean =
         prepWords.any { it in stepText } && heatWords.none { it in stepText }
 
-    private fun isSplittable(ingredient: IngredientInput): Boolean =
-        ingredient.kind == IngredientKind.SEASONING || SeasoningDictionary.isAromatic(ingredient.name)
+    private val marinateWords = listOf("腌", "码味", "上浆")
+
+    /** 腌制、上浆：用料提前混在一个碗里，过一阵连碗一起下锅 */
+    fun isMarinating(stepText: String): Boolean = marinateWords.any { it in stepText }
+
+    private fun isSplittable(ingredient: IngredientInput): Boolean = isSplittable(ingredient.name, ingredient.kind)
+
+    /** 调料、爆香料可以分几次加；主料、配料只有一份，只能进一个碗 */
+    fun isSplittable(name: String, kind: String): Boolean =
+        kind == IngredientKind.SEASONING || SeasoningDictionary.isAromatic(name)
 
     /**
      * 找出步骤文字里提到的用料，按第一次出现的位置排序。

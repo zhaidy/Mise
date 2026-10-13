@@ -124,7 +124,11 @@ class BowlEditViewModel(private val app: MiseApp, private val recipeId: Long) : 
         aiMessage = null
         viewModelScope.launch {
             try {
-                val result = app.bowlOrganizer.organize(ingredients.map { it.name to it.amountText }, steps.map { it.text })
+                val result = app.bowlOrganizer.organize(
+                    ingredients.map { it.name to it.amountText },
+                    steps.map { it.text },
+                    ingredients.map { it.kind },
+                )
                 bowls.clear()
                 bowls += result.map { b ->
                     EditBowl(

@@ -1,6 +1,7 @@
 package com.personal.mise.ai
 
 import com.personal.mise.bowl.SauceBowlGenerator
+import com.personal.mise.data.IngredientKind
 import com.personal.mise.importer.ImportException
 import com.personal.mise.util.StepPhase
 import com.personal.mise.util.UnitText
@@ -15,12 +16,20 @@ data class AiBowl(val stepIndex: Int?, val items: List<Pair<Int, String>>)
  */
 class AiBowlOrganizer(private val ai: AiClient) {
 
-    /** [ingredients] 是 名称 to 用量 */
-    suspend fun organize(ingredients: List<Pair<String, String>>, steps: List<String>): List<AiBowl> {
+    /** [ingredients] 是 名称 to 用量；[kinds] 与之一一对应，用来认出只有一份的主料、配料 */
+    suspend fun organize(
+        ingredients: List<Pair<String, String>>,
+        steps: List<String>,
+        kinds: List<String> = emptyList(),
+    ): List<AiBowl> {
         if (ingredients.isEmpty()) throw ImportException("还没有用料，没法分调料碗")
         if (steps.none { it.isNotBlank() }) throw ImportException("还没有步骤，没法分调料碗")
         val bowls = parseResponse(ai.generate(prompt(ingredients, steps), schema), ingredients.size, steps.size)
-        return unifySplitAmounts(bowls, ingredients.map { UnitText.normalize(it.second) })
+        val single = ingredients.mapIndexed { i, (name, _) ->
+            !SauceBowlGenerator.isSplittable(name, kinds.getOrElse(i) { IngredientKind.MAIN })
+        }
+        val deduped = keepSingleOnce(bowls, single, steps)
+        return unifySplitAmounts(deduped, ingredients.map { UnitText.normalize(it.second) })
     }
 
     companion object {
@@ -28,11 +37,11 @@ class AiBowlOrganizer(private val ai: AiClient) {
             "做菜时按步骤一碗一碗倒进锅里。请帮我分碗。\n" +
             "要求：\n" +
             "1. 同一时刻一起下锅（或一起拌匀）的用料放一个碗；不同时机下锅的必须分开。" +
-            "例如：腌肉的腌料和肉一碗；预先调好、最后淋入的碗汁（糖、醋、酱油、水淀粉等）单独一碗；" +
+            "例如：腌肉的腌料和肉一碗，腌好后整碗下锅，下锅那一步不要再为肉单独分一碗；预先调好、最后淋入的碗汁（糖、醋、酱油、水淀粉等）单独一碗；" +
             "下锅爆香的花椒、干辣椒、葱姜蒜一碗；出锅前撒的葱花、香油单独一碗。" +
             "要先下锅炒一会儿（煸炒出油、煎至金黄、炒至变色）再放后面用料的，前后必须分碗，" +
             "例如五花肉先下锅煸出油，再下干辣椒、姜蒜：五花肉一碗，干辣椒、姜蒜一碗。\n" +
-            "2. 炒菜用的油不进碗。同一样用料分几次用时，可以出现在多个碗里，每个碗的 amount 都写「分次加入，共 X」，X 是用料的总用量。" +
+            "2. 炒菜用的油不进碗。主料、配料只有一份，只能进一个碗。调料分几次用时，可以出现在多个碗里，每个碗的 amount 都写「分次加入，共 X」，X 是用料的总用量。" +
             "只出现一次的 amount 直接照抄用料的用量，没有用量留空字符串。\n" +
             "3. 每个碗的 step 填这碗在第几步下锅（步骤序号，从 1 开始）。\n" +
             "4. ingredient 填用料序号（从 1 开始），只用下面列出的用料，不要编造。\n" +
@@ -74,6 +83,23 @@ class AiBowlOrganizer(private val ai: AiClient) {
                 ),
                 required = listOf("bowls"),
             )
+
+        /**
+         * 主料、配料只有一份，AI 有时腌的时候放一碗、下锅时又单独放一碗。
+         * 腌过的留在腌料碗（腌好整碗倒进锅），没腌过的留最后一碗；这样空出来的碗不留。
+         */
+        fun keepSingleOnce(bowls: List<AiBowl>, single: List<Boolean>, steps: List<String>): List<AiBowl> {
+            val marinating = bowls.map { bowl -> bowl.stepIndex?.let { SauceBowlGenerator.isMarinating(steps[it]) } == true }
+            val home = mutableMapOf<Int, Int>()
+            bowls.forEachIndexed { b, bowl ->
+                bowl.items.forEach { (index, _) ->
+                    if (single.getOrElse(index) { false } && home[index]?.let { marinating[it] } != true) home[index] = b
+                }
+            }
+            return bowls.mapIndexed { b, bowl ->
+                bowl.copy(items = bowl.items.filter { (index, _) -> home[index]?.let { it == b } ?: true })
+            }.filter { it.items.isNotEmpty() }
+        }
 
         /**
          * 同一样用料进了好几个碗时，每个碗都统一写「分次加入，共 总用量」。
