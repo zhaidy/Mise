@@ -114,6 +114,12 @@ sealed interface ChatCard {
         override fun describe(): String = if (status == CardStatus.APPLIED) "（用户打开了导入页）" else "（App 准备好了导入）"
     }
 
+    /** 让 AI 按 [request] 写一份新菜谱，点了去预览页看过再存 */
+    data class Generate(val request: String, val status: CardStatus = CardStatus.PENDING) : ChatCard {
+        override fun toJson(): JSONObject = JSONObject().put("type", "generate").put("request", request).put("status", status.name)
+        override fun describe(): String = if (status == CardStatus.APPLIED) "（用户打开了 AI 写的菜谱）" else "（App 准备好了让 AI 写菜谱）"
+    }
+
     /** 出错了；[retry] 是重试时要重发的话，[action] 是重试时要重做的操作 */
     data class Error(val message: String, val retry: String? = null, val action: String? = null) : ChatCard {
         override fun toJson(): JSONObject = JSONObject()
@@ -141,6 +147,7 @@ sealed interface ChatCard {
             "recipes" -> Recipes(longs(obj.optJSONArray("ids")), strings(obj.optJSONArray("titles")))
             "plan" -> Plan(obj.optString("date"), longs(obj.optJSONArray("ids")), strings(obj.optJSONArray("titles")), status(obj))
             "import" -> Import(obj.optString("text"), obj.optBoolean("link"), status(obj))
+            "generate" -> Generate(obj.optString("request"), status(obj))
             "error" -> Error(obj.optString("message"), obj.optNullable("retry"), obj.optNullable("action"))
             else -> null
         }

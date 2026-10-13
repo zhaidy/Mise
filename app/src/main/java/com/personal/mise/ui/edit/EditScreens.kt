@@ -64,15 +64,19 @@ fun RecipeEditScreen(recipeId: Long, onDone: (savedId: Long?) -> Unit, onSavedEd
 
 /** 导入预览：解析下厨房链接，或让 AI 整理笔记文字、小红书笔记、图片，确认或修改后再保存 */
 @Composable
-fun ImportScreen(sharedText: String, aiNote: Boolean, imageUris: List<Uri>, onDone: (savedId: Long?) -> Unit) {
+fun ImportScreen(sharedText: String, aiNote: Boolean, imageUris: List<Uri>, onDone: (savedId: Long?) -> Unit, generate: Boolean = false) {
     val app = rememberApp()
-    val vm: EditorViewModel = viewModel(key = "import-$aiNote-$sharedText-$imageUris") {
+    val vm: EditorViewModel = viewModel(key = "import-$aiNote-$generate-$sharedText-$imageUris") {
         if (imageUris.isNotEmpty()) EditorViewModel(app, 0L, null, imageUris = imageUris)
-        else EditorViewModel(app, 0L, sharedText, aiNote)
+        else EditorViewModel(app, 0L, sharedText, aiNote, generate = generate)
     }
     EditorScaffold(
         vm = vm,
-        title = if (vm.aiImport) "AI 整理预览" else "导入预览",
+        title = when {
+            vm.generate -> "AI 写的菜谱"
+            vm.aiImport -> "AI 整理预览"
+            else -> "导入预览"
+        },
         saveLabel = "保存",
         discardMessage = "放弃导入吗？已下载的图片会被删除。",
         onDone = onDone,
@@ -93,7 +97,11 @@ fun ImportScreen(sharedText: String, aiNote: Boolean, imageUris: List<Uri>, onDo
                 }
             } else {
                 Text(
-                    if (vm.aiImport) "AI 已整理完成，请对照原文检查用料和步骤再保存" else "已解析完成，检查一下再保存",
+                    when {
+                        vm.generate -> "AI 按「${sharedText.trim().take(30)}」写好了，检查一下用料和步骤再保存"
+                        vm.aiImport -> "AI 已整理完成，请对照原文检查用料和步骤再保存"
+                        else -> "已解析完成，检查一下再保存"
+                    },
                     Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -159,6 +167,7 @@ private fun EditorScaffold(
                     Text(
                         when {
                             vm.imageImport -> "AI 正在看图整理菜谱，大约需要半分钟…"
+                            vm.generate -> "AI 正在写菜谱，大约需要十几秒…"
                             vm.aiNote -> "AI 正在整理菜谱，大约需要十几秒…"
                             vm.isXhsLink -> "正在读取小红书笔记，AI 看图整理大约需要半分钟…"
                             vm.isImport -> "正在读取网页和下载图片…"

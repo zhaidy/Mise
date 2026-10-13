@@ -119,6 +119,7 @@ fun AiChatSheet(
     onImportImages: (List<Uri>) -> Unit = {},
     onCreate: (() -> Unit)? = null,
     onNewRecipe: (NewRecipeWay) -> Unit = {},
+    onGenerate: (String) -> Unit = {},
 ) {
     val app = rememberApp()
     // 每次打开按现在的菜谱、计划和时间换一批问法
@@ -212,7 +213,11 @@ fun AiChatSheet(
                         onUse = { use(it) },
                     )
                 } else {
-                    Messages(session, recipeChat, onOpenRecipe, onImport, onFix = { withKey { session.runTool(ChatAction(ChatAction.FIX), "✦ 照评价修改") } })
+                    Messages(
+                        session, recipeChat, onOpenRecipe, onImport,
+                        onFix = { withKey { session.runTool(ChatAction(ChatAction.FIX), "✦ 照评价修改") } },
+                        onGenerate = onGenerate,
+                    )
                 }
             }
 
@@ -300,6 +305,7 @@ private fun Messages(
     onOpenRecipe: (Long) -> Unit,
     onImport: (String, Boolean) -> Unit,
     onFix: () -> Unit,
+    onGenerate: (String) -> Unit,
 ) {
     val listState = rememberLazyListState()
     val items = session.items
@@ -322,7 +328,7 @@ private fun Messages(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         items(items, key = { it.id }) { item ->
-            ChatRow(session, item, recipeChat, onOpenRecipe, onImport, onFix)
+            ChatRow(session, item, recipeChat, onOpenRecipe, onImport, onFix, onGenerate)
         }
         if (streaming != null) {
             item(key = "streaming") {
@@ -349,6 +355,7 @@ private fun ChatRow(
     onOpenRecipe: (Long) -> Unit,
     onImport: (String, Boolean) -> Unit,
     onFix: () -> Unit,
+    onGenerate: (String) -> Unit,
 ) {
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         if (item.fromUser) {
@@ -372,6 +379,10 @@ private fun ChatRow(
                     onImport(text, aiNote)
                 },
                 onFix = onFix,
+                onGenerate = { request ->
+                    session.markImported(item)
+                    onGenerate(request)
+                },
             )
         }
     }
@@ -525,6 +536,7 @@ private fun globalTools(canCreate: Boolean): List<Tool> = listOf(
 
 /** 新建菜谱的几种办法，原来首页右下角「新菜谱」里的 */
 private fun newRecipeTools(): List<Tool> = listOf(
+    Tool("✦", "AI 写菜谱", way = NewRecipeWay.GENERATE),
     Tool("✚", "手动新建", create = true),
     Tool("⌕", "搜下厨房", way = NewRecipeWay.XIACHUFANG),
     Tool("⇣", "粘贴链接", way = NewRecipeWay.LINK),

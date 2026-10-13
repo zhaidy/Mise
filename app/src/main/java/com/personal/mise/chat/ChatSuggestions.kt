@@ -43,6 +43,7 @@ object ChatSuggestions {
             val main = r.ingredients.take(2)
             eat += "家里有${main.joinToString("和")}，除了「${r.title}」还能做什么？"
         }
+        recipes.flatMap { it.ingredients.take(2) }.distinct().randomOrNull(random)?.let { eat += "用${it}帮我写一道新菜谱" }
         if (now.dayOfWeek == DayOfWeek.SATURDAY || now.dayOfWeek == DayOfWeek.SUNDAY) eat += "周末有空，挑一道费点功夫的硬菜"
         else eat += "工作日晚上，来道半小时能做好的"
         seasonAsk(today)?.let { eat += it }

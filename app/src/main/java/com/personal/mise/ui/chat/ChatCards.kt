@@ -55,6 +55,7 @@ fun ChatCardView(
     onOpenRecipe: (Long) -> Unit,
     onImport: (String, Boolean) -> Unit,
     onFix: () -> Unit,
+    onGenerate: (String) -> Unit = {},
 ) {
     when (card) {
         is ChatCard.Proposal -> ProposalCard(card, busy, canUndo, onApply, onDismiss, onUndo)
@@ -65,6 +66,7 @@ fun ChatCardView(
         is ChatCard.Recipes -> RecipesCard(card, onOpenRecipe)
         is ChatCard.Plan -> PlanCard(card, busy, canUndo, onApply, onDismiss, onUndo)
         is ChatCard.Import -> ImportCard(card, onImport)
+        is ChatCard.Generate -> GenerateCard(card, onGenerate)
         is ChatCard.Error -> ErrorCard(card, busy, onRetry)
     }
 }
@@ -222,6 +224,21 @@ private fun ImportCard(card: ChatCard.Import, onImport: (String, Boolean) -> Uni
         )
         Button(onClick = { onImport(card.text, !card.link) }, shape = CircleShape, modifier = Modifier.fillMaxWidth()) {
             Text(if (card.status == CardStatus.APPLIED) "再打开一次" else "去导入")
+        }
+    }
+}
+
+@Composable
+private fun GenerateCard(card: ChatCard.Generate, onGenerate: (String) -> Unit) {
+    CardFrame("让 AI 写菜谱", "新菜谱") {
+        Text(card.request.take(80), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
+        Text(
+            "AI 按这个要求写好菜名、用料和步骤，先给你看，检查过再存。",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Button(onClick = { onGenerate(card.request) }, shape = CircleShape, modifier = Modifier.fillMaxWidth()) {
+            Text(if (card.status == CardStatus.APPLIED) "再写一份" else "生成菜谱")
         }
     }
 }

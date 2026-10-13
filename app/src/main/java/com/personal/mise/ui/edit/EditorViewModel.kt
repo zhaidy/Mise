@@ -71,6 +71,8 @@ class EditorViewModel(
     private val importText: String?,
     val aiNote: Boolean = false,
     private val imageUris: List<Uri> = emptyList(),
+    /** importText 是一句要求，让 AI 按它写一份新菜谱 */
+    val generate: Boolean = false,
 ) : ViewModel() {
 
     private val keys = AtomicLong(1)
@@ -141,10 +143,10 @@ class EditorViewModel(
     val isImport: Boolean get() = importText != null || imageImport
 
     /** 小红书链接：抓到笔记后交给 AI 整理 */
-    val isXhsLink: Boolean = !aiNote && importText?.let { UrlExtractor.firstUrl(it) }?.let { XiaohongshuParser.isNoteUrl(it) } == true
+    val isXhsLink: Boolean = !aiNote && !generate && importText?.let { UrlExtractor.firstUrl(it) }?.let { XiaohongshuParser.isNoteUrl(it) } == true
 
     /** 导入内容由 AI 整理（笔记文字或小红书），需要 Key */
-    val aiImport: Boolean get() = aiNote || isXhsLink || imageImport
+    val aiImport: Boolean get() = aiNote || isXhsLink || imageImport || generate
 
     init {
         load()
@@ -161,9 +163,14 @@ class EditorViewModel(
             importText != null -> {
                 // 没填 Key 时先别去抓网页、下图片
                 if (isXhsLink && !app.aiSettings.hasKey) throw ImportException("小红书笔记要用 AI 整理，请先填写 AI 的 API Key")
-                val result = if (aiNote) app.noteOrganizer.organize(importText) else app.importer.import(importText)
+                if (generate && !app.aiSettings.hasKey) throw ImportException("让 AI 写菜谱，请先填写 AI 的 API Key")
+                val result = when {
+                    generate -> app.noteOrganizer.generate(importText)
+                    aiNote -> app.noteOrganizer.organize(importText)
+                    else -> app.importer.import(importText)
+                }
                 warnings = result.warnings
-                aiOrganized = aiNote || result.aiOrganized
+                aiOrganized = aiNote || generate || result.aiOrganized
                 addedImages += listOfNotNull(result.draft.coverImage) + result.draft.steps.mapNotNull { it.image }
                 result.draft
             }
