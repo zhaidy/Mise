@@ -187,6 +187,10 @@ interface RecipeDao {
     @Insert
     suspend fun insertBowlItem(item: SauceBowlItem): Long
 
+    /** 用料改了用量时，碗里原样记着整份用量的跟着改；分几碗各放一部分的不动 */
+    @Query("UPDATE sauce_bowl_item SET amountText = :newAmount WHERE ingredientId = :ingredientId AND amountText = :oldAmount")
+    suspend fun updateBowlItemAmount(ingredientId: Long, oldAmount: String, newAmount: String)
+
     @Query("DELETE FROM sauce_bowl WHERE recipeId = :recipeId")
     suspend fun deleteBowls(recipeId: Long)
 }

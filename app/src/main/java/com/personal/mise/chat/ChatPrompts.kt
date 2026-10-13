@@ -79,7 +79,8 @@ object ChatPrompts {
         append('\n')
         append(MARKER_RULES)
         val tools = RecipeTools.of(full)
-        append("<<edit: 一句话写清楚要怎么改>> 修改这份菜谱：换份量、换食材、改做法、调口味、把你说的建议写进步骤等。用户明确想改菜谱时才用。\n")
+        append("<<edit: 一句话写清楚要怎么改>> 修改这份菜谱：换份量、换食材、改做法、调口味、把你说的建议写进步骤等。用户明确想改菜谱时才用。" +
+            "冒号后面按用料和步骤说要改什么，比如 <<edit: 细砂糖改成150克>>；调料碗会跟着用料自动变，不用提。\n")
         if (tools.review) append("<<review>> 从口味上给这道菜打分评价，结果会存到菜谱上。\n")
         if (tools.fix) append("<<fix>> 按菜谱上已有评价里要注意的地方改菜谱。\n")
         if (tools.calories) append("<<calories>> 估算整道菜的热量。\n")
