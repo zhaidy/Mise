@@ -6,6 +6,7 @@ import com.personal.mise.data.IngredientKind
 import com.personal.mise.data.RecipeDraft
 import com.personal.mise.data.StepDraft
 import com.personal.mise.importer.ImportException
+import com.personal.mise.util.RecipeChanges
 import com.personal.mise.util.UnitText
 import org.json.JSONArray
 import org.json.JSONObject
@@ -23,6 +24,19 @@ data class EditableRecipe(
 
 /** AI 改好的菜谱和一句话说明改了什么 */
 class AiRecipeEdit(val recipe: EditableRecipe, val summary: String)
+
+/**
+ * AI 想怎么改，等用户确定了才改：AI 的说明、列出的每一处改动、改之前和改之后的草稿、
+ * 改完没地方放的步骤图。[fromReview] 是照评价改的，改完要重新评价。
+ */
+class AiEditProposal(
+    val summary: String,
+    val changes: List<String>,
+    val before: RecipeDraft,
+    val after: RecipeDraft,
+    val dropped: Set<String>,
+    val fromReview: Boolean = false,
+)
 
 /** 按用户的一句话（「改成4人份」「不要辣」「换成空气炸锅」）让 AI 修改整份菜谱 */
 class AiRecipeEditor(private val ai: AiClient) {
@@ -146,6 +160,20 @@ class AiRecipeEditor(private val ai: AiClient) {
                     StepDraft(old?.id ?: 0, step.text, old?.image, step.timerMinutes?.let { (it * 60).toInt() }?.takeIf { it > 0 })
                 },
             )
+        }
+
+        /** 把 AI 改好的套到 [before] 上，列出改了什么；什么都没改时返回 null */
+        fun propose(before: RecipeDraft, edit: AiRecipeEdit, fromReview: Boolean = false): AiEditProposal? {
+            val after = apply(before, edit.recipe)
+            val changes = RecipeChanges.describe(before, after)
+            if (changes.isEmpty()) return null
+            val dropped = droppedImages(before, after)
+            val ingredientsChanged = before.ingredients.map { it.name to it.amountText } != after.ingredients.map { it.name to it.amountText }
+            val notes = listOfNotNull(
+                "有 ${dropped.size} 张步骤图没地方放，会去掉".takeIf { dropped.isNotEmpty() },
+                "用料变了，热量可以重新估算".takeIf { ingredientsChanged && before.calories != null },
+            )
+            return AiEditProposal(edit.summary, changes + notes, before, after, dropped, fromReview)
         }
 
         /** 改完后没有步骤用到的步骤图 */

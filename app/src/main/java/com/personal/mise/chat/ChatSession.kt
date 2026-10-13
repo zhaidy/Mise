@@ -499,6 +499,8 @@ class ChatSession internal constructor(
             lastApplied = applied
             undoable = item.id
             setStatus(item.id, CardStatus.APPLIED)
+            // 照评价改好了，按改好的菜谱重新评一次分
+            if (recipeId != null && card is ChatCard.Proposal && card.kind == ProposalKind.FIX) perform(ChatAction(ChatAction.REVIEW))
         } catch (e: ImportException) {
             if (e.message == STALE) {
                 pending.remove(item.id)

@@ -17,14 +17,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 
 /**
- * AI 改完以后列出改了什么：[summary] 是 AI 的一句话说明，[changes] 是对比前后列出的每一处改动。
- * [onUndo] 撤回到改之前，[onKeep] 留着改好的。
+ * AI 想这样改：[summary] 是 AI 的一句话说明，[changes] 是对比前后列出的每一处改动。
+ * 这时还没改，[onConfirm] 才改，[onCancel] 保持原样。
  */
 @Composable
-fun AiChangesDialog(summary: String, changes: List<String>, onUndo: () -> Unit, onKeep: () -> Unit) {
+fun AiChangesDialog(summary: String, changes: List<String>, onCancel: () -> Unit, onConfirm: () -> Unit) {
     AlertDialog(
-        onDismissRequest = onKeep,
-        title = { Text("AI 改了这些") },
+        onDismissRequest = onCancel,
+        title = { Text("AI 想这样改") },
         text = {
             Column(
                 Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()),
@@ -37,10 +37,10 @@ fun AiChangesDialog(summary: String, changes: List<String>, onUndo: () -> Unit, 
                         Text(line, style = MaterialTheme.typography.bodyMedium)
                     }
                 }
-                Text("已经改好了；不满意可以撤销，回到改之前的样子。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("还没改，确定后才会改；取消就保持原样。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         },
-        confirmButton = { TextButton(onClick = onKeep) { Text("就这样") } },
-        dismissButton = { TextButton(onClick = onUndo) { Text("撤销") } },
+        confirmButton = { TextButton(onClick = onConfirm) { Text("确定修改") } },
+        dismissButton = { TextButton(onClick = onCancel) { Text("取消") } },
     )
 }
