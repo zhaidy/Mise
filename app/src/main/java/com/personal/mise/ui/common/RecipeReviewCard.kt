@@ -1,5 +1,7 @@
 package com.personal.mise.ui.common
 
+import androidx.compose.animation.animateContentSize
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -13,9 +15,16 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.personal.mise.ai.RecipeReview
 
@@ -23,6 +32,8 @@ import com.personal.mise.ai.RecipeReview
  * AI 对菜谱的评价：分数、一句话总评、亮点和要注意的地方。
  * [review] 为空时只显示 [busy] 的进度或 [message]；[onRefresh] 为空时没有「重新评价」按钮。
  * [onFix] 不为空、评价里有要注意的地方时，显示「照评价修改」；[fixing] 时 AI 正在改。
+ * 评价默认折叠成一行总评（[initiallyExpanded] 为 true 时默认展开），点标题行展开看亮点和要注意的地方；
+ * 刚评价完会自动展开。
  */
 @Composable
 fun RecipeReviewCard(
@@ -33,10 +44,25 @@ fun RecipeReviewCard(
     onRefresh: (() -> Unit)? = null,
     fixing: Boolean = false,
     onFix: (() -> Unit)? = null,
+    initiallyExpanded: Boolean = false,
 ) {
+    var expanded by rememberSaveable { mutableStateOf(initiallyExpanded) }
+    // 刚评价完（busy 变回 false 且有结果）就展开给人看
+    var wasBusy by remember { mutableStateOf(busy) }
+    LaunchedEffect(busy) {
+        if (wasBusy && !busy && review != null) expanded = true
+        wasBusy = busy
+    }
+    val collapsed = review != null && !expanded
     SoftCard(modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp)) {
-        Column(Modifier.padding(start = 16.dp, end = 4.dp, top = 8.dp, bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+        Column(
+            Modifier.animateContentSize().padding(start = 16.dp, end = 4.dp, top = 8.dp, bottom = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Row(
+                Modifier.clickable(enabled = review != null) { expanded = !expanded },
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 Text("✨ AI 口味评价", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                 if (review != null) {
                     Text(
@@ -46,6 +72,11 @@ fun RecipeReviewCard(
                         color = MaterialTheme.colorScheme.primary,
                     )
                     Text(" / 10", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        if (expanded) "  收起 ▴" else "  展开 ▾",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
                 Row(Modifier.weight(1f), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
                     if (busy) {
@@ -57,6 +88,13 @@ fun RecipeReviewCard(
             }
             Column(Modifier.padding(end = 12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 when {
+                    collapsed -> Text(
+                        review!!.summary,
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.clickable { expanded = true },
+                    )
                     review != null -> {
                         Text(review.summary, style = MaterialTheme.typography.bodyLarge)
                         review.highlights.forEach { ReviewLine("👍", it) }
@@ -69,7 +107,7 @@ fun RecipeReviewCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                if (review != null && review.concerns.isNotEmpty() && onFix != null) {
+                if (review != null && review.concerns.isNotEmpty() && onFix != null && (fixing || !collapsed)) {
                     if (fixing) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
