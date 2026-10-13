@@ -4,6 +4,10 @@ import com.personal.mise.ai.AiRecipeEditor
 import com.personal.mise.ai.AiStep
 import com.personal.mise.ai.EditIngredient
 import com.personal.mise.ai.EditableRecipe
+import com.personal.mise.data.IngredientDraft
+import com.personal.mise.data.IngredientKind
+import com.personal.mise.data.RecipeDraft
+import com.personal.mise.data.StepDraft
 import com.personal.mise.importer.ImportException
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
@@ -73,5 +77,56 @@ class AiRecipeEditorTest {
         val recipe = AiRecipeEditor.toJson(EditableRecipe("a", "", emptyList(), listOf(AiStep("炒", null))))
         assertEquals(1, recipe.getJSONArray("steps").getJSONObject(0).getInt("no"))
         assertNull(recipe.getJSONArray("steps").getJSONObject(0).opt("timerMinutes").takeIf { it != JSONObject.NULL })
+    }
+
+    private val draft = RecipeDraft(
+        id = 7,
+        title = "麻婆豆腐",
+        servings = "2人份",
+        calories = 500,
+        tags = listOf("川菜"),
+        ingredients = listOf(
+            IngredientDraft(1, "豆腐", "1块", IngredientKind.MAIN),
+            IngredientDraft(2, "花椒", "1茶匙", IngredientKind.SEASONING),
+            IngredientDraft(3, "", "", IngredientKind.MAIN),
+        ),
+        steps = listOf(
+            StepDraft(10, "豆腐切块", "a.jpg", null),
+            StepDraft(11, "炒香花椒", "b.jpg", 120),
+            StepDraft(12, "小火煮", null, 300),
+        ),
+    )
+
+    @Test
+    fun `发给 AI 的菜谱不带空行，计时换成分钟`() {
+        val recipe = AiRecipeEditor.editable(draft)
+        assertEquals(listOf("豆腐", "花椒"), recipe.ingredients.map { it.name })
+        assertEquals(listOf(null, 2.0, 5.0), recipe.steps.map { it.timerMinutes })
+    }
+
+    @Test
+    fun `改好的菜谱接着用原来的编号、分类和步骤图`() {
+        val edited = EditableRecipe(
+            title = "",
+            servings = "4人份",
+            ingredients = listOf(
+                EditIngredient("豆腐", "2块", 1),
+                EditIngredient("黑胡椒", "1茶匙", 2),
+                EditIngredient("盐", "2克", null),
+                EditIngredient("葱", "1根", null),
+            ),
+            steps = listOf(AiStep("豆腐切块", null, 1), AiStep("小火煮", 6.0, 3)),
+        )
+        val after = AiRecipeEditor.apply(draft, edited)
+        assertEquals("麻婆豆腐", after.title)
+        assertEquals("4人份", after.servings)
+        assertEquals(listOf("川菜"), after.tags)
+        assertEquals(500, after.calories)
+        assertEquals(listOf(1L, 2L, 0L, 0L), after.ingredients.map { it.id })
+        assertEquals(IngredientKind.SEASONING, after.ingredients[1].kind)
+        assertEquals(IngredientKind.SEASONING, after.ingredients[2].kind)
+        assertEquals(IngredientKind.MAIN, after.ingredients[3].kind)
+        assertEquals(listOf(StepDraft(10, "豆腐切块", "a.jpg", null), StepDraft(12, "小火煮", null, 360)), after.steps)
+        assertEquals(setOf("b.jpg"), AiRecipeEditor.droppedImages(draft, after))
     }
 }

@@ -9,12 +9,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.personal.mise.MiseApp
 import com.personal.mise.ai.AiAmountEstimator
-import com.personal.mise.ai.AiRecipeEditor
 import com.personal.mise.ai.AiRecipeOrganizer
-import com.personal.mise.ai.AiStep
 import com.personal.mise.ai.AiStepSplitter
-import com.personal.mise.ai.EditIngredient
-import com.personal.mise.ai.EditableRecipe
 import com.personal.mise.bowl.SeasoningDictionary
 import com.personal.mise.data.IngredientDraft
 import com.personal.mise.data.IngredientKind
@@ -420,112 +416,6 @@ class EditorViewModel(
                 aiBusy = false
             }
         }
-    }
-
-    // 一句话让 AI 改菜谱
-
-    var aiEditInstruction by mutableStateOf("")
-    var aiEditing by mutableStateOf(false)
-        private set
-    var aiEditMessage by mutableStateOf<String?>(null)
-        private set
-
-    /** AI 改之前的样子，点「撤销」时恢复；只记最近一次 */
-    private class Snapshot(val title: String, val servings: String, val ingredients: List<IngredientRow>, val steps: List<StepRow>)
-    private var beforeAiEdit by mutableStateOf<Snapshot?>(null)
-    val canUndoAiEdit: Boolean get() = beforeAiEdit != null
-
-    private fun snapshot() = Snapshot(title, servings, ingredients.toList(), steps.toList())
-
-    /**
-     * 按 [aiEditInstruction] 让 AI 改整份菜谱，结果填回表单，不直接保存。
-     * 原来的用料、步骤按 AI 给的来源接着用原来的编号、分类、图片；对不上的步骤图会提示。
-     * 等 AI 期间手动改过表单就不覆盖。
-     */
-    fun aiEditRecipe() {
-        val instruction = aiEditInstruction.trim()
-        if (aiEditing || instruction.isEmpty()) return
-        aiEditing = true
-        aiEditMessage = null
-        viewModelScope.launch {
-            try {
-                val before = snapshot()
-                val oldIngredients = before.ingredients.filter { it.name.isNotBlank() }
-                val oldSteps = before.steps.filter { it.text.isNotBlank() || it.image != null }
-                val result = app.recipeEditor.edit(
-                    EditableRecipe(
-                        title = before.title,
-                        servings = before.servings,
-                        ingredients = oldIngredients.map { EditIngredient(it.name, it.amount) },
-                        steps = oldSteps.map { AiStep(it.text, it.timerMinutes.toDoubleOrNull()?.takeIf { m -> m > 0 }) },
-                    ),
-                    instruction,
-                )
-                val now = snapshot()
-                if (now.title != before.title || now.servings != before.servings ||
-                    now.ingredients != before.ingredients || now.steps != before.steps
-                ) {
-                    aiEditMessage = "等 AI 的时候菜谱改过了，没有覆盖，可以再发一次"
-                    return@launch
-                }
-                val recipe = result.recipe
-                val ingredientFrom = AiRecipeEditor.match(recipe.ingredients.map { it.source }, oldIngredients.size) { j, i ->
-                    recipe.ingredients[j].name == oldIngredients[i].name.trim()
-                }
-                val stepFrom = AiRecipeEditor.match(recipe.steps.map { it.source }, oldSteps.size)
-
-                if (recipe.title.isNotEmpty()) title = recipe.title
-                servings = recipe.servings
-                ingredients.clear()
-                ingredients += recipe.ingredients.mapIndexed { j, ing ->
-                    val old = ingredientFrom[j]?.let { oldIngredients[it] }
-                    val kind = when {
-                        old != null && (old.kindManual || old.name.trim() == ing.name) -> old.kind
-                        SeasoningDictionary.isSeasoning(ing.name) -> IngredientKind.SEASONING
-                        else -> IngredientKind.MAIN
-                    }
-                    IngredientRow(nextKey(), old?.id ?: 0, ing.name, ing.amount, kind, kindManual = old?.kindManual ?: false)
-                }
-                steps.clear()
-                steps += recipe.steps.mapIndexed { j, s ->
-                    val old = stepFrom[j]?.let { oldSteps[it] }
-                    StepRow(
-                        key = nextKey(),
-                        id = old?.id ?: 0,
-                        text = s.text,
-                        image = old?.image,
-                        timerMinutes = s.timerMinutes?.let { formatMinutes((it * 60).toInt()) }.orEmpty(),
-                    )
-                }
-                beforeAiEdit = before
-                aiEditInstruction = ""
-                val lostImages = oldSteps.indices.count { i -> oldSteps[i].image != null && i !in stepFrom.values }
-                aiEditMessage = listOfNotNull(
-                    result.summary.ifEmpty { "改好了" },
-                    "有 $lostImages 张步骤图对应的步骤被删掉了".takeIf { lostImages > 0 },
-                    "请检查一下，满意再保存",
-                ).joinToString("；")
-            } catch (e: ImportException) {
-                aiEditMessage = e.message
-            } catch (e: Exception) {
-                aiEditMessage = "AI 修改失败：${e.message ?: e.javaClass.simpleName}"
-            } finally {
-                aiEditing = false
-            }
-        }
-    }
-
-    /** 恢复到最近一次 AI 修改之前 */
-    fun undoAiEdit() {
-        val s = beforeAiEdit ?: return
-        title = s.title
-        servings = s.servings
-        ingredients.clear()
-        ingredients += s.ingredients
-        steps.clear()
-        steps += s.steps
-        beforeAiEdit = null
-        aiEditMessage = "已撤销 AI 的修改"
     }
 
     fun removeStepImage(index: Int) {

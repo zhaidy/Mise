@@ -1,5 +1,10 @@
 package com.personal.mise.ai
 
+import com.personal.mise.bowl.SeasoningDictionary
+import com.personal.mise.data.IngredientDraft
+import com.personal.mise.data.IngredientKind
+import com.personal.mise.data.RecipeDraft
+import com.personal.mise.data.StepDraft
 import com.personal.mise.importer.ImportException
 import com.personal.mise.util.UnitText
 import org.json.JSONArray
@@ -107,6 +112,45 @@ class AiRecipeEditor(private val ai: AiClient) {
             )
             return AiRecipeEdit(recipe, reply.optString("summary").trim().nullIfNull())
         }
+
+        /** 发给 AI 的菜谱：空的用料和步骤不发 */
+        fun editable(draft: RecipeDraft) = EditableRecipe(
+            title = draft.title,
+            servings = draft.servings.orEmpty(),
+            ingredients = draft.ingredients.filter { it.name.isNotBlank() }.map { EditIngredient(it.name, it.amountText) },
+            steps = draft.steps.filter { it.text.isNotBlank() }.map { AiStep(it.text, it.timerSeconds?.let { s -> s / 60.0 }) },
+        )
+
+        /**
+         * 把 AI 改好的菜谱套到原来的草稿上。用料、步骤按来源接着用原来的编号（调料碗才连得上）、
+         * 分类和步骤图；新加的用料按词典分主料、调料。封面、分类标签这些 AI 不管的原样保留。
+         */
+        fun apply(draft: RecipeDraft, recipe: EditableRecipe): RecipeDraft {
+            val oldIngredients = draft.ingredients.filter { it.name.isNotBlank() }
+            val oldSteps = draft.steps.filter { it.text.isNotBlank() }
+            val ingredientFrom = match(recipe.ingredients.map { it.source }, oldIngredients.size) { j, i ->
+                recipe.ingredients[j].name == oldIngredients[i].name.trim()
+            }
+            val stepFrom = match(recipe.steps.map { it.source }, oldSteps.size)
+            return draft.copy(
+                title = recipe.title.ifBlank { draft.title },
+                servings = recipe.servings.takeIf { it.isNotBlank() },
+                ingredients = recipe.ingredients.mapIndexed { j, ing ->
+                    val old = ingredientFrom[j]?.let { oldIngredients[it] }
+                    val kind = old?.kind
+                        ?: if (SeasoningDictionary.isSeasoning(ing.name)) IngredientKind.SEASONING else IngredientKind.MAIN
+                    IngredientDraft(old?.id ?: 0, ing.name, ing.amount, kind)
+                },
+                steps = recipe.steps.mapIndexed { j, step ->
+                    val old = stepFrom[j]?.let { oldSteps[it] }
+                    StepDraft(old?.id ?: 0, step.text, old?.image, step.timerMinutes?.let { (it * 60).toInt() }?.takeIf { it > 0 })
+                },
+            )
+        }
+
+        /** 改完后没有步骤用到的步骤图 */
+        fun droppedImages(old: RecipeDraft, new: RecipeDraft): Set<String> =
+            old.steps.mapNotNull { it.image }.toSet() - new.steps.mapNotNull { it.image }.toSet()
 
         /**
          * 改好的每一项对应原来的第几项（都从 0 开始）：先按 source，对不上再按名字找；
