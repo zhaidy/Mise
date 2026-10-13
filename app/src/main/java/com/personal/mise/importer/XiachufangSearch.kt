@@ -11,6 +11,8 @@ data class SearchHit(
     val coverUrl: String?,
     val ingredients: String?,
     val stats: String?,
+    /** 荣誉殿堂标记：页面上有就用原文（可能带名次，比如「荣誉殿堂 No.3」），没有时做过的人够 1000 也算 */
+    val honor: String? = null,
 ) {
     val url: String get() = XiachufangParser.desktopUrl(recipeId)
 }
@@ -27,6 +29,12 @@ data class SearchHit(
 object XiachufangSearch {
 
     private val recipeHref = Regex("/recipe/(\\d+)")
+    private val madeCount = Regex("([\\d.,]+)\\s*(万)?\\s*人?\\s*做过")
+    private val honorClass = Regex("honou?r|hall|fame", RegexOption.IGNORE_CASE)
+
+    /** 下厨房的荣誉殿堂：被 1000 人以上做过的菜谱 */
+    private const val HONOR_MADE = 1000
+    private const val HONOR = "荣誉殿堂"
     private val spaces = Regex("\\s+")
 
     fun searchUrl(keyword: String, page: Int = 1): String {
@@ -42,7 +50,7 @@ object XiachufangSearch {
         for (link in root.select("a[href]")) {
             val id = recipeHref.find(link.attr("href"))?.groupValues?.get(1) ?: continue
             val card = card(link)
-            val hit = hit(id, link, card) ?: continue
+            val hit = hit(id, card) ?: continue
             // 同一张卡片里封面和菜名是两个链接，留信息多的那条
             val old = hits[id]
             if (old == null || hit.score > old.score) hits[id] = hit
@@ -73,19 +81,48 @@ object XiachufangSearch {
         return card
     }
 
-    private fun hit(id: String, link: Element, card: Element): SearchHit? {
+    private fun hit(id: String, card: Element): SearchHit? {
         val img = card.selectFirst("div.cover img, img")
+        // 荣誉殿堂角标常挤在菜名那一行，取文字前先在副本里去掉，免得菜名变成「红烧肉 荣誉殿堂」
+        val text = card.clone()
+        val badge = honorElement(text)?.also { it.remove() }
         val title = listOf(
-            card.selectFirst("p.name, .name, .recipe-name, h3, h4")?.text(),
-            link.text(),
+            text.selectFirst("p.name, .name, .recipe-name, h3, h4")?.text(),
+            text.selectFirst("a[href*=/recipe/$id]")?.text(),
             img?.attr("alt"),
         ).map { it?.replace(spaces, " ")?.trim().orEmpty() }.firstOrNull { it.isNotEmpty() } ?: return null
-        val ingredients = card.selectFirst("p.ing, .ing, .ings")?.text()?.replace(spaces, " ")?.trim()?.takeIf { it.isNotEmpty() }
-        val stats = card.selectFirst("p.stats, .stats")?.text()?.replace(spaces, " ")?.trim()?.takeIf { it.isNotEmpty() }
-        return SearchHit(id, title, img?.let { XiachufangParser.imageUrl(it, original = false) }, ingredients, stats)
+        val ingredients = text.selectFirst("p.ing, .ing, .ings")?.text()?.replace(spaces, " ")?.trim()?.takeIf { it.isNotEmpty() }
+        val stats = text.selectFirst("p.stats, .stats")?.text()?.replace(spaces, " ")?.trim()?.takeIf { it.isNotEmpty() }
+        val honor = badge?.let { honorLabel(it) }
+            ?: stats?.let { made(it) }?.takeIf { it >= HONOR_MADE }?.let { HONOR }
+        return SearchHit(id, title, img?.let { XiachufangParser.imageUrl(it, original = false) }, ingredients, stats, honor)
+    }
+
+    /** 「1234 做过」「1.2万人做过」里的人数 */
+    internal fun made(stats: String): Int? {
+        val m = madeCount.find(stats) ?: return null
+        val n = m.groupValues[1].replace(",", "").toDoubleOrNull() ?: return null
+        return (if (m.groupValues[2].isNotEmpty()) n * 10_000 else n).toInt()
+    }
+
+    /** 卡片里写着「荣誉殿堂」的那一小块，或者 class 像 honor 的角标 */
+    private fun honorElement(card: Element): Element? = card.getAllElements().filter { e ->
+        // 包着菜谱链接的不算（可能就是整张卡片），去掉它菜名也没了
+        e.selectFirst("a[href*=/recipe/]") == null &&
+            (HONOR in e.ownText() || honorClass.containsMatchIn(e.className()) && e.text().isNotBlank())
+    }.minByOrNull { it.text().length }
+
+    /** 角标上的字，带名次就一起带上（「荣誉殿堂 No.3」） */
+    private fun honorLabel(badge: Element): String {
+        val text = badge.text().replace(spaces, " ").trim()
+        return when {
+            text.length > 20 -> HONOR
+            HONOR in text -> text
+            else -> "$HONOR $text"
+        }
     }
 
     private val SearchHit.score: Int
         get() = title.length.coerceAtMost(1) + (if (coverUrl != null) 1 else 0) +
-            (if (ingredients != null) 1 else 0) + (if (stats != null) 1 else 0)
+            (if (ingredients != null) 1 else 0) + (if (stats != null) 1 else 0) + (if (honor != null) 1 else 0)
 }
