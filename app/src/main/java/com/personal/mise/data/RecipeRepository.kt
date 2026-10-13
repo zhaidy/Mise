@@ -3,6 +3,8 @@ package com.personal.mise.data
 import androidx.room.withTransaction
 import com.personal.mise.ai.RecipeReview
 import com.personal.mise.bowl.SauceBowlGenerator
+import com.personal.mise.chat.ChatPlanInfo
+import com.personal.mise.chat.ChatRecipeInfo
 import com.personal.mise.image.ImageStore
 import com.personal.mise.sync.SyncedPlanEntry
 import com.personal.mise.sync.SyncedRecipe
@@ -11,6 +13,7 @@ import com.personal.mise.util.DayText
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
@@ -70,6 +73,7 @@ class RecipeRepository(
     private val dao = db.recipeDao()
     private val cookLogDao = db.cookLogDao()
     private val planDao = db.mealPlanDao()
+    private val chatDao = db.chatDao()
 
     /** 按菜名、分类、标签或用料搜，见 RecipeSearch */
     fun search(query: String): Flow<List<SearchHit>> =
@@ -208,7 +212,10 @@ class RecipeRepository(
 
     suspend fun delete(id: Long) {
         val paths = imagesOf(id)
+        val uid = dao.get(id)?.uid
         db.withTransaction {
+            // 这道菜的「问问 AI」对话只在这台手机上，跟着删掉
+            uid?.let { chatDao.clear(it) }
             dao.deleteBowls(id)
             dao.deleteIngredients(id)
             dao.deleteSteps(id)
@@ -256,6 +263,30 @@ class RecipeRepository(
         val recipe = dao.get(id) ?: return emptySet()
         return (listOf(recipe.coverImage) + dao.getSteps(id).map { it.image }).filterNotNull().toSet()
     }
+
+    // 问问 AI
+
+    /** 全局对话里给 AI 看的所有菜谱：菜名、分类标签、用料、热量、上次做的日子 */
+    suspend fun loadChatIndex(): List<ChatRecipeInfo> {
+        val recipes = dao.observeAll().first()
+        val ingredients = dao.observeIngredientNames().first().groupBy({ it.recipeId }, { it.name })
+        val lastCooked = observeLastCooked().first()
+        return recipes.map { r ->
+            ChatRecipeInfo(
+                id = r.id,
+                title = r.title,
+                category = listOfNotNull(r.category, r.subcategory).filter { it.isNotBlank() }.joinToString(" › ").ifEmpty { null },
+                tags = r.tagList,
+                ingredients = ingredients[r.id].orEmpty().distinct(),
+                calories = r.calories,
+                lastCooked = lastCooked[r.uid],
+            )
+        }
+    }
+
+    /** 全局对话里给 AI 看的计划 */
+    suspend fun loadPlanForChat(): List<ChatPlanInfo> =
+        planDao.observeAll().first().map { ChatPlanInfo(it.date, it.title, it.done) }
 
     // 调料碗
 
@@ -484,6 +515,9 @@ class RecipeRepository(
     }
 
     suspend fun removeFromPlan(uid: String) = planDao.markDeleted(uid, System.currentTimeMillis())
+
+    /** 这道菜排在 [date] 那天的计划的 uid（不管排没排上） */
+    suspend fun planUid(recipeId: Long, date: String): String? = dao.get(recipeId)?.uid?.let { MealPlan.uidOf(it, date) }
 
     suspend fun setPlanChecked(uid: String, checked: Set<String>) =
         planDao.setChecked(uid, checked.sorted().joinToString(","), System.currentTimeMillis())

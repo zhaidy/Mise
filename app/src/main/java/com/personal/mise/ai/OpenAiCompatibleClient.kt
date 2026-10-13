@@ -21,7 +21,7 @@ abstract class OpenAiCompatibleClient(
     private val http: AiHttp,
     /** 记每个模型今天成功用了几次，显示在 AI 设置里；查得到余额的服务商不用记 */
     private val usage: AiUsage? = null,
-) : AiProviderClient {
+) : AiProviderClient, AiChatProvider {
     /** 是否用 JSON 模式（response_format: json_object），服务商支持才开 */
     protected abstract val jsonMode: Boolean
 
@@ -47,6 +47,31 @@ abstract class OpenAiCompatibleClient(
         AiReply(json, modelDisplayName(replyModel(reply.body, model)))
     }
 
+    override suspend fun chat(model: String, system: String, turns: List<ChatTurn>, onText: (String) -> Unit): String {
+        val key = settings.key(provider)
+        if (key.isBlank()) throw ImportException("还没有填写 ${provider.label} API Key")
+        val request = Request.Builder()
+            .url(endpoint)
+            .header("Authorization", "Bearer $key")
+            .post(chatBody(model, system, turns, disableThinking).toString().toRequestBody("application/json".toMediaType()))
+            .build()
+        var used = model
+        var finish: String? = null
+        val reply = http.stream(request, provider.label) { line ->
+            val data = ChatTurns.sseData(line)?.takeIf { it != "[DONE]" } ?: return@stream
+            val event = runCatching { JSONObject(data) }.getOrNull() ?: return@stream
+            event.optJSONObject("error")?.let { throw ImportException("${provider.label} 出错了：${it.optString("message")}") }
+            event.optString("model").takeIf { it.isNotBlank() }?.let { used = it }
+            streamText(event)?.let(onText)
+            event.optJSONArray("choices")?.optJSONObject(0)?.optString("finish_reason")
+                ?.takeIf { it.isNotEmpty() && it != "null" }?.let { finish = it }
+        }
+        if (!reply.isSuccessful) throw error(reply.code, errorDetail(reply.body))
+        if (finish == "length") throw ImportException("${provider.label} 的回复太长被截断了")
+        usage?.recordSuccess(model)
+        return modelDisplayName(used)
+    }
+
     companion object {
         fun requestBody(
             model: String,
@@ -67,6 +92,27 @@ abstract class OpenAiCompatibleClient(
                     .put(JSONObject().put("role", "system").put("content", "只回复一个 JSON 对象，不要其他文字，格式符合下面的 JSON Schema：\n$schema"))
                     .put(JSONObject().put("role", "user").put("content", content(prompt, images))),
             )
+
+        /** 聊天用的流式请求：系统提示在最前面，后面是一来一回的对话 */
+        fun chatBody(model: String, system: String, turns: List<ChatTurn>, disableThinking: Boolean = false): JSONObject = JSONObject()
+            .put("model", model)
+            .put("temperature", 0.7)
+            .put("max_tokens", 8000)
+            .put("stream", true)
+            .apply { if (disableThinking) put("thinking", JSONObject().put("type", "disabled")) }
+            .put(
+                "messages",
+                JSONArray().put(JSONObject().put("role", "system").put("content", system)).apply {
+                    turns.forEach { put(JSONObject().put("role", if (it.fromUser) "user" else "assistant").put("content", it.text)) }
+                },
+            )
+
+        /** 流里一段回复的文字；思考过程（reasoning_content）不要 */
+        fun streamText(event: JSONObject): String? {
+            val delta = event.optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("delta") ?: return null
+            if (delta.isNull("content")) return null
+            return delta.optString("content").ifEmpty { null }
+        }
 
         /** 没图时直接给文字；有图时图片在前、文字在后 */
         private fun content(prompt: String, images: List<ByteArray>): Any {

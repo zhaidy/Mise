@@ -294,3 +294,21 @@ interface MealPlanDao {
     @Query("UPDATE meal_plan SET done = :done, updatedAt = :now WHERE uid = :uid AND done != :done")
     suspend fun setDone(uid: String, done: Boolean, now: Long)
 }
+
+@Dao
+interface ChatDao {
+    @Query("SELECT * FROM ai_chat_message WHERE thread = :thread ORDER BY id")
+    suspend fun thread(thread: String): List<ChatMessageEntity>
+
+    @Insert
+    suspend fun insert(message: ChatMessageEntity): Long
+
+    @Query("UPDATE ai_chat_message SET card = :card WHERE id = :id")
+    suspend fun setCard(id: Long, card: String?)
+
+    @Query("DELETE FROM ai_chat_message WHERE id = :id")
+    suspend fun delete(id: Long)
+
+    @Query("DELETE FROM ai_chat_message WHERE thread = :thread")
+    suspend fun clear(thread: String)
+}
