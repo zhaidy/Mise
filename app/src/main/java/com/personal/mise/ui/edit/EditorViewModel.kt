@@ -15,6 +15,7 @@ import com.personal.mise.ai.AiRecipeEditor
 import com.personal.mise.ai.AiRecipeReviewer
 import com.personal.mise.ai.RecipeReview
 import com.personal.mise.ai.AiStepSplitter
+import com.personal.mise.ai.StepTimes
 import com.personal.mise.bowl.SeasoningDictionary
 import com.personal.mise.data.IngredientDraft
 import com.personal.mise.data.IngredientKind
@@ -27,6 +28,7 @@ import com.personal.mise.importer.ImportResult
 import com.personal.mise.importer.NeedsVerificationException
 import com.personal.mise.importer.UrlExtractor
 import com.personal.mise.importer.XiaohongshuParser
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicLong
 
@@ -97,6 +99,10 @@ class EditorViewModel(
     var reviewing by mutableStateOf(false)
         private set
     var reviewMessage by mutableStateOf<String?>(null)
+    /** 导入时 AI 估的每一步时长，保存时一起存下；按步骤文字对应，之后改过的步骤不算 */
+    private var stepTimes: StepTimes? = null
+    var estimatingTimes by mutableStateOf(false)
+        private set
     /** 正在照评价修改 */
     var fixing by mutableStateOf(false)
         private set
@@ -192,8 +198,12 @@ class EditorViewModel(
                 }
                 // 导入时顺手让 AI 评价一下这份菜谱，和估用量同时进行
                 if (isImport && hasAiKey) aiReview()
-                // 下厨房链接导入的步骤常常几件事挤在一步里，有 Key 就自动用 AI 拆一下（AI 整理时已经分好步了）
-                if (isImport && !aiOrganized && hasAiKey && steps.any { it.text.isNotBlank() }) aiSplitSteps(auto = true)
+                // 下厨房链接导入的步骤常常几件事挤在一步里，有 Key 就自动用 AI 拆一下（AI 整理时已经分好步了），
+                // 拆好再让 AI 估每一步要多久，多菜时间线用
+                if (isImport && hasAiKey && steps.any { it.text.isNotBlank() }) viewModelScope.launch {
+                    if (!aiOrganized) splitSteps(auto = true)
+                    estimateStepTimes()
+                }
             } catch (e: NeedsVerificationException) {
                 loadState = LoadState.Failed(e.message ?: "导入失败", verifyUrl = e.url)
             } catch (e: ImportException) {
@@ -388,6 +398,22 @@ class EditorViewModel(
         }
     }
 
+    // 步骤时长
+
+    private suspend fun estimateStepTimes() {
+        if (estimatingTimes) return
+        estimatingTimes = true
+        try {
+            stepTimes = app.stepTimer.estimate(title, steps.map { it.text })
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            // 只给多菜时间线用，估不成就按文字猜，不打扰
+        } finally {
+            estimatingTimes = false
+        }
+    }
+
     // 评价
 
     /** 让 AI 按现在的用料和做法评价这份菜谱 */
@@ -458,23 +484,27 @@ class EditorViewModel(
      * 把现有步骤文字交给 AI 重新拆分。原来每步的图片和计时跟到拆出来的第一步；
      * 带图的步骤对应不上时不改动，免得把图弄丢。auto = 导入时自动拆分。
      */
-    fun aiSplitSteps(auto: Boolean = false) {
+    fun aiSplitSteps() {
+        viewModelScope.launch { splitSteps(auto = false) }
+    }
+
+    private suspend fun splitSteps(auto: Boolean) {
         if (aiBusy) return
         aiBusy = true
         aiMessage = if (auto) "正在用 AI 自动拆分步骤…" else null
-        viewModelScope.launch {
+        run {
             try {
                 val old = steps.toList()
                 val result = app.stepSplitter.split(old.map { it.text })
                 val carry = AiStepSplitter.carryOver(old.map { it.image != null }, result)
                 if (carry == null) {
                     aiMessage = "AI 拆分后对不上原来的步骤图，${if (auto) "保留了下厨房原来的步骤" else "步骤没有改动"}"
-                    return@launch
+                    return@run
                 }
                 if (steps.toList() != old) {
                     // 拆分期间手动改过步骤，不覆盖
                     if (auto) aiMessage = "步骤已经改过，没有自动拆分，需要的话可以点「AI 拆分步骤」"
-                    return@launch
+                    return@run
                 }
                 val fromOld = carry.entries.associate { (i, j) -> j to old[i] }
                 steps.clear()
@@ -533,7 +563,7 @@ class EditorViewModel(
     // 保存
 
     /** 导入后 AI 还在拆步骤、估用量、热量或评价，结果会改内容，等它做完再保存 */
-    val importAiRunning: Boolean get() = isImport && (aiBusy || estimating || estimatingCalories || reviewing || fixing)
+    val importAiRunning: Boolean get() = isImport && (aiBusy || estimating || estimatingCalories || reviewing || fixing || estimatingTimes)
 
     val canSave: Boolean get() = !saving && !importAiRunning
 
@@ -549,6 +579,7 @@ class EditorViewModel(
                 val draft = toDraft()
                 val id = app.repository.save(draft)
                 if (isImport) review?.let { app.repository.setReview(id, it) }
+                if (isImport) stepTimes?.let { app.repository.setStepTimes(id, it) }
                 val kept = listOfNotNull(draft.coverImage) + draft.steps.mapNotNull { it.image }
                 (addedImages - kept.toSet()).forEach { app.images.delete(it) }
                 addedImages.clear()

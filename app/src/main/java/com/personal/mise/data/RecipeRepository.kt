@@ -2,6 +2,7 @@ package com.personal.mise.data
 
 import androidx.room.withTransaction
 import com.personal.mise.ai.RecipeReview
+import com.personal.mise.ai.StepTimes
 import com.personal.mise.bowl.SauceBowlGenerator
 import com.personal.mise.chat.ChatPlanInfo
 import com.personal.mise.chat.ChatRecipeInfo
@@ -259,6 +260,10 @@ class RecipeRepository(
     suspend fun setReview(id: Long, review: RecipeReview) =
         dao.setReview(id, review.toJson().toString(), System.currentTimeMillis())
 
+    /** 只改 AI 估的步骤时长；会同步到别的手机 */
+    suspend fun setStepTimes(id: Long, times: StepTimes) =
+        dao.setStepTimes(id, times.toJson().toString(), System.currentTimeMillis())
+
     private suspend fun imagesOf(id: Long): Set<String> {
         val recipe = dao.get(id) ?: return emptySet()
         return (listOf(recipe.coverImage) + dao.getSteps(id).map { it.image }).filterNotNull().toSet()
@@ -369,6 +374,7 @@ class RecipeRepository(
                 original = remote.original,
                 note = remote.note,
                 review = remote.review,
+                stepTimes = remote.stepTimes,
             )
             val recipeId = if (existing == null) dao.insert(row) else { dao.update(row); existing.id }
 

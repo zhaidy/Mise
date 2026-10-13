@@ -24,6 +24,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -32,13 +33,17 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.personal.mise.ai.StepTimes
 import com.personal.mise.data.RecipeFull
+import com.personal.mise.importer.ImportException
 import com.personal.mise.data.TodayRow
 import com.personal.mise.ui.common.SoftCard
 import com.personal.mise.ui.common.rememberApp
 import com.personal.mise.ui.theme.SerifFamily
 import com.personal.mise.util.CookTimeline
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOf
 import java.time.LocalTime
@@ -47,7 +52,7 @@ import java.time.format.DateTimeFormatter
 private val clock = DateTimeFormatter.ofPattern("HH:mm")
 
 /**
- * 今日菜单里还没做完的菜排一条时间线：最费时的先开始，其余的往后推，同时出锅。
+ * 今日菜单里还没做完的菜排一条时间线：从开饭往前倒推，要动手的步骤错开，同时出锅。
  * 不设开饭时间就是现在开始；设了就倒推每道菜几点开始。两道以上没做完的菜才显示。
  */
 @Composable
@@ -64,6 +69,9 @@ fun TimelineCard(rows: List<TodayRow>) {
     // 开饭时间，一天里的第几分钟；-1 表示没设，现在就开始
     var serveAt by rememberSaveable { mutableStateOf(-1) }
     var picking by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    var estimating by remember { mutableStateOf(false) }
+    var estimateMessage by remember { mutableStateOf<String?>(null) }
     var now by remember { mutableStateOf(LocalTime.now()) }
     LaunchedEffect(Unit) {
         while (true) {
@@ -72,16 +80,22 @@ fun TimelineCard(rows: List<TodayRow>) {
         }
     }
 
-    val dishes = pending.mapNotNull { row ->
-        val full = fulls.firstOrNull { it?.recipe?.id == row.recipeId } ?: return@mapNotNull null
+    val pendingFulls = pending.mapNotNull { row -> fulls.firstOrNull { it?.recipe?.id == row.recipeId }?.let { row to it } }
+    val dishes = pendingFulls.map { (row, full) ->
+        val times = StepTimes.fromJson(full.recipe.stepTimes)
         CookTimeline.dish(
             row.recipeId,
             row.title,
-            full.steps.map { CookTimeline.Step(it.text, it.timerSeconds) },
+            full.steps.map { CookTimeline.Step(it.text, it.timerSeconds, times?.of(it.text)) },
             fromStep = row.currentStep.coerceAtMost(full.steps.size),
         )
     }
     if (dishes.size < 2) return
+    // 还有步骤没让 AI 估过时间的菜（剩下的步骤里没写计时的）
+    val unestimated = pendingFulls.filter { (row, full) ->
+        val left = full.steps.drop(row.currentStep).filter { it.timerSeconds == null }.map { it.text }
+        StepTimes.fromJson(full.recipe.stepTimes)?.missing(left) ?: left.any { it.isNotBlank() }
+    }.map { it.second }
     val plan = CookTimeline.plan(dishes)
     val serve = if (serveAt >= 0) LocalTime.of(serveAt / 60, serveAt % 60) else null
     val start = serve?.minusMinutes(plan.totalMinutes.toLong()) ?: now
@@ -119,6 +133,7 @@ fun TimelineCard(rows: List<TodayRow>) {
                         val dot = when (event.kind) {
                             CookTimeline.Kind.START -> MaterialTheme.colorScheme.secondary
                             CookTimeline.Kind.FIRE -> MaterialTheme.colorScheme.primary
+                            CookTimeline.Kind.DONE -> MaterialTheme.colorScheme.outline
                             CookTimeline.Kind.SERVE -> MaterialTheme.colorScheme.tertiary
                         }
                         Box(Modifier.size(8.dp).background(dot, CircleShape))
@@ -139,12 +154,39 @@ fun TimelineCard(rows: List<TodayRow>) {
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    "按步骤里的计时估算，没写时间的步骤按 2～3 分钟算；做到一半的菜只算剩下的步骤。",
+                    if (unestimated.isEmpty()) "按步骤计时和 AI 估的时间排，洗切、炒这些要动手的错开做，炖着腌着的时候去忙别的；做到一半的菜只算剩下的步骤。"
+                    else "按步骤计时排，没写时间的步骤按文字猜或按 2～3 分钟算，要动手的错开做；让 AI 估一下会更准。",
                     Modifier.weight(1f),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 if (serve != null) TextButton(onClick = { serveAt = -1 }) { Text("现在开始") }
+            }
+            if (unestimated.isNotEmpty() && app.aiSettings.hasKey) {
+                TextButton(
+                    onClick = {
+                        estimating = true
+                        estimateMessage = null
+                        scope.launch {
+                            val failed = mutableListOf<String>()
+                            unestimated.forEach { full ->
+                                try {
+                                    app.repository.setStepTimes(full.recipe.id, app.stepTimer.estimate(full))
+                                } catch (e: CancellationException) {
+                                    throw e
+                                } catch (e: Exception) {
+                                    failed += "「${full.recipe.title}」${(e as? ImportException)?.message ?: e.message ?: e.javaClass.simpleName}"
+                                }
+                            }
+                            estimating = false
+                            estimateMessage = failed.takeIf { it.isNotEmpty() }?.joinToString("\n", prefix = "没估成：\n")
+                        }
+                    },
+                    enabled = !estimating,
+                ) { Text(if (estimating) "AI 正在估每一步要多久…" else "让 AI 估每一步要多久") }
+            }
+            estimateMessage?.let {
+                Text(it, Modifier.padding(end = 10.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
             }
         }
     }

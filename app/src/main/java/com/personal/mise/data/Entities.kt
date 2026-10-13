@@ -39,6 +39,8 @@ data class Recipe(
     val note: String? = null,
     /** AI 对这份菜谱的评价（RecipeReview 的 JSON），导入时自动评；空表示还没评 */
     val review: String? = null,
+    /** AI 估的每一步要多久、能不能走开（StepTimes 的 JSON），多菜时间线用；空表示还没估 */
+    val stepTimes: String? = null,
 )
 
 @Entity(

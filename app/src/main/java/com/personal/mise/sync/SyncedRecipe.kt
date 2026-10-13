@@ -30,6 +30,8 @@ data class SyncedRecipe(
     val note: String? = null,
     /** AI 评价（RecipeReview 的 JSON），没评过为空 */
     val review: String? = null,
+    /** AI 估的步骤时长（StepTimes 的 JSON），没估过为空 */
+    val stepTimes: String? = null,
 ) {
     fun toMap(): Map<String, Any?> = mapOf(
         "schema" to SCHEMA,
@@ -48,6 +50,7 @@ data class SyncedRecipe(
         "original" to original,
         "note" to note,
         "review" to review,
+        "stepTimes" to stepTimes,
         "ingredients" to ingredients.map { mapOf("name" to it.name, "amountText" to it.amountText, "kind" to it.kind) },
         "steps" to steps.map { mapOf("text" to it.text, "image" to it.image, "timerSeconds" to it.timerSeconds) },
         "bowls" to bowls.map { bowl ->
@@ -83,6 +86,7 @@ data class SyncedRecipe(
                 original = r.original,
                 note = r.note,
                 review = r.review,
+                stepTimes = r.stepTimes,
                 ingredients = full.ingredients.map { SyncedIngredient(it.name, it.amountText, it.kind) },
                 steps = full.steps.map { SyncedStep(it.text, it.image, it.timerSeconds) },
                 bowls = full.bowls.map { b ->
@@ -134,6 +138,7 @@ data class SyncedRecipe(
                 original = data["original"] as String?,
                 note = data["note"] as String?,
                 review = data["review"] as String?,
+                stepTimes = data["stepTimes"] as String?,
                 ingredients = ingredients,
                 steps = steps,
                 bowls = bowls,

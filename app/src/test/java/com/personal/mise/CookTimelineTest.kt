@@ -1,8 +1,10 @@
 package com.personal.mise
 
+import com.personal.mise.ai.StepTime
 import com.personal.mise.util.CookTimeline
 import com.personal.mise.util.CookTimeline.Kind
 import com.personal.mise.util.CookTimeline.Step
+import com.personal.mise.util.StepPhase
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -58,8 +60,50 @@ class CookTimelineTest {
     }
 
     @Test
-    fun `一样长就一起开始`() {
+    fun `两道都要一直动手的菜错开做，一个人忙得过来`() {
         val plan = CookTimeline.plan(listOf(greens, greens.copy(id = 3, title = "炒白菜")))
-        assertEquals("几道菜一起开始，约 8 分钟后一起出锅", CookTimeline.summary(plan))
+        // 两道各 8 分钟都得动手，一个人做要 16 分钟
+        assertEquals(16, plan.totalMinutes)
+        assertEquals(plan.totalMinutes, plan.slots.maxOf { it.doneMinute })
+    }
+
+    @Test
+    fun `炖着的时候可以去做别的，不算重叠`() {
+        val stew = CookTimeline.dish(4, "炖牛肉", listOf(Step("牛肉切块", null), Step("下锅炒香", 120), Step("小火炖 1 小时", null)))
+        val plan = CookTimeline.plan(listOf(stew, greens))
+        assertEquals(65, plan.totalMinutes)
+        assertEquals(listOf("炖牛肉" to 0, "炒青菜" to 57), plan.slots.map { it.dish.title to it.startMinute })
+    }
+
+    @Test
+    fun `AI 估的时长和能不能走开优先于按文字猜`() {
+        val dish = CookTimeline.dish(
+            5, "蒸鱼",
+            listOf(
+                Step("鱼洗净划刀", null, StepTime(600, handsOff = false)),
+                Step("上锅蒸", null, StepTime(480, handsOff = true)),
+                Step("淋热油", 60),
+            ),
+        )
+        assertEquals(10, dish.prepMinutes)
+        assertEquals(9, dish.cookMinutes)
+        assertEquals(listOf(false, true, false), dish.tasks.map { it.handsOff })
+    }
+
+    @Test
+    fun `按文字猜能不能走开`() {
+        assertEquals(true, StepPhase.isHandsOff("小火炖 45 分钟", 2700))
+        assertEquals(true, StepPhase.isHandsOff("腌制 20 分钟", 1200))
+        assertEquals(false, StepPhase.isHandsOff("炖到收汁，不停翻炒", 600))
+        assertEquals(false, StepPhase.isHandsOff("蒸一下", 60))
+        assertEquals(false, StepPhase.isHandsOff("切丝", 600))
+    }
+
+    @Test
+    fun `先做好的菜在时间线上标出来`() {
+        val plan = CookTimeline.plan(listOf(greens, greens.copy(id = 3, title = "炒白菜")))
+        val done = CookTimeline.events(plan).filter { it.kind == Kind.DONE }
+        assertEquals(1, done.size)
+        assertEquals(true, done.single().minute < plan.totalMinutes)
     }
 }

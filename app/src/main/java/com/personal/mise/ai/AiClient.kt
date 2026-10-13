@@ -110,6 +110,7 @@ object AiSchema {
     fun string(nullable: Boolean = false): JSONObject = scalar("string", nullable)
     fun integer(nullable: Boolean = false): JSONObject = scalar("integer", nullable)
     fun number(nullable: Boolean = false): JSONObject = scalar("number", nullable)
+    fun boolean(): JSONObject = scalar("boolean", false)
 
     private fun scalar(type: String, nullable: Boolean): JSONObject {
         val schema = JSONObject().put("type", type)
