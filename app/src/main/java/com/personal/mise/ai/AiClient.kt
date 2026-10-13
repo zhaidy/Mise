@@ -4,7 +4,7 @@ import com.personal.mise.importer.ImportException
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** 让大模型按 JSON Schema 返回 JSON；按设置里的模型顺序转给 Gemini、Agnes、DeepSeek */
+/** 让大模型按 JSON Schema 返回 JSON；按设置里的模型顺序转给 Gemini、Agnes、DeepSeek、Claude */
 interface AiClient {
     /** 返回模型回复里的 JSON 对象，出错时抛 ImportException；images 是一起发给模型看的 JPEG 图片 */
     suspend fun generate(prompt: String, schema: JSONObject, images: List<ByteArray> = emptyList()): JSONObject

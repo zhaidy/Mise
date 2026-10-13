@@ -105,7 +105,7 @@ fun AiKeyDialog(confirmLabel: String, onDismiss: () -> Unit, onConfirm: () -> Un
     )
 }
 
-/** 用哪些模型、什么顺序：三家的模型放在一张表里，从上往下试 */
+/** 用哪些模型、什么顺序：各家的模型放在一张表里，从上往下试 */
 @Composable
 private fun ModelOrderFields(
     order: List<String>,
@@ -121,7 +121,7 @@ private fun ModelOrderFields(
     Text("AI 模型", style = MaterialTheme.typography.bodyMedium)
     Text(
         "勾选的模型从上往下试，额度用完、余额不足或连不上就换下一个；没填 Key 的会跳过。按住左侧把手拖动调整顺序；加入了共享厨房的话，厨房里的人共用这张表。" +
-            "Gemini 和 Agnes 查不到剩余额度，次数是这台手机今天用的；DeepSeek 显示账户余额",
+            "Gemini、Agnes 和 Claude 查不到剩余额度，次数是这台手机今天用的；DeepSeek 显示账户余额",
         style = MaterialTheme.typography.bodySmall,
     )
     val models = order.mapNotNull(AiModel::fromKey)

@@ -24,7 +24,7 @@ class SyncedAiKeyTest {
     fun `不认识的服务商或格式不对时忽略`() {
         val map = SyncedAiKey(AiProvider.GEMINI, "k", 1).toMap()
         assertNull(SyncedAiKey.fromMap("OPENAI", map))
-        // 以前支持过的 Claude 已经去掉，云端留下的旧 Key 不再理会
+        // 以前支持过的 Claude 已经去掉，云端留下的旧 Key 不再理会；现在的 Claude 存成 ANTHROPIC
         assertNull(SyncedAiKey.fromMap("CLAUDE", map))
         assertNull(SyncedAiKey.fromMap("GEMINI", map - "updatedAt"))
         assertNull(SyncedAiKey.fromMap("GEMINI", map + ("key" to 3)))

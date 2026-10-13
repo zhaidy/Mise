@@ -11,6 +11,8 @@ enum class AiProvider(val label: String, val keyHelp: String) {
     GEMINI("Gemini", "在 aistudio.google.com 免费申请"),
     DEEPSEEK("DeepSeek", "在 platform.deepseek.com 申请，预付费，余额用完就停、不会自动扣费"),
     AGNES("Agnes", "在 platform.agnes-ai.com 申请"),
+    // 以前的 Claude 叫 CLAUDE，云端还留着旧 Key；换个名字，免得旧 Key 同步回来
+    ANTHROPIC("Claude", "在 platform.claude.com 申请，预付费，余额用完就停"),
 }
 
 /** 一个可选的模型：哪一家、API 名、显示名 */
@@ -23,9 +25,10 @@ data class AiModel(val provider: AiProvider, val id: String, val label: String) 
         val ALL: List<AiModel> =
             GeminiClient.MODELS.map { (id, label) -> AiModel(AiProvider.GEMINI, id, label) } +
                 AgnesClient.MODELS.map { (id, label) -> AiModel(AiProvider.AGNES, id, label) } +
-                DeepSeekClient.MODELS.map { (id, label) -> AiModel(AiProvider.DEEPSEEK, id, label) }
+                DeepSeekClient.MODELS.map { (id, label) -> AiModel(AiProvider.DEEPSEEK, id, label) } +
+                ClaudeClient.MODELS.map { (id, label) -> AiModel(AiProvider.ANTHROPIC, id, label) }
 
-        /** 默认勾选的：Gemini 全部、Agnes 和 DeepSeek 各一个；没填 Key 的会跳过，默认勾上也不碍事 */
+        /** 默认勾选的：Gemini 全部、其他几家各一个；没填 Key 的会跳过，默认勾上也不碍事 */
         val DEFAULT: List<AiModel> = ALL.filter { it.provider == AiProvider.GEMINI || it == ALL.first { m -> m.provider == it.provider } }
 
         fun fromKey(key: String): AiModel? = ALL.firstOrNull { it.key == key }
@@ -39,7 +42,7 @@ class AiSettings(context: Context) {
     private val modelsChanged = MutableStateFlow(0)
 
     init {
-        // 以前支持过 Claude，去掉后把本机存的 Claude Key 也删掉
+        // 以前支持过 Claude，去掉后把本机存的 Claude Key 也删掉；现在加回来的 Claude 换了个名字存，不受影响
         if (prefs.contains(OLD_CLAUDE_KEY)) prefs.edit().remove(OLD_CLAUDE_KEY).remove(OLD_CLAUDE_KEY + UPDATED_AT_SUFFIX).apply()
     }
 
@@ -162,6 +165,7 @@ class AiSettings(context: Context) {
             AiProvider.GEMINI -> "gemini_key"
             AiProvider.DEEPSEEK -> "deepseek_key"
             AiProvider.AGNES -> "agnes_key"
+            AiProvider.ANTHROPIC -> "claude_api_key"
         }
     }
 }
