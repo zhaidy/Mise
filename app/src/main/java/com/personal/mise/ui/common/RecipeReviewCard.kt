@@ -37,7 +37,7 @@ fun RecipeReviewCard(
     SoftCard(modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp)) {
         Column(Modifier.padding(start = 16.dp, end = 4.dp, top = 8.dp, bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("✨ AI 评价", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                Text("✨ AI 口味评价", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                 if (review != null) {
                     Text(
                         "  ${review.score}",
@@ -62,7 +62,7 @@ fun RecipeReviewCard(
                         review.highlights.forEach { ReviewLine("👍", it) }
                         review.concerns.forEach { ReviewLine("⚠️", it) }
                     }
-                    busy -> Text("正在让 AI 评价这份菜谱…", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    busy -> Text("正在让 AI 尝尝这份菜谱的味道…", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     else -> Text(
                         message ?: "还没评价",
                         style = MaterialTheme.typography.bodyMedium,
