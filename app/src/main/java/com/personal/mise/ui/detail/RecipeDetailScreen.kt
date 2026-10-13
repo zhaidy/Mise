@@ -64,6 +64,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
@@ -850,7 +853,7 @@ private fun StatRow(label: String, value: String, muted: Boolean, action: @Compo
     }
 }
 
-/** 用料表：名称 ······ 用量 */
+/** 用料表：名称 ······ 用量。名字长了就换行，点线接在最后一行后面 */
 @Composable
 internal fun IngredientTable(items: List<Ingredient>, factor: Double, onAsk: ((Ingredient, String) -> Unit)? = null) {
     if (items.isEmpty()) {
@@ -861,18 +864,30 @@ internal fun IngredientTable(items: List<Ingredient>, factor: Double, onAsk: ((I
     Column(Modifier.padding(horizontal = 20.dp)) {
         items.forEach { ing ->
             val amount = UnitText.display(AmountScaler.scale(ing.amountText, factor))
+            var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
             Row(
-                Modifier.fillMaxWidth().heightIn(min = 36.dp)
-                    .then(if (onAsk != null) Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClickLabel = "问 AI 用什么代替") { onAsk(ing, amount) } else Modifier),
-                verticalAlignment = Alignment.CenterVertically,
+                Modifier.fillMaxWidth()
+                    .then(if (onAsk != null) Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClickLabel = "问 AI 用什么代替") { onAsk(ing, amount) } else Modifier)
+                    .padding(vertical = 6.dp),
+                verticalAlignment = Alignment.Bottom,
             ) {
-                Text(ing.name, style = MaterialTheme.typography.bodyLarge)
-                Box(
-                    Modifier.weight(1f).height(12.dp).padding(horizontal = 10.dp).drawBehind {
+                // 名字占满用量左边的空间，点线画在名字最后一行的空白处；
+                // 以前名字不占权重，长名字会把用量挤成零宽，一个字一行地撑出大片空白
+                Text(
+                    ing.name,
+                    style = MaterialTheme.typography.bodyLarge,
+                    onTextLayout = { layout = it },
+                    modifier = Modifier.weight(1f).drawBehind {
+                        val l = layout ?: return@drawBehind
+                        val last = l.lineCount - 1
+                        val start = l.getLineRight(last) + 10.dp.toPx()
+                        val end = size.width - 10.dp.toPx()
+                        if (end <= start) return@drawBehind
+                        val y = (l.getLineTop(last) + l.getLineBottom(last)) / 2
                         drawLine(
                             color = dots,
-                            start = Offset(0f, size.height / 2),
-                            end = Offset(size.width, size.height / 2),
+                            start = Offset(start, y),
+                            end = Offset(end, y),
                             strokeWidth = 1.5.dp.toPx(),
                             cap = StrokeCap.Round,
                             pathEffect = PathEffect.dashPathEffect(floatArrayOf(0.1f, 5.dp.toPx())),
@@ -884,6 +899,8 @@ internal fun IngredientTable(items: List<Ingredient>, factor: Double, onAsk: ((I
                     style = MaterialTheme.typography.bodyLarge,
                     fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.End,
+                    modifier = Modifier.widthIn(max = 160.dp),
                 )
             }
         }
