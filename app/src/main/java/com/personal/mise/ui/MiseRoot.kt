@@ -59,12 +59,15 @@ import androidx.navigation.navArgument
 import com.personal.mise.timer.TimerFinished
 import com.personal.mise.ui.bowl.BowlEditScreen
 import com.personal.mise.ui.chat.AiChatSheet
+import com.personal.mise.ui.chat.AskAiButton
 import com.personal.mise.ui.common.MiseIcons
 import com.personal.mise.ui.common.rememberApp
 import com.personal.mise.ui.cooking.CookingScreen
 import com.personal.mise.ui.detail.RecipeDetailScreen
 import com.personal.mise.ui.edit.ImportScreen
 import com.personal.mise.ui.edit.RecipeEditScreen
+import com.personal.mise.ui.list.NewRecipeDialog
+import com.personal.mise.ui.list.NewRecipeWay
 import com.personal.mise.ui.list.RecipeListScreen
 import com.personal.mise.ui.plan.PlanScreen
 import com.personal.mise.ui.prep.PrepListScreen
@@ -143,11 +146,22 @@ fun MiseRoot(navRequests: MutableStateFlow<NavRequest?>) {
     }
 
     var globalChat by remember { mutableStateOf(false) }
+    var newRecipe by remember { mutableStateOf<NewRecipeWay?>(null) }
+    newRecipe?.let { way ->
+        NewRecipeDialog(
+            way = way,
+            onDismiss = { newRecipe = null },
+            onImport = { text, aiNote ->
+                newRecipe = null
+                nav.navigate(Routes.import(text, aiNote))
+            },
+        )
+    }
     if (globalChat) {
         AiChatSheet(
             session = remember { app.chats.global() },
             title = "问问 AI",
-            subtitle = "能翻你所有的菜谱，也能排菜单、存新菜谱",
+            subtitle = "能翻你所有的菜谱，也能排菜单、新建菜谱",
             tools = null,
             onDismiss = { globalChat = false },
             onOpenRecipe = {
@@ -162,13 +176,25 @@ fun MiseRoot(navRequests: MutableStateFlow<NavRequest?>) {
                 globalChat = false
                 nav.navigate(Routes.importImages(it))
             },
+            onCreate = {
+                globalChat = false
+                nav.navigate(Routes.edit(0))
+            },
+            onNewRecipe = {
+                globalChat = false
+                newRecipe = it
+            },
         )
     }
 
+    val tabRoute = route == Routes.RECIPES || route == Routes.TODAY || route == Routes.PLAN
+
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
+        // 和菜谱详情页一样浮在右下角；新建菜谱也在里面。今日菜单页底下有自己的按钮，由它自己放
+        floatingActionButton = { if (route == Routes.RECIPES || route == Routes.PLAN) AskAiButton(onClick = { globalChat = true }) },
         bottomBar = {
-            if (route == Routes.RECIPES || route == Routes.TODAY || route == Routes.PLAN) {
+            if (tabRoute) {
                 val todayCount by remember { app.repository.observeToday() }.collectAsStateWithLifecycle(emptyList())
                 FloatingTabBar {
                     TabPill(
@@ -190,7 +216,6 @@ fun MiseRoot(navRequests: MutableStateFlow<NavRequest?>) {
                         label = "日历",
                         onClick = { nav.switchTab(Routes.PLAN) },
                     )
-                    AskAiTab(onClick = { globalChat = true })
                 }
             }
         },
@@ -205,12 +230,7 @@ fun MiseRoot(navRequests: MutableStateFlow<NavRequest?>) {
             popExitTransition = { fadeOut(tween(160)) },
         ) {
             composable(Routes.RECIPES) {
-                RecipeListScreen(
-                    onOpen = { nav.navigate(Routes.detail(it)) },
-                    onCreate = { nav.navigate(Routes.edit(0)) },
-                    onImport = { text, aiNote -> nav.navigate(Routes.import(text, aiNote)) },
-                    onImportImages = { nav.navigate(Routes.importImages(it)) },
-                )
+                RecipeListScreen(onOpen = { nav.navigate(Routes.detail(it)) })
             }
             composable(Routes.TODAY) {
                 TodayScreen(
@@ -218,6 +238,7 @@ fun MiseRoot(navRequests: MutableStateFlow<NavRequest?>) {
                     onPrep = { nav.navigate(Routes.PREP) },
                     onShopping = { nav.navigate(Routes.SHOPPING) },
                     onCook = { nav.navigate(Routes.cooking()) },
+                    onAskAi = { globalChat = true },
                 )
             }
             composable(Routes.PLAN) {
@@ -353,22 +374,6 @@ private fun FloatingTabBar(content: @Composable RowScope.() -> Unit) {
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 content = content,
             )
-        }
-    }
-}
-
-/** 导航条最右边的「问问 AI」：陶土色圆钮，点开全局对话 */
-@Composable
-private fun AskAiTab(onClick: () -> Unit) {
-    Surface(
-        onClick = onClick,
-        modifier = Modifier.size(52.dp).semantics { contentDescription = "问问 AI" },
-        shape = CircleShape,
-        color = MaterialTheme.colorScheme.primary,
-        contentColor = MaterialTheme.colorScheme.onPrimary,
-    ) {
-        Box(contentAlignment = Alignment.Center) {
-            Text("✦", fontSize = 22.sp, fontWeight = FontWeight.Bold)
         }
     }
 }

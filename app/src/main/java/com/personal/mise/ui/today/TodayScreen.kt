@@ -22,6 +22,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.sp
+import com.personal.mise.ui.chat.AskAiButton
 import com.personal.mise.ui.common.BottomActionBar
 import com.personal.mise.ui.common.EmptyState
 import com.personal.mise.ui.common.InfoPill
@@ -106,6 +107,7 @@ fun TodayScreen(
     onPrep: () -> Unit,
     onShopping: () -> Unit,
     onCook: () -> Unit,
+    onAskAi: () -> Unit,
 ) {
     val app = rememberApp()
     val scope = rememberCoroutineScope()
@@ -201,6 +203,8 @@ fun TodayScreen(
                 }
             }
         },
+        // 放在这一页里，才会浮在「备料清单」「开始做菜」上面，不挡住它们
+        floatingActionButton = { AskAiButton(onClick = onAskAi) },
         bottomBar = {
             if (items.isNotEmpty()) {
                 // 外层已经有底部导航，这里不用再让出系统导航栏

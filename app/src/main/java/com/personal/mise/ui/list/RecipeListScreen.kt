@@ -1,10 +1,7 @@
 package com.personal.mise.ui.list
 
-import android.content.ClipboardManager
-import android.content.Context
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
@@ -27,7 +24,6 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.ExtendedFloatingActionButton
 import com.personal.mise.ui.common.ClassifyManageDialog
 import com.personal.mise.ui.common.ClassifyDialog
 import androidx.compose.material.icons.filled.Edit
@@ -50,16 +46,13 @@ import androidx.compose.ui.unit.sp
 import com.personal.mise.ui.common.CircleIconButton
 import com.personal.mise.ui.common.EmptyState
 import com.personal.mise.ui.common.Eyebrow
-import com.personal.mise.ui.common.FieldShape
 import com.personal.mise.ui.common.RecipeCover
 import com.personal.mise.ui.common.SoftCard
-import com.personal.mise.ui.common.miseFieldColors
 import java.util.Locale
 import com.personal.mise.util.CalorieText
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
@@ -76,7 +69,6 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -100,10 +92,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.personal.mise.MainActivity
-import com.personal.mise.ai.AiProvider
-import com.personal.mise.ai.AiRecipeOrganizer
 import com.personal.mise.data.Recipe
-import com.personal.mise.importer.UrlExtractor
 import com.personal.mise.ui.common.LocalImage
 import com.personal.mise.ui.common.hasImage
 import com.personal.mise.ui.common.rememberApp
@@ -111,7 +100,6 @@ import com.personal.mise.ui.common.rememberSavedView
 import com.personal.mise.ui.plan.PlanDateDialog
 import com.personal.mise.util.DayText
 import com.personal.mise.ui.edit.AiKeyDialog
-import com.personal.mise.ui.edit.AiKeyFields
 import com.personal.mise.update.UpdateInfo
 import kotlinx.coroutines.launch
 import java.time.LocalDate
@@ -121,9 +109,6 @@ import java.time.format.DateTimeFormatter
 @Composable
 fun RecipeListScreen(
     onOpen: (Long) -> Unit,
-    onCreate: () -> Unit,
-    onImport: (text: String, aiNote: Boolean) -> Unit,
-    onImportImages: (List<Uri>) -> Unit,
 ) {
     val app = rememberApp()
     val scope = rememberCoroutineScope()
@@ -152,10 +137,6 @@ fun RecipeListScreen(
     val hits = found.filter { filter.matches(it.recipe) }
     var menuView by rememberSavedView("recipes_menu")
     val lastCooked by remember { app.repository.observeLastCooked() }.collectAsStateWithLifecycle(emptyMap())
-    var menuOpen by remember { mutableStateOf(false) }
-    var pasteOpen by remember { mutableStateOf(false) }
-    var xcfSearchOpen by rememberSaveable { mutableStateOf(false) }
-    var noteOpen by remember { mutableStateOf(false) }
     var aiSettingsOpen by remember { mutableStateOf(false) }
     var update by remember { mutableStateOf<UpdateInfo?>(null) }
     var updating by remember { mutableStateOf(false) }
@@ -179,11 +160,6 @@ fun RecipeListScreen(
                 snackbar.showSnackbar("导出失败：${e.message}")
             }
         }
-    }
-    val imagesLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.PickMultipleVisualMedia(AiRecipeOrganizer.MAX_IMAGES),
-    ) { uris ->
-        if (uris.isNotEmpty()) onImportImages(uris)
     }
     val restoreLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) restoreUri = uri
@@ -234,31 +210,6 @@ fun RecipeListScreen(
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
-        floatingActionButton = {
-            Box {
-                ExtendedFloatingActionButton(
-                    onClick = { menuOpen = true },
-                    shape = CircleShape,
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary,
-                    icon = { Icon(Icons.Filled.Add, contentDescription = null) },
-                    text = { Text("新菜谱", fontWeight = FontWeight.Bold, fontSize = 16.sp) },
-                )
-                DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                    DropdownMenuItem(text = { Text("手动新建") }, onClick = { menuOpen = false; onCreate() })
-                    DropdownMenuItem(text = { Text("搜下厨房") }, onClick = { menuOpen = false; xcfSearchOpen = true })
-                    DropdownMenuItem(text = { Text("粘贴链接导入") }, onClick = { menuOpen = false; pasteOpen = true })
-                    DropdownMenuItem(text = { Text("AI 整理笔记") }, onClick = { menuOpen = false; noteOpen = true })
-                    DropdownMenuItem(
-                        text = { Text("从图片导入") },
-                        onClick = {
-                            menuOpen = false
-                            imagesLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-                        },
-                    )
-                }
-            }
-        },
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
             Column(
@@ -335,7 +286,7 @@ fun RecipeListScreen(
                     empty = {
                         item(key = "empty") {
                             if (query.isEmpty()) {
-                                EmptyState("谱", "还没有菜谱", "点右下角的「新菜谱」加几道菜，菜单就有内容了。", Modifier.padding(top = 24.dp))
+                                EmptyState("谱", "还没有菜谱", "点右下角的「问问 AI」新建几道菜，菜单就有内容了。", Modifier.padding(top = 24.dp))
                             } else {
                                 EmptyState("寻", "没有找到", "没有和「$query」相关的菜谱", Modifier.padding(top = 24.dp))
                             }
@@ -398,7 +349,7 @@ fun RecipeListScreen(
                                     EmptyState(
                                         "谱",
                                         "还没有菜谱",
-                                        "点右下角的「新菜谱」，手动新建、粘贴下厨房或小红书链接，或者让 AI 整理笔记里的菜谱。",
+                                        "点右下角的「问问 AI」，可以手动新建、搜下厨房、粘贴链接或笔记，或者从图片导入。",
                                         Modifier.padding(top = 24.dp),
                                     )
                                 } else {
@@ -547,36 +498,6 @@ fun RecipeListScreen(
 
     if (kitchenOpen) {
         KitchenDialog(onDismiss = { kitchenOpen = false })
-    }
-
-    if (xcfSearchOpen) {
-        XcfSearchDialog(
-            onDismiss = { xcfSearchOpen = false },
-            onPick = { xcfSearchOpen = false; onImport(it, false) },
-        )
-    }
-
-    if (pasteOpen) {
-        PasteLinkDialog(
-            onDismiss = { pasteOpen = false },
-            onConfirm = { pasteOpen = false; onImport(it, false) },
-        )
-    }
-
-    if (noteOpen) {
-        AiNoteDialog(
-            needsKey = !app.aiSettings.hasKey,
-            initialProvider = app.aiSettings.models.first().provider,
-            onDismiss = { noteOpen = false },
-            onConfirm = { note, provider, key ->
-                if (key.isNotBlank()) {
-                    app.aiSettings.saveKey(provider, key)
-                    app.aiSettings.enableProvider(provider)
-                }
-                noteOpen = false
-                onImport(note, true)
-            },
-        )
     }
 
     if (aiSettingsOpen) {
@@ -831,86 +752,5 @@ private fun SearchField(query: String, onChange: (String) -> Unit) {
                 }
             }
         },
-    )
-}
-
-@Composable
-private fun PasteLinkDialog(onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
-    val context = LocalContext.current
-    var text by remember {
-        val clip = (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).primaryClip
-        val pasted = clip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(context)?.toString().orEmpty()
-        mutableStateOf(if (pasted.contains("http")) pasted else "")
-    }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("粘贴下厨房或小红书链接") },
-        text = {
-            OutlinedTextField(
-                value = text,
-                onValueChange = { text = it },
-                placeholder = { Text("https://www.xiachufang.com/recipe/…") },
-                minLines = 2,
-                shape = FieldShape,
-                colors = miseFieldColors(),
-            )
-        },
-        confirmButton = {
-            TextButton(onClick = { onConfirm(text) }, enabled = text.isNotBlank()) { Text("导入") }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
-    )
-}
-
-/** 粘贴手机笔记里的菜谱文字，交给 AI 整理；还没填 Key 时一起选 AI、填 Key */
-@Composable
-private fun AiNoteDialog(
-    needsKey: Boolean,
-    initialProvider: AiProvider,
-    onDismiss: () -> Unit,
-    onConfirm: (note: String, provider: AiProvider, key: String) -> Unit,
-) {
-    val context = LocalContext.current
-    var text by remember {
-        val clip = (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).primaryClip
-        val pasted = clip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(context)?.toString().orEmpty()
-        mutableStateOf(if (UrlExtractor.isLinkShare(pasted)) "" else pasted)
-    }
-    var provider by remember { mutableStateOf(initialProvider) }
-    var key by remember { mutableStateOf("") }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("AI 整理笔记") },
-        text = {
-            Column(Modifier.verticalScroll(rememberScrollState())) {
-                Text(
-                    "把笔记里的菜谱整段粘贴进来，格式乱也没关系，AI 会整理出菜名、用料和步骤。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Spacer(Modifier.height(8.dp))
-                OutlinedTextField(
-                    value = text,
-                    onValueChange = { text = it },
-                    placeholder = { Text("例如：红烧肉 五花肉一斤切块，冷水下锅焯水，冰糖炒糖色…") },
-                    modifier = Modifier.fillMaxWidth(),
-                    minLines = 6,
-                    maxLines = 12,
-                    shape = FieldShape,
-                    colors = miseFieldColors(),
-                )
-                if (needsKey) {
-                    Spacer(Modifier.height(12.dp))
-                    AiKeyFields(provider, { provider = it }, key, { key = it })
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = { onConfirm(text, provider, key) },
-                enabled = text.isNotBlank() && (!needsKey || key.isNotBlank()),
-            ) { Text("整理") }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
     )
 }
