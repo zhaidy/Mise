@@ -33,6 +33,8 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -56,6 +58,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -65,18 +68,23 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.personal.mise.ai.AiRecipeOrganizer
 import com.personal.mise.chat.ChatAction
 import com.personal.mise.chat.ChatItem
 import com.personal.mise.chat.ChatSession
+import com.personal.mise.chat.ChatSuggestions
+import com.personal.mise.chat.SuggestionGroup
 import com.personal.mise.chat.RecipeTools
 import com.personal.mise.ui.common.miseFieldColors
 import com.personal.mise.ui.common.rememberApp
 import com.personal.mise.ui.edit.AiKeyDialog
+import com.personal.mise.ui.list.NewRecipeWay
 import com.personal.mise.ui.theme.LocalMiseColors
 import com.personal.mise.ui.theme.SerifFamily
+import java.time.LocalDateTime
 
 /** 工具盘上的一格：点了直接做 [action]，或者把 [prefill] 填进输入框让用户接着写，或者发 [send] */
 private data class Tool(
@@ -86,12 +94,17 @@ private data class Tool(
     val prefill: String? = null,
     val send: String? = null,
     val pickImages: Boolean = false,
+    /** 手动新建菜谱 */
+    val create: Boolean = false,
+    /** 搜下厨房、粘贴链接、整理笔记 */
+    val way: NewRecipeWay? = null,
 )
 
 /**
  * 「问问 AI」聊天框：从底部升起，对话、AI 给的卡片、工具盘和输入框。
  * [tools] 是这道菜能用的 AI 功能，为空时是首页的全局对话。
  * 卡片上点开菜谱、去导入时调 [onOpenRecipe]、[onImport]（文字, 是不是交给 AI 整理笔记）、[onImportImages]，由调用方关掉聊天框再跳转。
+ * [onCreate] 不为空时（首页）可以在这里新建菜谱：手动新建、从图片导入，搜下厨房、粘贴链接、整理笔记交给 [onNewRecipe]。
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -104,8 +117,17 @@ fun AiChatSheet(
     onOpenRecipe: (Long) -> Unit = {},
     onImport: (text: String, aiNote: Boolean) -> Unit = { _, _ -> },
     onImportImages: (List<Uri>) -> Unit = {},
+    onCreate: (() -> Unit)? = null,
+    onNewRecipe: (NewRecipeWay) -> Unit = {},
 ) {
     val app = rememberApp()
+    // 每次打开按现在的菜谱、计划和时间换一批问法
+    val suggestions by produceState(emptyList<SuggestionGroup>(), session) {
+        value = when (val id = session.recipeId) {
+            null -> ChatSuggestions.global(app.repository.loadChatIndex(), app.repository.loadPlanForChat(), LocalDateTime.now())
+            else -> app.repository.loadFull(id)?.let { ChatSuggestions.recipe(it) }.orEmpty()
+        }
+    }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var input by rememberSaveable { mutableStateOf("") }
     var trayOpen by rememberSaveable { mutableStateOf(false) }
@@ -138,6 +160,8 @@ fun AiChatSheet(
     fun use(tool: Tool) {
         trayOpen = false
         when {
+            tool.create -> onCreate?.invoke()
+            tool.way != null -> onNewRecipe(tool.way)
             tool.pickImages -> imagePicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
             tool.action != null -> withKey { session.runTool(ChatAction(tool.action), "✦ ${tool.label}") }
             tool.send != null -> send(tool.send)
@@ -148,7 +172,7 @@ fun AiChatSheet(
         }
     }
 
-    val toolList = remember(tools) { if (tools == null) globalTools() else recipeTools(tools) }
+    val toolList = remember(tools) { if (tools == null) globalTools(canCreate = onCreate != null) else recipeTools(tools) }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -180,7 +204,13 @@ fun AiChatSheet(
 
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 if (session.loaded && session.items.isEmpty() && session.streaming == null && session.working == null) {
-                    EmptyChat(title = title, recipeChat = recipeChat, onPick = { send(it) })
+                    EmptyChat(
+                        recipeChat = recipeChat,
+                        groups = suggestions,
+                        newRecipe = if (onCreate != null) newRecipeTools() else emptyList(),
+                        onPick = { send(it) },
+                        onUse = { use(it) },
+                    )
                 } else {
                     Messages(session, recipeChat, onOpenRecipe, onImport, onFix = { withKey { session.runTool(ChatAction(ChatAction.FIX), "✦ 照评价修改") } })
                 }
@@ -208,7 +238,9 @@ fun AiChatSheet(
                     value = input,
                     onValueChange = { input = it },
                     modifier = Modifier.weight(1f).focusRequester(focus),
-                    placeholder = { Text(if (recipeChat) "问问题，或者说说想怎么改" else "问问题、排菜单，或者发链接存菜谱") },
+                    placeholder = {
+                        Text(if (recipeChat) "问问题，或说说怎么改" else "问问题、排菜单、存菜谱", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    },
                     shape = RoundedCornerShape(24.dp),
                     colors = miseFieldColors(),
                     maxLines = 5,
@@ -378,48 +410,54 @@ private fun TypingDots() {
     }
 }
 
-/** 还没聊过时：一句招呼和两组可以直接点的问法 */
+/** 还没聊过时：一句招呼、按现在的情况出的两组问法；首页还能直接新建菜谱 */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun EmptyChat(title: String, recipeChat: Boolean, onPick: (String) -> Unit) {
+private fun EmptyChat(
+    recipeChat: Boolean,
+    groups: List<SuggestionGroup>,
+    newRecipe: List<Tool>,
+    onPick: (String) -> Unit,
+    onUse: (Tool) -> Unit,
+) {
     Column(
-        Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 18.dp),
+        Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 18.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Text(
             if (recipeChat) "关于这道菜，想问点什么，或者想怎么改？" else "想吃什么、怎么做、排菜单，都可以问我。",
             style = MaterialTheme.typography.titleMedium,
         )
-        val groups = if (recipeChat) listOf(
-            "问问题" to listOf("有什么调料能代替？", "哪几步可以提前做？", "怎么做才不容易失败？"),
-            "改菜谱" to listOf("改成 4 人份", "少油少盐，清淡一点", "换个更省事的做法"),
-        ) else listOf(
-            "吃什么" to listOf("今晚吃什么？", "冰箱里有鸡蛋和番茄，做什么？", "最近没做过的菜里挑两道"),
-            "排菜单" to listOf("帮我排一下这周的菜单", "明天想吃清淡点，排两道菜"),
-        )
-        groups.forEach { (label, asks) ->
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    asks.forEach { ask ->
-                        Surface(
-                            onClick = { onPick(ask) },
-                            shape = RoundedCornerShape(14.dp),
-                            color = MaterialTheme.colorScheme.surfaceContainerLowest,
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-                        ) {
-                            Text(ask, Modifier.padding(horizontal = 12.dp, vertical = 9.dp), style = MaterialTheme.typography.bodyMedium)
-                        }
-                    }
-                }
-            }
+        if (newRecipe.isNotEmpty()) {
+            ChipGroup("新菜谱", newRecipe.map { "${it.glyph}  ${it.label}" }) { onUse(newRecipe[it]) }
         }
+        groups.forEach { group -> ChipGroup(group.label, group.asks) { onPick(group.asks[it]) } }
         Text(
             "点左下角的 ✦ 还能直接用评价、估热量、分调料碗这些功能。".takeIf { recipeChat }
-                ?: "点左下角的 ✦ 可以从图片导入菜谱，或者存链接、笔记。",
+                ?: "点左下角的 ✦ 还有排一周菜单、用冰箱里的东西做菜这些功能。",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ChipGroup(label: String, chips: List<String>, onClick: (Int) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            chips.forEachIndexed { index, chip ->
+                Surface(
+                    onClick = { onClick(index) },
+                    shape = RoundedCornerShape(14.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerLowest,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                ) {
+                    Text(chip, Modifier.padding(horizontal = 12.dp, vertical = 9.dp), style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+        }
     }
 }
 
@@ -476,15 +514,25 @@ private fun recipeTools(tools: RecipeTools): List<Tool> = listOfNotNull(
     Tool("✐", "记批注", prefill = "帮我记一下："),
 )
 
-private fun globalTools(): List<Tool> = listOf(
+private fun globalTools(canCreate: Boolean): List<Tool> = listOf(
     Tool("◷", "今晚吃什么", send = "今晚吃什么？"),
     Tool("▦", "排一周菜单", send = "帮我排一下接下来一周的菜单"),
     Tool("❄", "用冰箱里的", prefill = "冰箱里有："),
+) + if (canCreate) newRecipeTools() else listOf(
     Tool("▣", "从图片导入", pickImages = true),
     Tool("⇣", "存链接笔记", prefill = "帮我存这个菜谱："),
 )
 
-/** 首页右下角、菜谱详情页上的「问问 AI」按钮 */
+/** 新建菜谱的几种办法，原来首页右下角「新菜谱」里的 */
+private fun newRecipeTools(): List<Tool> = listOf(
+    Tool("✚", "手动新建", create = true),
+    Tool("⌕", "搜下厨房", way = NewRecipeWay.XIACHUFANG),
+    Tool("⇣", "粘贴链接", way = NewRecipeWay.LINK),
+    Tool("✎", "整理笔记", way = NewRecipeWay.NOTE),
+    Tool("▣", "从图片导入", pickImages = true),
+)
+
+/** 菜谱、今日菜单、日历页和菜谱详情页右下角浮着的「问问 AI」按钮 */
 @Composable
 fun AskAiButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
     val colors = LocalMiseColors.current
