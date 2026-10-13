@@ -38,6 +38,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.personal.mise.ai.AiModel
 import com.personal.mise.ai.AiProvider
+import com.personal.mise.ai.ClaudeClient
 import com.personal.mise.ui.common.MiseIcons
 import com.personal.mise.ui.common.rememberApp
 import java.time.Instant
@@ -75,6 +76,7 @@ fun AiKeyDialog(confirmLabel: String, onDismiss: () -> Unit, onConfirm: () -> Un
                     enabled = enabled,
                     hasKey = { keys.getValue(it).isNotBlank() },
                     deepSeekKey = keys.getValue(AiProvider.DEEPSEEK).trim(),
+                    claudeKey = keys.getValue(AiProvider.ANTHROPIC).trim(),
                     onOrderChange = { order = it },
                     onEnabledChange = { enabled = it },
                 )
@@ -112,6 +114,7 @@ private fun ModelOrderFields(
     enabled: List<String>,
     hasKey: (AiProvider) -> Boolean,
     deepSeekKey: String,
+    claudeKey: String,
     onOrderChange: (List<String>) -> Unit,
     onEnabledChange: (List<String>) -> Unit,
 ) {
@@ -121,7 +124,7 @@ private fun ModelOrderFields(
     Text("AI 模型", style = MaterialTheme.typography.bodyMedium)
     Text(
         "勾选的模型从上往下试，额度用完、余额不足或连不上就换下一个；没填 Key 的会跳过。按住左侧把手拖动调整顺序；加入了共享厨房的话，厨房里的人共用这张表。" +
-            "Gemini、Agnes 和 Claude 查不到剩余额度，次数是这台手机今天用的；DeepSeek 显示账户余额",
+            "Gemini、Agnes 和 Claude 查不到剩余额度，次数是这台手机今天用的，Claude 余额不足时会标出来；DeepSeek 显示账户余额",
         style = MaterialTheme.typography.bodySmall,
     )
     val models = order.mapNotNull(AiModel::fromKey)
@@ -135,6 +138,8 @@ private fun ModelOrderFields(
             val note = when {
                 !hasKey(model.provider) -> "还没填 ${model.provider.label} Key，会跳过"
                 model.provider == AiProvider.DEEPSEEK -> deepSeekBalance
+                model.provider == AiProvider.ANTHROPIC && usage.isNoBalance(AiProvider.ANTHROPIC, claudeKey) ->
+                    ClaudeClient.NO_BALANCE
                 else -> usageText(usage.exhaustedUntil(model.id, now), usage.count(model.id, now))
             }
             Row(
