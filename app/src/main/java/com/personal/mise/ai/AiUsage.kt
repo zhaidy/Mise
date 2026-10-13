@@ -1,6 +1,7 @@
 package com.personal.mise.ai
 
 import android.content.Context
+import java.security.MessageDigest
 
 /**
  * 这台手机上每个模型今天用了几次、哪些 Gemini 模型当天额度用完了；模型按 API 名记，几家的名字不重。
@@ -36,9 +37,28 @@ class AiUsage(context: Context) {
         prefs.edit().putLong(EXHAUSTED_PREFIX + model, GeminiClient.nextQuotaReset(now)).apply()
     }
 
+    /** 记下这个 Key 余额不足；只记 Key 的指纹，换了 Key 就不算 */
+    fun markNoBalance(provider: AiProvider, key: String) {
+        prefs.edit().putString(NO_BALANCE_PREFIX + provider.name, keyFingerprint(key)).apply()
+    }
+
+    /** 调用成功了，说明已经充过值 */
+    fun clearNoBalance(provider: AiProvider) {
+        if (prefs.contains(NO_BALANCE_PREFIX + provider.name)) prefs.edit().remove(NO_BALANCE_PREFIX + provider.name).apply()
+    }
+
+    /** 上次用 [key] 调用时是不是余额不足 */
+    fun isNoBalance(provider: AiProvider, key: String): Boolean =
+        key.isNotBlank() && prefs.getString(NO_BALANCE_PREFIX + provider.name, null) == keyFingerprint(key)
+
     private companion object {
         const val DAY = "day"
+        const val NO_BALANCE_PREFIX = "no_balance_"
         const val COUNT_PREFIX = "count_"
         const val EXHAUSTED_PREFIX = "exhausted_"
+
+        fun keyFingerprint(key: String): String =
+            MessageDigest.getInstance("SHA-256").digest(key.trim().toByteArray())
+                .take(8).joinToString("") { "%02x".format(it) }
     }
 }

@@ -27,15 +27,21 @@ class ClaudeClient(private val settings: AiSettings, private val http: AiHttp, p
             .post(requestBody(model, prompt, schema, images).toString().toRequestBody("application/json".toMediaType()))
             .build()
         val reply = http.execute(request, "Claude")
-        if (!reply.isSuccessful) throw error(reply.code, errorDetail(reply.body))
+        if (!reply.isSuccessful) {
+            // 余额不足记下来，AI 设置里在 Claude 那几行显示；查不到余额，只能靠这次的报错
+            if (reply.code == 402) usage.markNoBalance(AiProvider.ANTHROPIC, key)
+            throw error(reply.code, errorDetail(reply.body))
+        }
         val json = replyJson(reply.body)
         usage.recordSuccess(model)
+        usage.clearNoBalance(AiProvider.ANTHROPIC)
         AiReply(json, displayName(model))
     }
 
     companion object {
         private const val ENDPOINT = "https://api.anthropic.com/v1/messages"
         private const val API_VERSION = "2023-06-01"
+        const val NO_BALANCE = "余额不足，请到 platform.claude.com 充值"
 
         /** 可选的模型（API 名 to 显示名），都能看图 */
         val MODELS = listOf(
@@ -93,7 +99,7 @@ class ClaudeClient(private val settings: AiSettings, private val http: AiHttp, p
 
         fun error(code: Int, detail: String?): ImportException = when (code) {
             401 -> ImportException("Claude API Key 不对，请检查")
-            402 -> AiUnavailableException("余额不足，请到 platform.claude.com 充值")
+            402 -> AiUnavailableException(NO_BALANCE)
             404 -> AiUnavailableException("暂时不能用，可能下线了或这个 Key 没有它的权限")
             429 -> AiUnavailableException("请求太频繁或额度用完了")
             500, 503, 529 -> AiUnavailableException("服务器繁忙")
