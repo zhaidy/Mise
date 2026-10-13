@@ -126,13 +126,16 @@ object XiachufangParser {
         return steps.mapIndexed { i, step -> if (step.imageUrl != null) step else step.copy(imageUrl = byNumber[i + 1]) }
     }
 
-    private fun imageUrl(img: Element): String? {
+    /** original=false 时保留 ?imageView2/... 缩略图参数，列表里显示小图用 */
+    internal fun imageUrl(img: Element, original: Boolean = true): String? {
         val raw = listOf("data-src", "data-original", "data-lazy-src", "src")
             .map { img.absUrl(it).ifEmpty { img.attr(it) } }
             .plus(listOf("data-srcset", "srcset").map { img.attr(it).trim().substringBefore(' ').substringBefore(',') })
             .firstOrNull { it.isNotBlank() && !it.startsWith("data:") }
             ?: return null
-        return cleanImageUrl(raw, img.baseUri())
+        val url = cleanImageUrl(raw, img.baseUri())
+        val thumbParams = raw.substringAfter('?', "")
+        return if (original || thumbParams.isEmpty() || !url.contains("chuimg.com")) url else "$url?$thumbParams"
     }
 
     /** 下厨房图片地址后面的 ?imageView2/... 是缩略图参数，去掉后是原图 */

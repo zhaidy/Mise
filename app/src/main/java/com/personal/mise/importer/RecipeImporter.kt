@@ -93,6 +93,44 @@ class RecipeImporter(
         buildResult(pageUrl, XiachufangParser.parse(html, pageUrl), XiachufangParser.recipeId(pageUrl) ?: XiachufangParser.recipeId(sourceUrl))
     }
 
+    /**
+     * 在下厨房搜菜谱。先直接请求搜索页；被拦住或者解析不出结果（可能是验证页）时用 WebView 再打开一次。
+     * 两边都没结果时：被限流了就报 [NeedsVerificationException]，让用户去网页里搜；否则当成真的没搜到。
+     */
+    suspend fun search(keyword: String, page: Int = 1): List<SearchHit> = withContext(Dispatchers.IO) {
+        val url = XiachufangSearch.searchUrl(keyword, page)
+        val direct = runCatching { fetchPage(url, DESKTOP_UA) }
+        direct.getOrNull()?.let { (finalUrl, html) ->
+            val hits = XiachufangSearch.parse(html, finalUrl)
+            // 正常的搜索页说没结果就是没结果，不用再开 WebView 等
+            if (hits.isNotEmpty() || XiachufangSearch.isEmptyResultPage(html)) return@withContext hits
+        }
+        val rendered = runCatching {
+            browser.load(url, timeoutMs = SEARCH_BROWSER_TIMEOUT_MS, userAgent = DESKTOP_UA) { pageUrl, html ->
+                withContext(Dispatchers.Default) { XiachufangSearch.parse(html, pageUrl).isNotEmpty() }
+            }
+        }.getOrNull()
+        (cookieJar as? WebViewCookieJar)?.flush()
+        if (rendered != null) return@withContext XiachufangSearch.parse(rendered.second, rendered.first)
+        val error = direct.exceptionOrNull()
+        when {
+            error is HttpStatusException && error.code in BLOCKED_CODES -> throw NeedsVerificationException(
+                url,
+                "下厨房暂时限制了访问（HTTP ${error.code}），可以点「在网页里搜」打开下厨房搜索页",
+            )
+            error != null -> throw error
+            else -> emptyList()
+        }
+    }
+
+    /** 搜索结果的缩略图，不存到本地 */
+    suspend fun fetchImage(url: String): ByteArray? = withContext(Dispatchers.IO) {
+        runCatching {
+            val request = Request.Builder().url(url).header("User-Agent", MOBILE_UA).header("Referer", XCF_REFERER).build()
+            client.newCall(request).execute().use { if (it.isSuccessful) it.body.bytes() else null }
+        }.getOrNull()
+    }
+
     /** 直接请求、MIP、WebView 都没拿到菜谱时报的错；网络本身不通就直说，被拦住了就提示可以去网页里验证 */
     private fun blockedError(url: String, directError: Throwable?): Throwable = when {
         directError is HttpStatusException && directError.code in BLOCKED_CODES -> NeedsVerificationException(
@@ -284,6 +322,7 @@ class RecipeImporter(
         private const val RETRY_DELAY_MS = 800L
         private val BLOCKED_CODES = setOf(403, 429)
         private const val BLOCK_COOLDOWN_MS = 3 * 60_000L
+        private const val SEARCH_BROWSER_TIMEOUT_MS = 12_000L
         private const val XCF_REFERER = "https://www.xiachufang.com/"
         private const val XHS_REFERER = "https://www.xiaohongshu.com/"
 
