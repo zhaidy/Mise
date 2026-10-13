@@ -1,5 +1,8 @@
 package com.personal.mise.ui.detail
 
+import androidx.compose.material3.SnackbarResult
+import androidx.compose.material3.SnackbarDuration
+import com.personal.mise.ui.common.CookFeedbackDialog
 import com.personal.mise.ui.common.SubstituteAsk
 import com.personal.mise.ui.common.SubstituteDialog
 import androidx.compose.foundation.background
@@ -156,6 +159,7 @@ fun RecipeDetailScreen(
     var chatOpen by remember { mutableStateOf(false) }
     var substitute by remember { mutableStateOf<SubstituteAsk?>(null) }
     var logOpen by remember { mutableStateOf(false) }
+    var feedbackOpen by remember { mutableStateOf(false) }
     var planOpen by remember { mutableStateOf(false) }
     var classifyOpen by remember { mutableStateOf(false) }
     var shareOpen by remember { mutableStateOf(false) }
@@ -629,6 +633,17 @@ fun RecipeDetailScreen(
         )
     }
 
+    if (feedbackOpen) {
+        full?.let { data ->
+            CookFeedbackDialog(
+                recipeId = recipeId,
+                title = data.recipe.title,
+                onDismiss = { feedbackOpen = false },
+                onSaved = { scope.launch { snackbar.showSnackbar(it) } },
+            )
+        }
+    }
+
     if (logOpen) {
         LogDateDialog(
             onDismiss = { logOpen = false },
@@ -636,7 +651,12 @@ fun RecipeDetailScreen(
                 logOpen = false
                 scope.launch {
                     val logged = app.repository.logCooked(recipeId, date)
-                    snackbar.showSnackbar(if (logged) "已记下：${DayText.label(date)}做了这道菜" else "${DayText.label(date)}已经记过了")
+                    if (logged) {
+                        val result = snackbar.showSnackbar("已记下：${DayText.label(date)}做了这道菜", actionLabel = "写感受", duration = SnackbarDuration.Long)
+                        if (result == SnackbarResult.ActionPerformed) feedbackOpen = true
+                    } else {
+                        snackbar.showSnackbar("${DayText.label(date)}已经记过了")
+                    }
                 }
             },
         )
