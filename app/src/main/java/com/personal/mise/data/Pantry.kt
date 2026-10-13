@@ -16,6 +16,8 @@ class Pantry(context: Context) {
 
     fun toggle(key: String) = save(if (key in _have.value) _have.value - key else _have.value + key)
 
+    fun add(key: String) = save(_have.value + key)
+
     /** 只把这些项重新标成没有，别的菜里勾过的不动 */
     fun clear(keys: Collection<String>) = save(_have.value - keys.toSet())
 
