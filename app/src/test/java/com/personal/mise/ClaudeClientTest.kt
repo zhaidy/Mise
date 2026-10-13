@@ -13,13 +13,13 @@ import org.junit.Test
 class ClaudeClientTest {
 
     @Test
-    fun `请求里带 JSON Schema，effort 调低，不设 temperature`() {
+    fun `请求里带 JSON Schema，effort 用 medium，不设 temperature`() {
         val schema = AiSchema.obj("name" to AiSchema.string(), required = listOf("name"))
         val body = ClaudeClient.requestBody("claude-haiku-5-5", "整理", schema)
         assertEquals("claude-haiku-5-5", body.getString("model"))
         assertFalse(body.has("temperature"))
         val config = body.getJSONObject("output_config")
-        assertEquals("low", config.getString("effort"))
+        assertEquals("medium", config.getString("effort"))
         assertEquals("json_schema", config.getJSONObject("format").getString("type"))
         assertEquals(schema.toString(), config.getJSONObject("format").getJSONObject("schema").toString())
     }
@@ -55,5 +55,6 @@ class ClaudeClientTest {
         listOf(402, 429, 529).forEach { assertTrue(ClaudeClient.error(it, null) is AiUnavailableException) }
         assertFalse(ClaudeClient.error(401, null) is AiUnavailableException)
         assertEquals("Claude Haiku 5.5", ClaudeClient.displayName("claude-haiku-5-5"))
+        assertEquals("Claude Sonnet 5.5", ClaudeClient.displayName("claude-sonnet-5-5"))
     }
 }

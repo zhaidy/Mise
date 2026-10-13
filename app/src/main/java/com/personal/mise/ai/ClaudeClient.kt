@@ -12,7 +12,7 @@ import java.util.Base64
 
 /**
  * 调用 Claude 的 Messages API，用 output_config.format 按 JSON Schema 返回 JSON。
- * 都是照格式整理的活，effort 调到 low，少想一会、回得快也省钱；Haiku 不接受改 temperature，不设。
+ * effort 用 medium，分调料碗、估热量这种要琢磨的活也想得够；Haiku 和 Sonnet 都不接受改 temperature，不设。
  */
 class ClaudeClient(private val settings: AiSettings, private val http: AiHttp, private val usage: AiUsage) : AiProviderClient {
 
@@ -38,7 +38,10 @@ class ClaudeClient(private val settings: AiSettings, private val http: AiHttp, p
         private const val API_VERSION = "2023-06-01"
 
         /** 可选的模型（API 名 to 显示名），都能看图 */
-        val MODELS = listOf("claude-haiku-5-5" to "Claude Haiku 5.5")
+        val MODELS = listOf(
+            "claude-haiku-5-5" to "Claude Haiku 5.5",
+            "claude-sonnet-5-5" to "Claude Sonnet 5.5",
+        )
 
         fun displayName(model: String): String = MODELS.firstOrNull { it.first == model }?.second ?: modelDisplayName(model)
 
@@ -48,7 +51,7 @@ class ClaudeClient(private val settings: AiSettings, private val http: AiHttp, p
             .put(
                 "output_config",
                 JSONObject()
-                    .put("effort", "low")
+                    .put("effort", "medium")
                     .put("format", JSONObject().put("type", "json_schema").put("schema", schema)),
             )
             .put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", content(prompt, images))))
