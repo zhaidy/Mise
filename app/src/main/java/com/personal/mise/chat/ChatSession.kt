@@ -264,6 +264,7 @@ class ChatSession internal constructor(
                 ChatAction.PLAN -> plan(action.arg)
                 ChatAction.RECIPES -> if (id == null) recipes(action.arg)
                 ChatAction.IMPORT -> if (id == null) import()
+                ChatAction.GENERATE -> if (id == null && action.arg.isNotBlank()) add(false, "", ChatCard.Generate(action.arg.trim()))
             }
         } catch (e: CancellationException) {
             throw e
@@ -536,6 +537,7 @@ class ChatSession internal constructor(
             is ChatCard.Proposal -> c.copy(status = status)
             is ChatCard.Plan -> c.copy(status = status)
             is ChatCard.Import -> c.copy(status = status)
+            is ChatCard.Generate -> c.copy(status = status)
             else -> return
         }
         items[index] = items[index].copy(card = card)

@@ -99,6 +99,8 @@ object Routes {
     fun bowls(id: Long) = "bowls/$id"
     fun import(text: String, aiNote: Boolean = false) = "import?text=${Uri.encode(text)}&ai=$aiNote"
     fun importImages(uris: List<Uri>) = "import?images=${Uri.encode(uris.joinToString("\n"))}"
+    /** 按一句要求让 AI 写一份新菜谱，在导入预览里看过再存 */
+    fun generate(request: String) = "import?text=${Uri.encode(request)}&gen=true"
     fun cooking(recipeId: Long = -1L) = "cooking?recipeId=$recipeId"
 }
 
@@ -155,6 +157,10 @@ fun MiseRoot(navRequests: MutableStateFlow<NavRequest?>) {
                 newRecipe = null
                 nav.navigate(Routes.import(text, aiNote))
             },
+            onGenerate = {
+                newRecipe = null
+                nav.navigate(Routes.generate(it))
+            },
         )
     }
     if (globalChat) {
@@ -179,6 +185,10 @@ fun MiseRoot(navRequests: MutableStateFlow<NavRequest?>) {
             onCreate = {
                 globalChat = false
                 nav.navigate(Routes.edit(0))
+            },
+            onGenerate = {
+                globalChat = false
+                nav.navigate(Routes.generate(it))
             },
             onNewRecipe = {
                 globalChat = false
@@ -281,11 +291,12 @@ fun MiseRoot(navRequests: MutableStateFlow<NavRequest?>) {
                 )
             }
             composable(
-                "import?text={text}&ai={ai}&images={images}",
+                "import?text={text}&ai={ai}&images={images}&gen={gen}",
                 arguments = listOf(
                     navArgument("text") { type = NavType.StringType; defaultValue = "" },
                     navArgument("ai") { type = NavType.BoolType; defaultValue = false },
                     navArgument("images") { type = NavType.StringType; defaultValue = "" },
+                    navArgument("gen") { type = NavType.BoolType; defaultValue = false },
                 ),
             ) { entry ->
                 ImportScreen(
@@ -296,6 +307,7 @@ fun MiseRoot(navRequests: MutableStateFlow<NavRequest?>) {
                         nav.popBackStack()
                         if (savedId != null) nav.navigate(Routes.detail(savedId))
                     },
+                    generate = entry.arguments?.getBoolean("gen") ?: false,
                 )
             }
             composable(

@@ -20,7 +20,7 @@ data class AiRecipe(
     val steps: List<AiStep>,
 )
 
-/** 把手机笔记里随手记的菜谱、小红书笔记（格式不固定）交给 AI，整理成菜名、用料和步骤。 */
+/** 把手机笔记里随手记的菜谱、小红书笔记（格式不固定）交给 AI，整理成菜名、用料和步骤；也能按一句要求让 AI 写一份新菜谱。 */
 class AiRecipeOrganizer(private val ai: AiClient) {
 
     suspend fun organize(note: String): ImportResult {
@@ -28,6 +28,20 @@ class AiRecipeOrganizer(private val ai: AiClient) {
         if (text.isEmpty()) throw ImportException("没有可以整理的文字")
         if (text.length > MAX_LENGTH) throw ImportException("文字太长了（超过 $MAX_LENGTH 字），请只粘贴一道菜")
         return toImportResult(parseResponse(ai.generate(PROMPT + text, schema)), text)
+    }
+
+    /** 按一句要求（「番茄牛腩 3人份」「鸡胸肉低脂快手菜」）让 AI 写一份新菜谱 */
+    suspend fun generate(request: String): ImportResult {
+        val text = request.trim()
+        if (text.isEmpty()) throw ImportException("还没说想做什么菜")
+        if (text.length > MAX_REQUEST) throw ImportException("要求太长了，用一两句话说想做什么就好")
+        val reply = ai.generate(GENERATE_PROMPT + text, schema)
+        val recipe = try {
+            parseResponse(reply)
+        } catch (_: ImportException) {
+            throw ImportException("AI 没写出菜谱，换个说法试试")
+        }
+        return toImportResult(recipe, "")
     }
 
     /** 小红书笔记：标题、正文，加上笔记配图（用料和步骤常常只写在图上） */
@@ -45,6 +59,22 @@ class AiRecipeOrganizer(private val ai: AiClient) {
 
     companion object {
         const val MAX_LENGTH = 20_000
+
+        /** 让 AI 写菜谱时的要求最多这么长 */
+        const val MAX_REQUEST = 500
+
+        private const val GENERATE_PROMPT = "请按我的要求写一份家常的中文菜谱，要在普通家庭厨房里能做出来、照着做就好吃。\n" +
+            "要求：\n" +
+            "1. title：简短常见的菜名，如「番茄牛腩」。我只说了用料或想法时，起一个贴切的菜名。\n" +
+            "2. servings：我说了几人份就照写，没说就按「2人份」写。\n" +
+            "3. ingredients：所有食材和调料，每样一条，name 只写名称，amount 写具体用量，主料用克（如「300克」「2个」），" +
+            "调料用勺、克或毫升（如「1勺」「5克」），数字在前、单位在后；只有盐、胡椒这类按口味加的可以写「适量」。同一样东西只列一次。\n" +
+            "4. steps：按先后顺序的做法，每一步只做一件主要的事（切配、腌制、焯水、炒制、调味、收汁、装盘分开），" +
+            "text 用简洁的一两句话写清火候、时间和判断标准（如「中火煎到两面金黄」），不要带序号。" +
+            "要等待或加热一段时间的步骤（如「小火炖 40 分钟」），把分钟数填进 timerMinutes，否则留空。小窍门放进相关的那一步里。\n" +
+            "5. 照我提的口味、忌口、时间、热量这些限制来写；用量、时间要合理，不要编造少见的食材。\n" +
+            "6. 如果我说的不是想做的菜（和做饭无关），所有字段都返回空。\n\n" +
+            "我的要求：\n"
 
         /** 一次最多发给 AI 的图片数 */
         const val MAX_IMAGES = 9

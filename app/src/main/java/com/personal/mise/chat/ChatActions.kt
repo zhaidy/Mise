@@ -25,6 +25,7 @@ data class ChatAction(val name: String, val arg: String = "") {
         // 全局的
         const val RECIPES = "recipes"
         const val IMPORT = "import"
+        const val GENERATE = "generate"
     }
 }
 
