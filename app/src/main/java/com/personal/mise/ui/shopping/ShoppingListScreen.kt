@@ -54,7 +54,14 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
+import com.personal.mise.importer.ImportException
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.flowOf
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -87,8 +94,43 @@ fun ShoppingListScreen(planFrom: String?, planDays: Int, onBack: () -> Unit) {
             ShoppingList.Source(row.label, it.name, UnitText.display(AmountScaler.scale(it.amountText, factor)), it.kind)
         }
     }
-    val items = ShoppingList.build(sources)
-    val (owned, toBuy) = items.partition { it.key in have }
+    val built = ShoppingList.build(sources)
+    // AI 整理过这份清单（同样几样东西）就按它合并、分区；用量变了照样套得上
+    val cacheKey = built.map { it.key }
+    var aiView by rememberSaveable { mutableStateOf(true) }
+    var organizing by remember { mutableStateOf(false) }
+    var aiMessage by remember { mutableStateOf<String?>(null) }
+    var cacheVersion by remember { mutableIntStateOf(0) }
+    val sections = remember(built, cacheVersion, aiView) {
+        app.shoppingGroups[cacheKey]?.takeIf { aiView }?.let { ShoppingList.regroup(built, it) }
+    }
+    val items = sections?.flatMap { it.items } ?: built
+    val (owned, toBuy) = items.partition { it.ownedIn(have) }
+    val scope = rememberCoroutineScope()
+
+    fun toggle(item: ShoppingList.Item) {
+        if (item.ownedIn(have)) app.pantry.clear(item.memberKeys + item.key) else app.pantry.add(item.key)
+    }
+
+    fun organize() {
+        organizing = true
+        aiMessage = null
+        scope.launch {
+            try {
+                app.shoppingGroups[cacheKey] = app.shoppingOrganizer.organize(built)
+                aiView = true
+                cacheVersion++
+                val after = ShoppingList.regroup(built, app.shoppingGroups.getValue(cacheKey)).sumOf { it.items.size }
+                aiMessage = if (after < built.size) "AI 把 ${built.size} 样合成了 $after 样，按超市区域分好了" else "AI 按超市区域分好了，没有重复的"
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                aiMessage = (e as? ImportException)?.message ?: "AI 整理失败：${e.message ?: e.javaClass.simpleName}"
+            } finally {
+                organizing = false
+            }
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -100,7 +142,7 @@ fun ShoppingListScreen(planFrom: String?, planDays: Int, onBack: () -> Unit) {
                         onClick = {
                             val send = Intent(Intent.ACTION_SEND)
                                 .setType("text/plain")
-                                .putExtra(Intent.EXTRA_TEXT, ShoppingList.shareText(toBuy))
+                                .putExtra(Intent.EXTRA_TEXT, ShoppingList.shareText(toBuy, sections))
                             context.startActivity(Intent.createChooser(send, "发送购物清单"))
                         },
                     )
@@ -141,17 +183,37 @@ fun ShoppingListScreen(planFrom: String?, planDays: Int, onBack: () -> Unit) {
                 item(key = "days") { DaysSwitch(days, { days = it }) }
             }
             item(key = "hint") {
-                Text(
-                    if (toBuy.isEmpty()) "都有了，不用买" else "要买 ${toBuy.size} 样。家里有的勾上，会挪到下面，下次也记得。",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        if (toBuy.isEmpty()) "都有了，不用买" else "要买 ${toBuy.size} 样。家里有的勾上，会挪到下面，下次也记得。",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        when {
+                            sections != null -> TextButton(onClick = { aiView = false; aiMessage = null }) { Text("看原来的清单") }
+                            app.shoppingGroups[cacheKey] != null -> TextButton(onClick = { aiView = true }) { Text("看 AI 整理的") }
+                            built.size >= 2 && app.aiSettings.hasKey -> TextButton(onClick = { organize() }, enabled = !organizing) {
+                                Text(if (organizing) "AI 正在合并同样的东西、按区域分…" else "✦ 让 AI 合并整理")
+                            }
+                        }
+                        if (organizing) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                    }
+                    aiMessage?.let {
+                        Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
             }
             if (toBuy.isNotEmpty()) {
-                item(key = "buy") {
-                    ShoppingGroup("要买", MaterialTheme.colorScheme.primary) {
-                        toBuy.forEach { item ->
-                            key(item.key) { ShoppingRow(item, owned = false, accent = MaterialTheme.colorScheme.primary) { app.pantry.toggle(item.key) } }
+                // AI 整理过就按超市区域一组一组列，没整理过就是一张「要买」
+                val buyGroups = sections?.mapNotNull { g -> g.items.filter { !it.ownedIn(have) }.takeIf { it.isNotEmpty() }?.let { g.section to it } }
+                    ?: listOf("要买" to toBuy)
+                buyGroups.forEach { (title, list) ->
+                    item(key = "buy-$title") {
+                        ShoppingGroup(title, MaterialTheme.colorScheme.primary) {
+                            list.forEach { item ->
+                                key(item.key) { ShoppingRow(item, owned = false, accent = MaterialTheme.colorScheme.primary) { toggle(item) } }
+                            }
                         }
                     }
                 }
@@ -161,10 +223,10 @@ fun ShoppingListScreen(planFrom: String?, planDays: Int, onBack: () -> Unit) {
                     ShoppingGroup(
                         "家里有",
                         MaterialTheme.colorScheme.secondary,
-                        action = { TextButton(onClick = { app.pantry.clear(owned.map { it.key }) }) { Text("全部取消") } },
+                        action = { TextButton(onClick = { app.pantry.clear(owned.flatMap { it.memberKeys + it.key }) }) { Text("全部取消") } },
                     ) {
                         owned.forEach { item ->
-                            key(item.key) { ShoppingRow(item, owned = true, accent = MaterialTheme.colorScheme.secondary) { app.pantry.toggle(item.key) } }
+                            key(item.key) { ShoppingRow(item, owned = true, accent = MaterialTheme.colorScheme.secondary) { toggle(item) } }
                         }
                     }
                 }

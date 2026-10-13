@@ -20,6 +20,7 @@ import com.personal.mise.ai.AiRecipeOrganizer
 import com.personal.mise.ai.AiRecipeEditor
 import com.personal.mise.ai.AiRecipeReviewer
 import com.personal.mise.ai.AiRecipeTranslator
+import com.personal.mise.ai.AiShoppingOrganizer
 import com.personal.mise.ai.AiSettings
 import com.personal.mise.ai.AiStepSplitter
 import com.personal.mise.ai.AiStepTimer
@@ -43,6 +44,7 @@ import com.personal.mise.importer.WebViewCookieJar
 import com.personal.mise.timer.Notifications
 import com.personal.mise.timer.TimerManager
 import com.personal.mise.update.UpdateChecker
+import com.personal.mise.util.ShoppingList
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -124,6 +126,9 @@ class MiseApp : Application() {
     val stepSplitter: AiStepSplitter by lazy { AiStepSplitter(ai) }
     val stepTimer: AiStepTimer by lazy { AiStepTimer(ai) }
     val classifier: AiClassifier by lazy { AiClassifier(ai) }
+    val shoppingOrganizer: AiShoppingOrganizer by lazy { AiShoppingOrganizer(ai) }
+    /** AI 整理过的购物清单，按清单内容记着，这次运行里回来看不用再等 AI */
+    val shoppingGroups = mutableMapOf<List<String>, List<ShoppingList.AiGroup>>()
     val noteOrganizer: AiRecipeOrganizer by lazy { AiRecipeOrganizer(ai) }
     val bowlOrganizer: AiBowlOrganizer by lazy { AiBowlOrganizer(ai) }
     val amountEstimator: AiAmountEstimator by lazy { AiAmountEstimator(ai) }

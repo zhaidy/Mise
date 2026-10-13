@@ -13,7 +13,20 @@ object ShoppingList {
 
     data class Use(val recipeTitle: String, val amount: String)
 
-    data class Item(val key: String, val name: String, val seasoning: Boolean, val uses: List<Use>) {
+    /**
+     * [memberKeys]：AI 把几样合成一项时，原来那几样的名字（ShoppingList.keyOf）；
+     * 家里有的记录按原来的名字也认，免得合并后之前勾过的又要重新勾。
+     */
+    data class Item(
+        val key: String,
+        val name: String,
+        val seasoning: Boolean,
+        val uses: List<Use>,
+        val memberKeys: Set<String> = setOf(key),
+    ) {
+        /** 家里有：这一项勾过，或者合进来的每一样都勾过 */
+        fun ownedIn(have: Set<String>): Boolean = key in have || memberKeys.all { it in have }
+
         /** 几道菜加起来的量，如「共 5个」「共 350克 + 适量」；加不起来（只有一道菜、都是「适量」）时为空 */
         val total: String
             get() = if (uses.size < 2) "" else ShoppingList.total(uses.map { it.amount })
@@ -81,9 +94,62 @@ object ShoppingList {
             }
             .sortedBy { it.seasoning }
 
-    /** 发给别人或贴到备忘录的文字 */
-    fun shareText(items: List<Item>): String =
-        "购物清单\n" + items.joinToString("\n") { item ->
-            "□ ${item.name}" + item.detail.let { if (it.isBlank()) "" else " $it" }
+    /** 发给别人或贴到备忘录的文字；按区域分好时带上区域名 */
+    fun shareText(items: List<Item>, sections: List<Group>? = null): String {
+        fun line(item: Item) = "□ ${item.name}" + item.detail.let { if (it.isBlank()) "" else " $it" }
+        if (sections == null) return "购物清单\n" + items.joinToString("\n") { line(it) }
+        val keys = items.map { it.key }.toSet()
+        return "购物清单\n" + sections.mapNotNull { group ->
+            group.items.filter { it.key in keys }.takeIf { it.isNotEmpty() }?.let { "【${group.section}】\n" + it.joinToString("\n") { item -> line(item) } }
+        }.joinToString("\n")
+    }
+
+    // AI 整理
+
+    /** 超市里的区域，AI 分组和显示都按这个顺序 */
+    val SECTIONS = listOf("蔬菜水果", "肉禽蛋", "水产", "豆制品", "主食干货", "乳品烘焙", "调料", "其他")
+
+    /** AI 回的一组：叫什么、在哪个区、包括清单里第几项（从 0 开始） */
+    data class AiGroup(val name: String?, val section: String, val items: List<Int>)
+
+    /** 一个区域里要买的东西 */
+    data class Group(val section: String, val items: List<Item>)
+
+    /**
+     * 按 AI 的分组把几项合成一项、放进区域。序号不对、重复的跳过；AI 漏掉的照原样放进
+     * 「调料」或「其他」。合并后的用量照原来的规则加总，明细一样不少。
+     */
+    fun regroup(items: List<Item>, groups: List<AiGroup>): List<Group> {
+        val used = mutableSetOf<Int>()
+        val merged = mutableListOf<Pair<String, Item>>()
+        groups.forEach { g ->
+            val members = g.items.filter { it in items.indices && used.add(it) }.map { items[it] }
+            if (members.isEmpty()) return@forEach
+            val name = g.name ?: members.first().name
+            val section = g.section.takeIf { it in SECTIONS } ?: defaultSection(members)
+            merged += section to if (members.size == 1 && g.name == null) members.single() else Item(
+                key = keyOf(name),
+                name = name,
+                seasoning = members.all { it.seasoning },
+                uses = members.flatMap { it.uses },
+                memberKeys = members.flatMap { it.memberKeys }.toSet(),
+            )
         }
+        items.indices.filter { it !in used }.forEach { merged += defaultSection(listOf(items[it])) to items[it] }
+        // 两组起了同一个名字时合在一起，免得同一个 key 出现两次
+        val byKey = LinkedHashMap<String, Pair<String, Item>>()
+        merged.forEach { (section, item) ->
+            val old = byKey[item.key]
+            byKey[item.key] = if (old == null) section to item else old.first to old.second.copy(
+                uses = old.second.uses + item.uses,
+                memberKeys = old.second.memberKeys + item.memberKeys,
+                seasoning = old.second.seasoning && item.seasoning,
+            )
+        }
+        return byKey.values.groupBy({ it.first }, { it.second })
+            .map { (section, list) -> Group(section, list) }
+            .sortedBy { SECTIONS.indexOf(it.section) }
+    }
+
+    private fun defaultSection(members: List<Item>): String = if (members.all { it.seasoning }) "调料" else "其他"
 }
