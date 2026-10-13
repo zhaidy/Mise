@@ -47,8 +47,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -101,6 +103,7 @@ import com.personal.mise.ui.common.SectionHeader
 import com.personal.mise.ui.common.ShareImageDialog
 import com.personal.mise.share.ShareImage
 import com.personal.mise.ui.common.SoftCard
+import com.personal.mise.ai.AiRecipeEditor
 import com.personal.mise.importer.ImportException
 import com.personal.mise.ui.edit.AiKeyDialog
 import com.personal.mise.util.CalorieText
@@ -114,7 +117,9 @@ import com.personal.mise.util.AmountScaler
 import com.personal.mise.util.StepPhase
 import com.personal.mise.util.TimeText
 import com.personal.mise.util.UnitText
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** 封面横幅高度；下面的内容面板往上盖住一截 */
 private val CoverHeight = 230.dp
@@ -137,6 +142,11 @@ fun RecipeDetailScreen(
     var scaleOpen by remember { mutableStateOf(false) }
     var estimatingCalories by remember { mutableStateOf(false) }
     var askingKey by remember { mutableStateOf(false) }
+    var aiEditOpen by remember { mutableStateOf(false) }
+    var aiEditing by remember { mutableStateOf(false) }
+    var aiEditError by remember { mutableStateOf<String?>(null) }
+    /** 没填 Key 时先记下要求，填完 Key 接着改 */
+    var aiEditPending by remember { mutableStateOf<String?>(null) }
     var logOpen by remember { mutableStateOf(false) }
     var planOpen by remember { mutableStateOf(false) }
     var classifyOpen by remember { mutableStateOf(false) }
@@ -164,6 +174,54 @@ fun RecipeDetailScreen(
             }
             estimatingCalories = false
             snackbar.showSnackbar(message)
+        }
+    }
+
+    /**
+     * 按一句话让 AI 改菜谱，改完直接保存；提示条上可以撤销。
+     * 去掉的步骤图等提示条消失、确定不撤销了再删。
+     */
+    fun aiEdit(instruction: String) {
+        if (aiEditing) return
+        aiEditing = true
+        aiEditError = null
+        scope.launch {
+            val before = app.repository.snapshot(recipeId)
+            val result = try {
+                if (before == null) throw ImportException("菜谱不存在")
+                val edit = app.recipeEditor.edit(AiRecipeEditor.editable(before.draft), instruction)
+                val after = AiRecipeEditor.apply(before.draft, edit.recipe)
+                val dropped = AiRecipeEditor.droppedImages(before.draft, after)
+                app.repository.save(after, keepImages = dropped)
+                Triple(edit.summary, after, dropped)
+            } catch (e: ImportException) {
+                aiEditError = e.message ?: "AI 修改失败"
+                null
+            } catch (e: Exception) {
+                aiEditError = "AI 修改失败：${e.message ?: e.javaClass.simpleName}"
+                null
+            } finally {
+                aiEditing = false
+            }
+            if (before == null || result == null) return@launch
+            val (summary, after, dropped) = result
+            aiEditOpen = false
+            val ingredientsChanged = before.draft.ingredients.map { it.name to it.amountText } != after.ingredients.map { it.name to it.amountText }
+            val message = listOfNotNull(
+                summary.ifBlank { "AI 改好了" },
+                "有 ${dropped.size} 张步骤图没地方放，去掉了".takeIf { dropped.isNotEmpty() },
+                "用料变了，热量可以重新估算".takeIf { ingredientsChanged && before.draft.calories != null },
+            ).joinToString("；")
+            var undone = false
+            try {
+                undone = snackbar.showSnackbar(message, actionLabel = "撤销", duration = SnackbarDuration.Long) == SnackbarResult.ActionPerformed
+                if (undone) {
+                    app.repository.restore(before)
+                    snackbar.showSnackbar("已撤销 AI 的修改")
+                }
+            } finally {
+                if (!undone && dropped.isNotEmpty()) withContext(NonCancellable) { app.repository.deleteUnusedImages(recipeId, dropped) }
+            }
         }
     }
 
@@ -257,6 +315,14 @@ fun RecipeDetailScreen(
                             if (data.recipe.note == null) {
                                 InfoPill("＋ 批注", Modifier.clip(CircleShape).clickable { noteOpen = true }, content = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
+                            InfoPill(
+                                "✨ 让 AI 改",
+                                Modifier.clip(CircleShape).clickable {
+                                    aiEditError = null
+                                    aiEditOpen = true
+                                },
+                                content = MaterialTheme.colorScheme.primary,
+                            )
                             data.recipe.servings?.takeIf { it.isNotBlank() }?.let { InfoPill(it) }
                             if (data.steps.isNotEmpty()) InfoPill("${data.steps.size} 步")
                             Surface(
@@ -435,6 +501,26 @@ fun RecipeDetailScreen(
                 item(key = "source") { SourceLink(url) }
             }
         }
+    }
+
+    if (aiEditOpen) {
+        AiEditDialog(
+            busy = aiEditing,
+            error = aiEditError,
+            onDismiss = { aiEditOpen = false },
+            onSubmit = { if (app.aiSettings.hasKey) aiEdit(it) else aiEditPending = it },
+        )
+    }
+
+    aiEditPending?.let { instruction ->
+        AiKeyDialog(
+            confirmLabel = "保存并修改",
+            onDismiss = { aiEditPending = null },
+            onConfirm = {
+                aiEditPending = null
+                aiEdit(instruction)
+            },
+        )
     }
 
     if (askingKey) {

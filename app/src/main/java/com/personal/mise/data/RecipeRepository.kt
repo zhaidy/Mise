@@ -53,6 +53,9 @@ private val RecipeDraft.cleanSubcategory: String?
     get() = subcategory?.trim()?.takeIf { it.isNotEmpty() && cleanCategory != null }
 
 /** 手动编辑后的调料碗 */
+/** 某一刻菜谱的样子；manualBowls 为空表示调料碗是自动生成的 */
+class RecipeSnapshot(val draft: RecipeDraft, val manualBowls: List<BowlEdit>?)
+
 data class BowlEdit(
     val label: String,
     val stepId: Long?,
@@ -118,8 +121,11 @@ class RecipeRepository(
         )
     }
 
-    /** 保存菜谱，返回 id。没手动调整过调料碗的菜谱会重新自动生成调料碗。 */
-    suspend fun save(draft: RecipeDraft): Long {
+    /**
+     * 保存菜谱，返回 id。没手动调整过调料碗的菜谱会重新自动生成调料碗。
+     * 不再用到的图片会删掉，[keepImages] 里的除外（撤销时还要用）。
+     */
+    suspend fun save(draft: RecipeDraft, keepImages: Set<String> = emptySet()): Long {
         val oldImages = if (draft.id != 0L) imagesOf(draft.id) else emptySet()
         val id = db.withTransaction {
             val recipeId = if (draft.id == 0L) {
@@ -175,8 +181,28 @@ class RecipeRepository(
             recipeId
         }
         val newImages = imagesOf(id)
-        (oldImages - newImages).forEach { images.delete(it) }
+        (oldImages - newImages - keepImages).forEach { images.delete(it) }
         return id
+    }
+
+    /** 菜谱现在的样子，撤销用；调料碗只在手动调整过时记下来，没调整过的保存时会自动重新生成 */
+    suspend fun snapshot(id: Long): RecipeSnapshot? {
+        val draft = loadDraft(id) ?: return null
+        val manualBowls = if (dao.get(id)?.bowlsManual == true) {
+            loadFull(id)?.bowls?.map { b -> BowlEdit(b.bowl.label, b.bowl.stepId, b.items.map { it.ingredientId to it.amountText }) }
+        } else null
+        return RecipeSnapshot(draft, manualBowls)
+    }
+
+    /** 恢复到 [snapshot] 时的样子；中间删掉的用料、步骤按原来的编号加回去，调料碗才对得上 */
+    suspend fun restore(snapshot: RecipeSnapshot) {
+        save(snapshot.draft, keepImages = snapshot.draft.steps.mapNotNull { it.image }.toSet())
+        snapshot.manualBowls?.let { saveBowls(snapshot.draft.id, it) }
+    }
+
+    /** 删掉这道菜已经不用的图片（[paths] 之中的） */
+    suspend fun deleteUnusedImages(id: Long, paths: Set<String>) {
+        (paths - imagesOf(id)).forEach { images.delete(it) }
     }
 
     suspend fun delete(id: Long) {
