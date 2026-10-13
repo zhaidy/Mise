@@ -76,7 +76,16 @@ fun RecipeReviewCard(
                             Text("AI 正在照评价修改…", style = MaterialTheme.typography.bodySmall)
                         }
                     } else {
-                        OutlinedButton(onClick = onFix, enabled = !busy) { Text("✨ 照评价修改") }
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            OutlinedButton(onClick = onFix, enabled = !busy) { Text("✨ 照评价修改") }
+                            review.improvedScore?.let {
+                                Text(
+                                    "改完约 $it 分（+${it - review.score}）",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                            }
+                        }
                     }
                 }
                 if (review != null && message != null && !busy) {

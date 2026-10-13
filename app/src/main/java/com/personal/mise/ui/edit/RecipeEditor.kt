@@ -80,8 +80,8 @@ fun RecipeEditor(
     var askingKeyFor by rememberSaveable { mutableStateOf<String?>(null) }
     val imageOnly = PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
 
-    vm.fixResult?.let { result ->
-        AiChangesDialog(result.summary, result.changes, onUndo = vm::undoFix, onKeep = vm::keepFix)
+    vm.proposal?.let { change ->
+        AiChangesDialog(change.summary, change.changes, onCancel = vm::cancelFix, onConfirm = vm::confirmFix)
     }
 
     askingKeyFor?.let { action ->
