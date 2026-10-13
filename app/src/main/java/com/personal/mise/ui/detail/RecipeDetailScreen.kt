@@ -105,7 +105,9 @@ import com.personal.mise.ui.common.ShareImageDialog
 import com.personal.mise.share.ShareImage
 import com.personal.mise.ui.common.SoftCard
 import com.personal.mise.ai.AiRecipeEditor
+import com.personal.mise.ai.AiRecipeReviewer
 import com.personal.mise.ai.RecipeReview
+import com.personal.mise.util.RecipeChanges
 import com.personal.mise.importer.ImportException
 import com.personal.mise.ui.edit.AiKeyDialog
 import com.personal.mise.util.CalorieText
@@ -119,6 +121,7 @@ import com.personal.mise.util.AmountScaler
 import com.personal.mise.util.StepPhase
 import com.personal.mise.util.TimeText
 import com.personal.mise.util.UnitText
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -145,6 +148,10 @@ fun RecipeDetailScreen(
     var estimatingCalories by remember { mutableStateOf(false) }
     var reviewing by remember { mutableStateOf(false) }
     var askingKeyForReview by remember { mutableStateOf(false) }
+    var fixing by remember { mutableStateOf(false) }
+    var askingKeyForFix by remember { mutableStateOf(false) }
+    /** 照评价改好、等用户看完决定留着还是撤销 */
+    var fixResult by remember { mutableStateOf<FixResult?>(null) }
     var askingKey by remember { mutableStateOf(false) }
     var aiEditOpen by remember { mutableStateOf(false) }
     var aiEditing by remember { mutableStateOf(false) }
@@ -196,6 +203,65 @@ fun RecipeDetailScreen(
             }
             reviewing = false
             message?.let { snackbar.showSnackbar(it) }
+        }
+    }
+
+    /**
+     * 照评价里要注意的地方让 AI 改菜谱，改完直接保存，再列出改了什么，可以撤销。
+     * 留着改好的就按新菜谱重新评价；去掉的步骤图等确定不撤销了再删。
+     */
+    fun fixByReview() {
+        val review = RecipeReview.fromJson(full?.recipe?.review) ?: return
+        if (fixing) return
+        fixing = true
+        scope.launch {
+            val before = app.repository.snapshot(recipeId)
+            var message: String? = null
+            val applied = try {
+                if (before == null) throw ImportException("菜谱不存在")
+                val edit = app.recipeEditor.edit(AiRecipeEditor.editable(before.draft), AiRecipeReviewer.fixInstruction(review))
+                val after = AiRecipeEditor.apply(before.draft, edit.recipe)
+                val changes = RecipeChanges.describe(before.draft, after)
+                if (changes.isEmpty()) {
+                    message = edit.summary.ifBlank { "AI 看了一遍，觉得不用改" }
+                    null
+                } else {
+                    val dropped = AiRecipeEditor.droppedImages(before.draft, after)
+                    app.repository.save(after, keepImages = dropped)
+                    val ingredientsChanged = before.draft.ingredients.map { it.name to it.amountText } != after.ingredients.map { it.name to it.amountText }
+                    val notes = listOfNotNull(
+                        "有 ${dropped.size} 张步骤图没地方放，去掉了".takeIf { dropped.isNotEmpty() },
+                        "用料变了，热量可以重新估算".takeIf { ingredientsChanged && before.draft.calories != null },
+                    )
+                    Triple(edit.summary, changes + notes, dropped)
+                }
+            } catch (e: ImportException) {
+                message = e.message ?: "AI 修改失败"
+                null
+            } catch (e: Exception) {
+                message = "AI 修改失败：${e.message ?: e.javaClass.simpleName}"
+                null
+            } finally {
+                fixing = false
+            }
+            message?.let { snackbar.showSnackbar(it) }
+            if (before == null || applied == null) return@launch
+            val (summary, changes, dropped) = applied
+            val decision = CompletableDeferred<Boolean>()
+            var undone = false
+            try {
+                fixResult = FixResult(summary, changes, decision)
+                undone = decision.await()
+                fixResult = null
+                if (undone) {
+                    app.repository.restore(before)
+                    snackbar.showSnackbar("已撤销 AI 的修改")
+                } else {
+                    aiReview()
+                }
+            } finally {
+                if (!undone && dropped.isNotEmpty()) withContext(NonCancellable) { app.repository.deleteUnusedImages(recipeId, dropped) }
+            }
         }
     }
 
@@ -429,6 +495,8 @@ fun RecipeDetailScreen(
                                 it,
                                 busy = reviewing,
                                 onRefresh = { if (app.aiSettings.hasKey) aiReview() else askingKeyForReview = true },
+                                fixing = fixing,
+                                onFix = { if (app.aiSettings.hasKey) fixByReview() else askingKeyForFix = true },
                             )
                         }
                     }
@@ -581,6 +649,26 @@ fun RecipeDetailScreen(
                 askingKeyForReview = false
                 aiReview()
             },
+        )
+    }
+
+    if (askingKeyForFix) {
+        AiKeyDialog(
+            confirmLabel = "保存并修改",
+            onDismiss = { askingKeyForFix = false },
+            onConfirm = {
+                askingKeyForFix = false
+                fixByReview()
+            },
+        )
+    }
+
+    fixResult?.let { result ->
+        AiChangesDialog(
+            summary = result.summary,
+            changes = result.changes,
+            onUndo = { result.decision.complete(true) },
+            onKeep = { result.decision.complete(false) },
         )
     }
 
@@ -981,3 +1069,6 @@ private fun LogDateDialog(onDismiss: () -> Unit, onPick: (String) -> Unit) {
         DatePicker(state = state, title = { Text("哪天做的", Modifier.padding(start = 24.dp, top = 16.dp)) })
     }
 }
+
+/** 照评价改好的结果：AI 的说明、改了哪些地方，[decision] 等用户选撤销（true）还是留着（false） */
+private class FixResult(val summary: String, val changes: List<String>, val decision: CompletableDeferred<Boolean>)

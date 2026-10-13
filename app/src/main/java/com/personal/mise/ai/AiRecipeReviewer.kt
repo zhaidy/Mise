@@ -66,6 +66,13 @@ class AiRecipeReviewer(private val ai: AiClient) {
     )
 
     companion object {
+        /** 「照评价修改」时交给 [AiRecipeEditor] 的要求：按评价里要注意的地方改 */
+        fun fixInstruction(review: RecipeReview): String = buildString {
+            append("按下面这份评价里提到的问题和建议，改进这份菜谱：\n")
+            review.concerns.forEach { append("- $it\n") }
+            append("只改评价里提到的地方，其余照原样；某条做不到或不用改就不改，在 summary 里说一下。")
+        }
+
         private const val PROMPT = "下面是一道菜谱。请你像一位有经验的家常菜厨师一样，评价这份菜谱写得怎么样、照着做能不能做好吃。\n" +
             "要求：\n" +
             "1. score 填 1 到 10 的整数：用料和做法是否合理、步骤是否清楚完整、照着做成功的把握大不大。" +

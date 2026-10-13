@@ -46,4 +46,11 @@ class AiRecipeReviewerTest {
         assertNull(RecipeReview.fromJson("not json"))
         assertNull(RecipeReview.fromJson(null))
     }
+
+    @Test
+    fun `照评价修改的要求列出要注意的地方`() {
+        val ask = AiRecipeReviewer.fixInstruction(RecipeReview(6, "还行", listOf("步骤清楚"), listOf("糖色容易炒糊", "没写炖多久")))
+        assertTrue(ask.contains("- 糖色容易炒糊\n- 没写炖多久\n"))
+        assertFalse(ask.contains("步骤清楚"))
+    }
 }

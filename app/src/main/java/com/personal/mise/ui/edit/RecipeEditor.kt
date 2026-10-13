@@ -51,6 +51,7 @@ import com.personal.mise.ui.common.CircleIconButton
 import com.personal.mise.ui.common.ClassifyFields
 import com.personal.mise.ui.common.LocalImage
 import com.personal.mise.ui.common.RecipeReviewCard
+import com.personal.mise.ui.detail.AiChangesDialog
 import com.personal.mise.ui.common.SectionHeader
 import com.personal.mise.ui.common.SoftCard
 import com.personal.mise.ui.theme.SerifFamily
@@ -75,15 +76,20 @@ fun RecipeEditor(
         if (uri != null && key != null) vm.pickStepImage(key, uri)
         pickingStepKey = null
     }
-    // 填完 Key 后要接着做的 AI 操作：split 拆分步骤、estimate 估算用量和克重、calories 估算热量、review 评价菜谱
+    // 填完 Key 后要接着做的 AI 操作：split 拆分步骤、estimate 估算用量和克重、calories 估算热量、review 评价菜谱、fix 照评价修改
     var askingKeyFor by rememberSaveable { mutableStateOf<String?>(null) }
     val imageOnly = PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+
+    vm.fixResult?.let { result ->
+        AiChangesDialog(result.summary, result.changes, onUndo = vm::undoFix, onKeep = vm::keepFix)
+    }
 
     askingKeyFor?.let { action ->
         AiKeyDialog(
             confirmLabel = when (action) {
                 "split" -> "保存并拆分"
                 "review" -> "保存并评价"
+                "fix" -> "保存并修改"
                 else -> "保存并估算"
             },
             onDismiss = { askingKeyFor = null },
@@ -93,6 +99,7 @@ fun RecipeEditor(
                     "estimate" -> vm.aiEstimateAmounts()
                     "calories" -> vm.aiEstimateCalories()
                     "review" -> vm.aiReview()
+                    "fix" -> vm.aiFixByReview()
                     else -> vm.aiSplitSteps()
                 }
             },
@@ -187,6 +194,8 @@ fun RecipeEditor(
                 busy = vm.reviewing,
                 message = vm.reviewMessage,
                 onRefresh = { if (vm.hasAiKey) vm.aiReview() else askingKeyFor = "review" },
+                fixing = vm.fixing,
+                onFix = { if (vm.hasAiKey) vm.aiFixByReview() else askingKeyFor = "fix" },
             )
         }
 

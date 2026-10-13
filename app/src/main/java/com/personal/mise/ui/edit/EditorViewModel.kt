@@ -10,7 +10,10 @@ import androidx.lifecycle.viewModelScope
 import com.personal.mise.MiseApp
 import com.personal.mise.ai.AiAmountEstimator
 import com.personal.mise.ai.AiRecipeOrganizer
+import com.personal.mise.ai.AiRecipeEditor
+import com.personal.mise.ai.AiRecipeReviewer
 import com.personal.mise.ai.RecipeReview
+import com.personal.mise.util.RecipeChanges
 import com.personal.mise.ai.AiStepSplitter
 import com.personal.mise.bowl.SeasoningDictionary
 import com.personal.mise.data.IngredientDraft
@@ -45,6 +48,9 @@ data class StepRow(
     /** 计时分钟数，空表示不计时 */
     val timerMinutes: String = "",
 )
+
+/** 照评价改好的结果：AI 的说明、改了哪些地方和改之前的样子（撤销用） */
+class ReviewFix(val summary: String, val changes: List<String>, val before: RecipeDraft)
 
 sealed interface LoadState {
     data object Loading : LoadState
@@ -94,6 +100,12 @@ class EditorViewModel(
     var reviewing by mutableStateOf(false)
         private set
     var reviewMessage by mutableStateOf<String?>(null)
+    /** 正在照评价修改 */
+    var fixing by mutableStateOf(false)
+        private set
+    /** 照评价改好了，等用户看完改了什么、决定留着还是撤销 */
+    var fixResult by mutableStateOf<ReviewFix?>(null)
+        private set
 
     var title by mutableStateOf("")
     var servings by mutableStateOf("")
@@ -399,6 +411,61 @@ class EditorViewModel(
         }
     }
 
+    /** 照评价里要注意的地方让 AI 改表单里的菜谱；改完列出改了什么，可以撤销 */
+    fun aiFixByReview() {
+        val current = review ?: return
+        if (fixing) return
+        fixing = true
+        reviewMessage = null
+        viewModelScope.launch {
+            try {
+                val before = toDraft()
+                val edit = app.recipeEditor.edit(AiRecipeEditor.editable(before), AiRecipeReviewer.fixInstruction(current))
+                val after = AiRecipeEditor.apply(before, edit.recipe)
+                val changes = RecipeChanges.describe(before, after)
+                if (changes.isEmpty()) {
+                    reviewMessage = edit.summary.ifBlank { "AI 看了一遍，觉得不用改" }
+                    return@launch
+                }
+                if (toDraft() != before) {
+                    // 改的这会儿手动动过表单，不覆盖
+                    reviewMessage = "表单已经改过，没有照评价修改，需要的话再点一次"
+                    return@launch
+                }
+                refill(after)
+                val notes = listOfNotNull("用料变了，热量可以重新估算".takeIf { caloriesStale })
+                fixResult = ReviewFix(edit.summary, changes + notes, before)
+            } catch (e: ImportException) {
+                reviewMessage = e.message
+            } catch (e: Exception) {
+                reviewMessage = "AI 修改失败：${e.message ?: e.javaClass.simpleName}"
+            } finally {
+                fixing = false
+            }
+        }
+    }
+
+    /** 撤销照评价的修改，回到改之前 */
+    fun undoFix() {
+        val result = fixResult ?: return
+        fixResult = null
+        refill(result.before)
+        reviewMessage = "已撤销 AI 的修改"
+    }
+
+    /** 留着照评价改好的菜谱，再按改好的重新评价 */
+    fun keepFix() {
+        fixResult = null
+        aiReview()
+    }
+
+    /** 换掉表单内容，热量仍按原来的用料算，用料改了会提示重新估 */
+    private fun refill(draft: RecipeDraft) {
+        val basis = caloriesBasis
+        fill(draft)
+        caloriesBasis = basis
+    }
+
     /**
      * 把现有步骤文字交给 AI 重新拆分。原来每步的图片和计时跟到拆出来的第一步；
      * 带图的步骤对应不上时不改动，免得把图弄丢。auto = 导入时自动拆分。
@@ -478,7 +545,7 @@ class EditorViewModel(
     // 保存
 
     /** 导入后 AI 还在拆步骤、估用量、热量或评价，结果会改内容，等它做完再保存 */
-    val importAiRunning: Boolean get() = isImport && (aiBusy || estimating || estimatingCalories || reviewing)
+    val importAiRunning: Boolean get() = isImport && (aiBusy || estimating || estimatingCalories || reviewing || fixing)
 
     val canSave: Boolean get() = !saving && !importAiRunning
 
