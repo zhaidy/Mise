@@ -167,6 +167,7 @@ class RecipeRepository(
                 draft.id
             }
 
+            val oldAmounts = dao.getIngredients(recipeId).associate { it.id to it.amountText }
             val keepIngredients = draft.ingredients
                 .filter { it.name.isNotBlank() }
                 .mapIndexed { index, d ->
@@ -183,7 +184,16 @@ class RecipeRepository(
                 }
             dao.deleteStepsExcept(recipeId, keepSteps)
 
-            if (dao.get(recipeId)?.bowlsManual != true) generateBowls(recipeId)
+            if (dao.get(recipeId)?.bowlsManual != true) {
+                generateBowls(recipeId)
+            } else {
+                // 手动调过的调料碗不重新生成，用量跟着用料改
+                draft.ingredients.filter { it.id != 0L && it.name.isNotBlank() }.forEach { d ->
+                    val before = oldAmounts[d.id] ?: return@forEach
+                    val after = d.amountText.trim()
+                    if (before != after) dao.updateBowlItemAmount(d.id, before, after)
+                }
+            }
             recipeId
         }
         val newImages = imagesOf(id)

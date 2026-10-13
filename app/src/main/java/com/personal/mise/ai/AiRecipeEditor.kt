@@ -57,7 +57,9 @@ class AiRecipeEditor(private val ai: AiClient) {
             "原来一步拆成几步时都填这个编号，几步合成一步时填最前面那一步，新加的步骤留空。" +
             "timerMinutes 是这一步要等待或加热的分钟数，原来有就保留（时间改了就跟着改），没有明确时长留空。\n" +
             "4. servings 是份量，如「2人份」，原来没有又不用改就留空。title 一般不改，除非用户要求或菜已经变成别的菜。\n" +
-            "5. summary：用一句简短的中文告诉用户改了什么。用户的要求做不到或看不懂时，菜谱原样返回，在 summary 里说明原因。\n\n"
+            "5. 调料碗是 App 按用料和步骤自动分装的，不在这份菜谱里：要求里提到调料碗时，改对应的用料就行，碗会跟着变。\n" +
+            "6. 要求里有几处改动时，能做的都照做；个别提到的东西在菜谱里找不到、或已经不用改的，跳过就好，在 summary 里顺带提一句，不要因此整份不改。\n" +
+            "7. summary：用一句简短的中文告诉用户改了什么。用户的要求整个做不到或看不懂时，菜谱原样返回，在 summary 里说明原因。\n\n"
 
         fun prompt(recipe: EditableRecipe, instruction: String): String =
             PROMPT + "用户的要求：$instruction\n\n菜谱：\n" + toJson(recipe).toString(2)
