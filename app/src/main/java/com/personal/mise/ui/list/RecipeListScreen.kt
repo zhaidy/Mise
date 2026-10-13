@@ -154,6 +154,7 @@ fun RecipeListScreen(
     val lastCooked by remember { app.repository.observeLastCooked() }.collectAsStateWithLifecycle(emptyMap())
     var menuOpen by remember { mutableStateOf(false) }
     var pasteOpen by remember { mutableStateOf(false) }
+    var xcfSearchOpen by rememberSaveable { mutableStateOf(false) }
     var noteOpen by remember { mutableStateOf(false) }
     var aiSettingsOpen by remember { mutableStateOf(false) }
     var update by remember { mutableStateOf<UpdateInfo?>(null) }
@@ -245,6 +246,7 @@ fun RecipeListScreen(
                 )
                 DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                     DropdownMenuItem(text = { Text("手动新建") }, onClick = { menuOpen = false; onCreate() })
+                    DropdownMenuItem(text = { Text("搜下厨房") }, onClick = { menuOpen = false; xcfSearchOpen = true })
                     DropdownMenuItem(text = { Text("粘贴链接导入") }, onClick = { menuOpen = false; pasteOpen = true })
                     DropdownMenuItem(text = { Text("AI 整理笔记") }, onClick = { menuOpen = false; noteOpen = true })
                     DropdownMenuItem(
@@ -545,6 +547,13 @@ fun RecipeListScreen(
 
     if (kitchenOpen) {
         KitchenDialog(onDismiss = { kitchenOpen = false })
+    }
+
+    if (xcfSearchOpen) {
+        XcfSearchDialog(
+            onDismiss = { xcfSearchOpen = false },
+            onPick = { xcfSearchOpen = false; onImport(it, false) },
+        )
     }
 
     if (pasteOpen) {
