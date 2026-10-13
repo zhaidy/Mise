@@ -20,6 +20,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -41,9 +42,12 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.personal.mise.ai.Classification
 import com.personal.mise.data.Recipe
 import com.personal.mise.data.RecipeTags
 import com.personal.mise.data.tagList
+import com.personal.mise.importer.ImportException
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 /** 一道菜正在选的大类、小类和标签；编辑页和快捷设置共用 */
@@ -94,6 +98,18 @@ class ClassifyState(category: String? = null, subcategory: String? = null, tags:
         tags.remove(tag)
     }
 
+    /** 还什么都没填 */
+    val isEmpty: Boolean get() = category.isBlank() && subcategory.isBlank() && tags.isEmpty() && tagInput.isBlank()
+
+    /** 套用 AI 挑的：有大类就换上，标签加在已有的后面 */
+    fun apply(result: Classification) {
+        result.category?.let {
+            category = it
+            subcategory = result.subcategory.orEmpty()
+        }
+        result.tags.forEach { addTag(it) }
+    }
+
     /** 输了还没按「添加」的标签也算上 */
     fun allTags(): List<String> = (tags + RecipeTags.parse(tagInput)).distinct()
 }
@@ -101,14 +117,53 @@ class ClassifyState(category: String? = null, subcategory: String? = null, tags:
 /**
  * 分类和标签：大类、小类可以直接输入新的，也可以点下面已有的；再点一次选中的就清空。
  * 标签输入时打逗号、空格或 # 就算一个，下面列出别的菜谱用过的标签。
+ * [aiSuggest] 不为空时上面有「让 AI 选」，从已有的分类和标签里挑好填上。
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun ClassifyFields(state: ClassifyState) {
+fun ClassifyFields(state: ClassifyState, aiSuggest: (suspend () -> Classification)? = null) {
     val app = rememberApp()
+    val scope = rememberCoroutineScope()
     val tree by remember { app.repository.observeCategories() }.collectAsStateWithLifecycle(emptyList())
     val allTags by remember { app.repository.observeTags() }.collectAsStateWithLifecycle(emptyList())
+    var suggesting by remember { mutableStateOf(false) }
+    var suggestMessage by remember { mutableStateOf<String?>(null) }
     Column {
+        if (aiSuggest != null && app.aiSettings.hasKey) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TextButton(
+                    enabled = !suggesting,
+                    onClick = {
+                        suggesting = true
+                        suggestMessage = null
+                        scope.launch {
+                            suggestMessage = try {
+                                val result = aiSuggest()
+                                if (result.isEmpty) "AI 在已有的分类和标签里没找到合适的" else {
+                                    state.apply(result)
+                                    "AI 选了：${result.describe()}，可以再改"
+                                }
+                            } catch (e: CancellationException) {
+                                throw e
+                            } catch (e: Exception) {
+                                (e as? ImportException)?.message ?: "AI 分类失败：${e.message ?: e.javaClass.simpleName}"
+                            } finally {
+                                suggesting = false
+                            }
+                        }
+                    },
+                ) { Text(if (suggesting) "AI 正在挑…" else "✦ 让 AI 选") }
+                if (suggesting) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+            }
+            suggestMessage?.let {
+                Text(
+                    it,
+                    Modifier.padding(start = 12.dp, bottom = 4.dp),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
         OutlinedTextField(
             shape = FieldShape,
             colors = miseFieldColors(),
@@ -227,7 +282,11 @@ fun ClassifyDialog(recipe: Recipe, onDismiss: () -> Unit, onSaved: () -> Unit = 
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(bottom = 8.dp),
                 )
-                ClassifyFields(state)
+                ClassifyFields(state, aiSuggest = {
+                    val full = app.repository.loadFull(recipe.id) ?: throw ImportException("这道菜已经删掉了")
+                    val (tree, tags) = app.repository.classifyOptions()
+                    app.classifier.classify(full, tree, tags)
+                })
             }
         },
         confirmButton = {
@@ -259,12 +318,60 @@ fun ClassifyManageDialog(onDismiss: () -> Unit) {
     val tree by remember { app.repository.observeCategories() }.collectAsStateWithLifecycle(emptyList())
     val allTags by remember { app.repository.observeTags() }.collectAsStateWithLifecycle(emptyList())
     var editing by remember { mutableStateOf<ClassifyTarget?>(null) }
+    val scope = rememberCoroutineScope()
+    val recipes by remember { app.repository.search("") }.collectAsStateWithLifecycle(emptyList())
+    val unsorted = recipes.count { it.recipe.category.isNullOrBlank() }
+    // 正在让 AI 分第几道 / 一共几道；null 表示没在分
+    var batch by remember { mutableStateOf<Pair<Int, Int>?>(null) }
+    var batchMessage by remember { mutableStateOf<String?>(null) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("管理分类和标签") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (tree.isNotEmpty() && unsorted > 0 && app.aiSettings.hasKey) {
+                    TextButton(
+                        enabled = batch == null,
+                        onClick = {
+                            batchMessage = null
+                            scope.launch {
+                                val todo = app.repository.uncategorized()
+                                val (options, tags) = app.repository.classifyOptions()
+                                var done = 0
+                                var failed = 0
+                                todo.forEachIndexed { i, recipe ->
+                                    batch = i + 1 to todo.size
+                                    try {
+                                        val full = app.repository.loadFull(recipe.id) ?: return@forEachIndexed
+                                        val result = app.classifier.classify(full, options, tags)
+                                        if (result.category != null) {
+                                            app.repository.setClassification(
+                                                recipe.id, result.category, result.subcategory, (recipe.tagList + result.tags).distinct(),
+                                            )
+                                            done++
+                                        }
+                                    } catch (e: CancellationException) {
+                                        throw e
+                                    } catch (_: Exception) {
+                                        failed++
+                                    }
+                                }
+                                batch = null
+                                batchMessage = listOfNotNull(
+                                    "AI 分好了 $done 道",
+                                    "${todo.size - done - failed} 道没找到合适的大类".takeIf { todo.size - done - failed > 0 },
+                                    "$failed 道没分成".takeIf { failed > 0 },
+                                ).joinToString("，")
+                            }
+                        },
+                    ) {
+                        Text(batch?.let { (i, n) -> "AI 正在分第 $i / $n 道…" } ?: "✦ 让 AI 给 $unsorted 道未分类的菜分类")
+                    }
+                }
+                batchMessage?.let {
+                    Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
                 if (tree.isEmpty() && allTags.isEmpty()) {
                     Text(
                         "还没有分类和标签。在菜谱详情页点「分类和标签」，或编辑菜谱时就能加。",

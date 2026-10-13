@@ -151,7 +151,23 @@ fun RecipeEditor(
                     singleLine = true,
                 )
                 Spacer(Modifier.height(8.dp))
-                ClassifyFields(vm.classify)
+                if (vm.classifying) {
+                    Text(
+                        "AI 正在从你已有的分类和标签里挑…",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(start = 4.dp, bottom = 4.dp),
+                    )
+                }
+                vm.classifyMessage?.let {
+                    Text(
+                        it,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(start = 4.dp, bottom = 4.dp),
+                    )
+                }
+                ClassifyFields(vm.classify, aiSuggest = vm::suggestClassification)
                 Spacer(Modifier.height(8.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     OutlinedTextField(

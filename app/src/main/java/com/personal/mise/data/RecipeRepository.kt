@@ -233,6 +233,12 @@ class RecipeRepository(
         dao.setClassification(id, draft.cleanCategory, draft.cleanSubcategory, RecipeTags.format(tags), System.currentTimeMillis())
     }
 
+    /** 让 AI 分类时给它的选项：已有的大类、小类和标签 */
+    suspend fun classifyOptions(): Pair<List<CategoryNode>, List<String>> = observeCategories().first() to observeTags().first()
+
+    /** 还没分大类的菜谱 */
+    suspend fun uncategorized(): List<Recipe> = dao.observeAll().first().filter { it.category.isNullOrBlank() }
+
     /** 所有用到这个大类的菜谱一起改名；新名字为空就是删除（菜谱变成未分类） */
     suspend fun renameCategory(old: String, newName: String) =
         dao.renameCategory(old, newName.trim().takeIf { it.isNotEmpty() }, System.currentTimeMillis())
