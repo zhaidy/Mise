@@ -24,6 +24,7 @@ import com.personal.mise.ai.AiShoppingOrganizer
 import com.personal.mise.ai.AiSettings
 import com.personal.mise.ai.AiStepSplitter
 import com.personal.mise.ai.AiStepTimer
+import com.personal.mise.ai.AiSubstituter
 import com.personal.mise.ai.AiUsage
 import com.personal.mise.ai.CellularNetwork
 import com.personal.mise.ai.DeepSeekClient
@@ -126,6 +127,7 @@ class MiseApp : Application() {
     val stepSplitter: AiStepSplitter by lazy { AiStepSplitter(ai) }
     val stepTimer: AiStepTimer by lazy { AiStepTimer(ai) }
     val classifier: AiClassifier by lazy { AiClassifier(ai) }
+    val substituter: AiSubstituter by lazy { AiSubstituter(ai) }
     val shoppingOrganizer: AiShoppingOrganizer by lazy { AiShoppingOrganizer(ai) }
     /** AI 整理过的购物清单，按清单内容记着，这次运行里回来看不用再等 AI */
     val shoppingGroups = mutableMapOf<List<String>, List<ShoppingList.AiGroup>>()

@@ -1,5 +1,8 @@
 package com.personal.mise.ui.cooking
 
+import com.personal.mise.data.Ingredient
+import com.personal.mise.ui.common.SubstituteAsk
+import com.personal.mise.ui.common.SubstituteDialog
 import android.os.SystemClock
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -432,9 +435,11 @@ private fun RecipeOverview(
     onJump: (Int) -> Unit,
     modifier: Modifier,
 ) {
+    var substitute by remember { mutableStateOf<SubstituteAsk?>(null) }
     LazyColumn(modifier.fillMaxWidth(), contentPadding = PaddingValues(bottom = 24.dp)) {
-        recipeOverviewItems(data, factor, cookStart, currentStep, onJump)
+        recipeOverviewItems(data, factor, cookStart, currentStep, onJump, onAsk = { ing, amount -> substitute = SubstituteAsk(data.recipe.id, ing.name, amount) })
     }
+    substitute?.let { SubstituteDialog(it, onDismiss = { substitute = null }) }
 }
 
 /**
@@ -448,12 +453,13 @@ internal fun LazyListScope.recipeOverviewItems(
     currentStep: Int = -1,
     onJump: ((Int) -> Unit)? = null,
     keyPrefix: String = "",
+    onAsk: ((Ingredient, String) -> Unit)? = null,
 ) {
     val mains = data.ingredients.filter { it.kind != IngredientKind.SEASONING }
     val seasonings = data.ingredients.filter { it.kind == IngredientKind.SEASONING }
     item(key = keyPrefix + "info") { RecipeInfo(data, factor) }
     item(key = keyPrefix + "mains-title") { SectionHeader("主料", Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 4.dp)) }
-    item(key = keyPrefix + "mains") { IngredientTable(mains, factor) }
+    item(key = keyPrefix + "mains") { IngredientTable(mains, factor, onAsk) }
     item(key = keyPrefix + "seasonings-title") {
         SectionHeader(
             "调料",
@@ -461,7 +467,7 @@ internal fun LazyListScope.recipeOverviewItems(
             accent = MaterialTheme.colorScheme.secondary,
         )
     }
-    item(key = keyPrefix + "seasonings") { IngredientTable(seasonings, factor) }
+    item(key = keyPrefix + "seasonings") { IngredientTable(seasonings, factor, onAsk) }
     item(key = keyPrefix + "bowls-title") {
         SectionHeader(
             "调料碗",

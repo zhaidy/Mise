@@ -1,5 +1,7 @@
 package com.personal.mise.ui.prep
 
+import com.personal.mise.ui.common.SubstituteAsk
+import com.personal.mise.ui.common.SubstituteDialog
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
@@ -166,6 +168,16 @@ fun PrepListScreen(planDate: String?, onBack: () -> Unit, onCook: () -> Unit) {
         scope.launch { app.repository.setPlanChecked(recipe.row.key, next) }
     }
 
+    var substitute by remember { mutableStateOf<SubstituteAsk?>(null) }
+
+    /** 备料项是用料（i 开头）时，问 AI 替代要用的名字和用量 */
+    fun ingredientAsk(recipe: PrepRecipe, key: String): SubstituteAsk? {
+        val id = key.takeIf { it.startsWith("i") }?.drop(1)?.toLongOrNull() ?: return null
+        val full = fulls.firstOrNull { it?.recipe?.id == recipe.row.recipeId } ?: return null
+        val ing = full.ingredients.firstOrNull { it.id == id } ?: return null
+        return SubstituteAsk(full.recipe.id, ing.name, UnitText.display(AmountScaler.scale(ing.amountText, app.scaleOf(recipe.row.recipeId))))
+    }
+
     fun toggle(recipe: PrepRecipe, key: String) {
         val current = recipe.known(parseChecked(recipe.row.checked))
         val next = if (key in current) current - key else current + key
@@ -273,6 +285,8 @@ fun PrepListScreen(planDate: String?, onBack: () -> Unit, onCook: () -> Unit) {
                                             onToggle = { toggle(recipe, prep.key) },
                                             accent = accent,
                                             bold = section.name == "调料碗",
+                                            // 长按某样用料问 AI 家里没有用什么代替
+                                            onLongClick = ingredientAsk(recipe, prep.key)?.let { ask -> { substitute = ask } },
                                         )
                                     }
                                 }
@@ -283,6 +297,8 @@ fun PrepListScreen(planDate: String?, onBack: () -> Unit, onCook: () -> Unit) {
             }
         }
     }
+
+    substitute?.let { SubstituteDialog(it, onDismiss = { substitute = null }) }
 
     if (showDone) {
         AlertDialog(
@@ -347,6 +363,7 @@ private fun CutList(
 @Composable
 private fun RecipesOverview(recipes: List<PrepRecipe>, fulls: List<RecipeFull?>, modifier: Modifier, bottom: Dp) {
     val app = rememberApp()
+    var substitute by remember { mutableStateOf<SubstituteAsk?>(null) }
     LazyColumn(modifier.fillMaxWidth(), contentPadding = PaddingValues(top = 8.dp, bottom = bottom + 24.dp)) {
         recipes.forEachIndexed { index, recipe ->
             val full = fulls.firstOrNull { it?.recipe?.id == recipe.row.recipeId } ?: return@forEachIndexed
@@ -371,9 +388,11 @@ private fun RecipesOverview(recipes: List<PrepRecipe>, fulls: List<RecipeFull?>,
                 factor = factor,
                 cookStart = StepPhase.cookStart(full.steps.map { it.text }),
                 keyPrefix = "r${recipe.row.key}-",
+                onAsk = { ing, amount -> substitute = SubstituteAsk(full.recipe.id, ing.name, amount) },
             )
         }
     }
+    substitute?.let { SubstituteDialog(it, onDismiss = { substitute = null }) }
 }
 
 /** 顶部的深色进度卡：圆环 + 已备好 / 总数 */

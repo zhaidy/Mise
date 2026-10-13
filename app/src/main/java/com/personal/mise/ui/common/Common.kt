@@ -1,5 +1,6 @@
 package com.personal.mise.ui.common
 
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
@@ -368,6 +369,7 @@ fun CheckRow(
     modifier: Modifier = Modifier,
     accent: Color = MaterialTheme.colorScheme.secondary,
     bold: Boolean = false,
+    onLongClick: (() -> Unit)? = null,
 ) {
     val fill by animateColorAsState(if (checked) accent else Color.Transparent, label = "check")
     val textColor by animateColorAsState(
@@ -379,7 +381,10 @@ fun CheckRow(
             .fillMaxWidth()
             .heightIn(min = 52.dp)
             .clip(RoundedCornerShape(12.dp))
-            .toggleable(value = checked, role = Role.Checkbox, onValueChange = { onToggle() })
+            .then(
+                if (onLongClick == null) Modifier.toggleable(value = checked, role = Role.Checkbox, onValueChange = { onToggle() })
+                else Modifier.combinedClickable(role = Role.Checkbox, onClick = onToggle, onLongClick = onLongClick)
+            )
             .padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
