@@ -83,6 +83,14 @@ class SyncedRecipeTest {
     }
 
     @Test
+    fun `AI 评价跟着同步，旧文档没有时为空`() {
+        val json = """{"score":8,"summary":"靠谱","highlights":[],"concerns":[]}"""
+        val map = SyncedRecipe.from(full.copy(recipe = full.recipe.copy(review = json))).toMap()
+        assertEquals(json, SyncedRecipe.fromMap("u-1", firestoreLike(map))?.review)
+        assertNull(SyncedRecipe.fromMap("u-1", firestoreLike(map - "review"))?.review)
+    }
+
+    @Test
     fun `旧版本的文档没有分类`() {
         val map = SyncedRecipe.from(full).toMap()
         assertEquals("家常菜", SyncedRecipe.fromMap("u-1", firestoreLike(map))?.category)

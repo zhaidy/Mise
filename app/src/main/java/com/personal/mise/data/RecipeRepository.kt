@@ -1,6 +1,7 @@
 package com.personal.mise.data
 
 import androidx.room.withTransaction
+import com.personal.mise.ai.RecipeReview
 import com.personal.mise.bowl.SauceBowlGenerator
 import com.personal.mise.image.ImageStore
 import com.personal.mise.sync.SyncedPlanEntry
@@ -247,6 +248,10 @@ class RecipeRepository(
     suspend fun setNote(id: Long, note: String) =
         dao.setNote(id, note.trim().takeIf { it.isNotEmpty() }, System.currentTimeMillis())
 
+    /** 只改 AI 评价；会同步到别的手机 */
+    suspend fun setReview(id: Long, review: RecipeReview) =
+        dao.setReview(id, review.toJson().toString(), System.currentTimeMillis())
+
     private suspend fun imagesOf(id: Long): Set<String> {
         val recipe = dao.get(id) ?: return emptySet()
         return (listOf(recipe.coverImage) + dao.getSteps(id).map { it.image }).filterNotNull().toSet()
@@ -332,6 +337,7 @@ class RecipeRepository(
                 tags = RecipeTags.format(remote.tags),
                 original = remote.original,
                 note = remote.note,
+                review = remote.review,
             )
             val recipeId = if (existing == null) dao.insert(row) else { dao.update(row); existing.id }
 

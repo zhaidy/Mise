@@ -37,6 +37,8 @@ data class Recipe(
     val original: String? = null,
     /** 自己的批注，如「盐少放一半」「火开大点」；打开这道菜时显示在最上面，空表示没写 */
     val note: String? = null,
+    /** AI 对这份菜谱的评价（RecipeReview 的 JSON），导入时自动评；空表示还没评 */
+    val review: String? = null,
 )
 
 @Entity(

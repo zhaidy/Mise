@@ -98,12 +98,14 @@ import com.personal.mise.ui.common.MiseIcons
 import com.personal.mise.ui.common.OutlinePillButton
 import com.personal.mise.ui.common.PillButton
 import com.personal.mise.ui.common.RecipeCover
+import com.personal.mise.ui.common.RecipeReviewCard
 import com.personal.mise.ui.plan.PlanDateDialog
 import com.personal.mise.ui.common.SectionHeader
 import com.personal.mise.ui.common.ShareImageDialog
 import com.personal.mise.share.ShareImage
 import com.personal.mise.ui.common.SoftCard
 import com.personal.mise.ai.AiRecipeEditor
+import com.personal.mise.ai.RecipeReview
 import com.personal.mise.importer.ImportException
 import com.personal.mise.ui.edit.AiKeyDialog
 import com.personal.mise.util.CalorieText
@@ -141,6 +143,8 @@ fun RecipeDetailScreen(
     var confirmDelete by remember { mutableStateOf(false) }
     var scaleOpen by remember { mutableStateOf(false) }
     var estimatingCalories by remember { mutableStateOf(false) }
+    var reviewing by remember { mutableStateOf(false) }
+    var askingKeyForReview by remember { mutableStateOf(false) }
     var askingKey by remember { mutableStateOf(false) }
     var aiEditOpen by remember { mutableStateOf(false) }
     var aiEditing by remember { mutableStateOf(false) }
@@ -174,6 +178,24 @@ fun RecipeDetailScreen(
             }
             estimatingCalories = false
             snackbar.showSnackbar(message)
+        }
+    }
+
+    fun aiReview() {
+        val current = full ?: return
+        if (reviewing) return
+        reviewing = true
+        scope.launch {
+            val message = try {
+                app.repository.setReview(recipeId, app.recipeReviewer.review(current))
+                null
+            } catch (e: ImportException) {
+                e.message ?: "AI 评价失败"
+            } catch (e: Exception) {
+                "AI 评价失败：${e.message ?: e.javaClass.simpleName}"
+            }
+            reviewing = false
+            message?.let { snackbar.showSnackbar(it) }
         }
     }
 
@@ -261,6 +283,7 @@ fun RecipeDetailScreen(
         val seasonings = data.ingredients.filter { it.kind == IngredientKind.SEASONING }
         val original = remember(data.recipe.original) { RecipeText.fromJson(data.recipe.original) }
         val originalShown = original?.takeIf { showOriginal }
+        val review = remember(data.recipe.review) { RecipeReview.fromJson(data.recipe.review) }
 
         val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
 
@@ -314,6 +337,15 @@ fun RecipeDetailScreen(
                             }
                             if (data.recipe.note == null) {
                                 InfoPill("＋ 批注", Modifier.clip(CircleShape).clickable { noteOpen = true }, content = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            if (review == null && (data.ingredients.isNotEmpty() || data.steps.isNotEmpty())) {
+                                InfoPill(
+                                    if (reviewing) "AI 评价中…" else "✨ AI 评价",
+                                    Modifier.clip(CircleShape).clickable(enabled = !reviewing) {
+                                        if (app.aiSettings.hasKey) aiReview() else askingKeyForReview = true
+                                    },
+                                    content = MaterialTheme.colorScheme.primary,
+                                )
                             }
                             InfoPill(
                                 "✨ 让 AI 改",
@@ -391,6 +423,13 @@ fun RecipeDetailScreen(
                                     TextButton(onClick = { planOpen = true }) { Text("排一天") }
                                 }
                             }
+                        }
+                        review?.let {
+                            RecipeReviewCard(
+                                it,
+                                busy = reviewing,
+                                onRefresh = { if (app.aiSettings.hasKey) aiReview() else askingKeyForReview = true },
+                            )
                         }
                     }
                 }
@@ -530,6 +569,17 @@ fun RecipeDetailScreen(
             onConfirm = {
                 askingKey = false
                 estimateCalories()
+            },
+        )
+    }
+
+    if (askingKeyForReview) {
+        AiKeyDialog(
+            confirmLabel = "保存并评价",
+            onDismiss = { askingKeyForReview = false },
+            onConfirm = {
+                askingKeyForReview = false
+                aiReview()
             },
         )
     }

@@ -28,12 +28,12 @@ abstract class MiseDatabase : RoomDatabase() {
     abstract fun mealPlanDao(): MealPlanDao
 
     companion object {
-        const val VERSION = 11
+        const val VERSION = 12
         const val NAME = "mise.db"
 
         fun create(context: Context): MiseDatabase =
             Room.databaseBuilder(context, MiseDatabase::class.java, NAME)
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12)
                 .build()
     }
 }
@@ -161,5 +161,12 @@ val MIGRATION_10_11 = object : Migration(10, 11) {
             }
         }
         db.execSQL("DROP TABLE today_menu")
+    }
+}
+
+/** v12：菜谱加 review，AI 对菜谱的评价 */
+val MIGRATION_11_12 = object : Migration(11, 12) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE recipe ADD COLUMN review TEXT")
     }
 }
