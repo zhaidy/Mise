@@ -62,6 +62,7 @@ fun ChatCardView(
         is ChatCard.Review -> RecipeReviewCard(
             card.review,
             onFix = if (recipeChat && !busy) onFix else null,
+            initiallyExpanded = true,
         )
         is ChatCard.Recipes -> RecipesCard(card, onOpenRecipe)
         is ChatCard.Plan -> PlanCard(card, busy, canUndo, onApply, onDismiss, onUndo)
