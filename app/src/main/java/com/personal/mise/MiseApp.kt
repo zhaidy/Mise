@@ -14,6 +14,7 @@ import com.personal.mise.ai.AiClient
 import com.personal.mise.ai.AiHttp
 import com.personal.mise.ai.AiProvider
 import com.personal.mise.ai.AiRecipeOrganizer
+import com.personal.mise.ai.AiRecipeEditor
 import com.personal.mise.ai.AiRecipeTranslator
 import com.personal.mise.ai.AiSettings
 import com.personal.mise.ai.AiStepSplitter
@@ -100,6 +101,7 @@ class MiseApp : Application() {
     val bowlOrganizer: AiBowlOrganizer by lazy { AiBowlOrganizer(ai) }
     val amountEstimator: AiAmountEstimator by lazy { AiAmountEstimator(ai) }
     val calorieEstimator: AiCalorieEstimator by lazy { AiCalorieEstimator(ai) }
+    val recipeEditor: AiRecipeEditor by lazy { AiRecipeEditor(ai) }
 
     /** 每道菜当前的用量倍率，只在本次运行里有效；详情、备料、做菜页共用 */
     val scales = mutableStateMapOf<Long, Double>()
