@@ -11,6 +11,7 @@ import com.personal.mise.ai.ClaudeClient
 import com.personal.mise.ai.AiAmountEstimator
 import com.personal.mise.ai.AiBowlOrganizer
 import com.personal.mise.ai.AiCalorieEstimator
+import com.personal.mise.ai.AiClassifier
 import com.personal.mise.ai.AiChatClient
 import com.personal.mise.ai.AiClient
 import com.personal.mise.ai.AiHttp
@@ -122,6 +123,7 @@ class MiseApp : Application() {
     }
     val stepSplitter: AiStepSplitter by lazy { AiStepSplitter(ai) }
     val stepTimer: AiStepTimer by lazy { AiStepTimer(ai) }
+    val classifier: AiClassifier by lazy { AiClassifier(ai) }
     val noteOrganizer: AiRecipeOrganizer by lazy { AiRecipeOrganizer(ai) }
     val bowlOrganizer: AiBowlOrganizer by lazy { AiBowlOrganizer(ai) }
     val amountEstimator: AiAmountEstimator by lazy { AiAmountEstimator(ai) }

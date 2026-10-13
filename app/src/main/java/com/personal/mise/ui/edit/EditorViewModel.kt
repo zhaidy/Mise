@@ -15,6 +15,7 @@ import com.personal.mise.ai.AiRecipeEditor
 import com.personal.mise.ai.AiRecipeReviewer
 import com.personal.mise.ai.RecipeReview
 import com.personal.mise.ai.AiStepSplitter
+import com.personal.mise.ai.Classification
 import com.personal.mise.ai.StepTimes
 import com.personal.mise.bowl.SeasoningDictionary
 import com.personal.mise.data.IngredientDraft
@@ -198,6 +199,8 @@ class EditorViewModel(
                 }
                 // 导入时顺手让 AI 评价一下这份菜谱，和估用量同时进行
                 if (isImport && hasAiKey) aiReview()
+                // 没带分类的，从已有的分类和标签里让 AI 挑好填上
+                if (isImport && hasAiKey && classify.isEmpty) viewModelScope.launch { autoClassify() }
                 // 下厨房链接导入的步骤常常几件事挤在一步里，有 Key 就自动用 AI 拆一下（AI 整理时已经分好步了），
                 // 拆好再让 AI 估每一步要多久，多菜时间线用
                 if (isImport && hasAiKey && steps.any { it.text.isNotBlank() }) viewModelScope.launch {
@@ -398,6 +401,38 @@ class EditorViewModel(
         }
     }
 
+    // 分类
+
+    var classifying by mutableStateOf(false)
+        private set
+    var classifyMessage by mutableStateOf<String?>(null)
+        private set
+
+    /** 「让 AI 选」：按表单里现在的菜名、用料和步骤，从已有的分类和标签里挑 */
+    suspend fun suggestClassification(): Classification {
+        val (tree, tags) = app.repository.classifyOptions()
+        return app.classifier.classify(title, ingredients.map { it.name }, steps.map { it.text }, tree, tags)
+    }
+
+    /** 导入时自动分类；这期间用户自己填了分类就不覆盖 */
+    private suspend fun autoClassify() {
+        if (classifying) return
+        classifying = true
+        try {
+            val result = suggestClassification()
+            if (!result.isEmpty && classify.isEmpty) {
+                classify.apply(result)
+                classifyMessage = "✨ AI 按你已有的分类填好了：${result.describe()}，可以再改"
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            // 分类可以之后再填，没分成不打扰
+        } finally {
+            classifying = false
+        }
+    }
+
     // 步骤时长
 
     private suspend fun estimateStepTimes() {
@@ -563,7 +598,7 @@ class EditorViewModel(
     // 保存
 
     /** 导入后 AI 还在拆步骤、估用量、热量或评价，结果会改内容，等它做完再保存 */
-    val importAiRunning: Boolean get() = isImport && (aiBusy || estimating || estimatingCalories || reviewing || fixing || estimatingTimes)
+    val importAiRunning: Boolean get() = isImport && (aiBusy || estimating || estimatingCalories || reviewing || fixing || estimatingTimes || classifying)
 
     val canSave: Boolean get() = !saving && !importAiRunning
 
