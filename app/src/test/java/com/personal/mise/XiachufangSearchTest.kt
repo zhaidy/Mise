@@ -54,6 +54,37 @@ class XiachufangSearchTest {
         assertEquals("外婆红烧肉", hits[1].title)
         assertEquals("https://i2.chuimg.com/def.jpg", hits[1].coverUrl)
         assertNull(hits[1].stats)
+        // 1234 人做过，够进荣誉殿堂
+        assertEquals("荣誉殿堂", first.honor)
+        assertNull(hits[1].honor)
+    }
+
+    @Test
+    fun `页面上的荣誉殿堂角标连名次一起显示，不混进菜名`() {
+        val html = """
+            <div class="normal-recipe-list"><ul class="list">
+              <li><div class="recipe">
+                <p class="name"><a href="/recipe/1/">红烧肉</a> <span class="honor-badge">荣誉殿堂 No.3</span></p>
+                <p class="stats">综合评分 8.6（523 做过）</p>
+              </div></li>
+              <li><div class="recipe">
+                <div class="cover"><a href="/recipe/2/"><img src="https://i2.chuimg.com/b.jpg" alt="可乐鸡翅"></a><span class="hall-of-fame">No.1</span></div>
+                <p class="name"><a href="/recipe/2/">可乐鸡翅</a></p>
+              </div></li>
+              <li><div class="recipe"><p class="name"><a href="/recipe/3/">糖醋排骨</a></p><p class="stats">7.9（1.2万人做过）</p></div></li>
+            </ul></div>
+        """.trimIndent()
+        val hits = XiachufangSearch.parse(html, base)
+        assertEquals(listOf("红烧肉", "可乐鸡翅", "糖醋排骨"), hits.map { it.title })
+        assertEquals(listOf("荣誉殿堂 No.3", "荣誉殿堂 No.1", "荣誉殿堂"), hits.map { it.honor })
+    }
+
+    @Test
+    fun `做过人数`() {
+        assertEquals(1234, XiachufangSearch.made("综合评分 8.0（1234 做过）"))
+        assertEquals(12000, XiachufangSearch.made("1.2万人做过"))
+        assertEquals(5235, XiachufangSearch.made("（5,235 人做过）"))
+        assertNull(XiachufangSearch.made("综合评分 8.0"))
     }
 
     @Test

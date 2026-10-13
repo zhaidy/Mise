@@ -224,6 +224,19 @@ private fun HitRow(hit: SearchHit, importer: RecipeImporter, onClick: () -> Unit
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(hit.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            hit.honor?.let {
+                Text(
+                    it,
+                    Modifier
+                        .padding(vertical = 2.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(MaterialTheme.colorScheme.tertiaryContainer)
+                        .padding(horizontal = 6.dp, vertical = 1.dp),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onTertiaryContainer,
+                    maxLines = 1,
+                )
+            }
             hit.ingredients?.let {
                 Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
