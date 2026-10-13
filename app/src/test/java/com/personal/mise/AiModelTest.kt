@@ -9,12 +9,13 @@ import org.junit.Test
 class AiModelTest {
 
     @Test
-    fun `默认先用 Gemini，再用 Agnes，最后用 DeepSeek`() {
+    fun `默认先用 Gemini，再用 Agnes、DeepSeek，最后用 Claude`() {
         val providers = AiModel.DEFAULT.map { it.provider }.distinct()
-        assertEquals(listOf(AiProvider.GEMINI, AiProvider.AGNES, AiProvider.DEEPSEEK), providers)
-        // Agnes 和 DeepSeek 默认只勾一个
+        assertEquals(listOf(AiProvider.GEMINI, AiProvider.AGNES, AiProvider.DEEPSEEK, AiProvider.ANTHROPIC), providers)
+        // Agnes、DeepSeek 和 Claude 默认只勾一个
         assertEquals(listOf("agnes-2.5-flash"), AiModel.DEFAULT.filter { it.provider == AiProvider.AGNES }.map { it.id })
         assertEquals(listOf("deepseek-flash"), AiModel.DEFAULT.filter { it.provider == AiProvider.DEEPSEEK }.map { it.id })
+        assertEquals(listOf("claude-haiku-5-5"), AiModel.DEFAULT.filter { it.provider == AiProvider.ANTHROPIC }.map { it.id })
     }
 
     @Test

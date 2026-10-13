@@ -7,6 +7,7 @@ import android.os.SystemClock
 import android.widget.Toast
 import androidx.compose.runtime.mutableStateMapOf
 import com.personal.mise.ai.AgnesClient
+import com.personal.mise.ai.ClaudeClient
 import com.personal.mise.ai.AiAmountEstimator
 import com.personal.mise.ai.AiBowlOrganizer
 import com.personal.mise.ai.AiCalorieEstimator
@@ -79,6 +80,7 @@ class MiseApp : Application() {
                 AiProvider.GEMINI to GeminiClient(aiSettings, aiUsage, AiHttp(aiSettings, cellular, readTimeoutSeconds = 90, onCellularUsed = onCellularUsed)),
                 AiProvider.AGNES to AgnesClient(aiSettings, AiHttp(aiSettings, cellular, readTimeoutSeconds = 120, onCellularUsed = onCellularUsed), aiUsage),
                 AiProvider.DEEPSEEK to deepSeek,
+                AiProvider.ANTHROPIC to ClaudeClient(aiSettings, AiHttp(aiSettings, cellular, readTimeoutSeconds = 120, onCellularUsed = onCellularUsed), aiUsage),
             ),
             onModelUsed = ::showModelUsed,
         )
