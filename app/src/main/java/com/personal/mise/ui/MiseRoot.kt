@@ -58,6 +58,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.personal.mise.timer.TimerFinished
 import com.personal.mise.ui.bowl.BowlEditScreen
+import com.personal.mise.ui.chat.AiChatSheet
 import com.personal.mise.ui.common.MiseIcons
 import com.personal.mise.ui.common.rememberApp
 import com.personal.mise.ui.cooking.CookingScreen
@@ -141,6 +142,29 @@ fun MiseRoot(navRequests: MutableStateFlow<NavRequest?>) {
         )
     }
 
+    var globalChat by remember { mutableStateOf(false) }
+    if (globalChat) {
+        AiChatSheet(
+            session = remember { app.chats.global() },
+            title = "问问 AI",
+            subtitle = "能翻你所有的菜谱，也能排菜单、存新菜谱",
+            tools = null,
+            onDismiss = { globalChat = false },
+            onOpenRecipe = {
+                globalChat = false
+                nav.navigate(Routes.detail(it))
+            },
+            onImport = { text, aiNote ->
+                globalChat = false
+                nav.navigate(Routes.import(text, aiNote))
+            },
+            onImportImages = {
+                globalChat = false
+                nav.navigate(Routes.importImages(it))
+            },
+        )
+    }
+
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         bottomBar = {
@@ -166,6 +190,7 @@ fun MiseRoot(navRequests: MutableStateFlow<NavRequest?>) {
                         label = "日历",
                         onClick = { nav.switchTab(Routes.PLAN) },
                     )
+                    AskAiTab(onClick = { globalChat = true })
                 }
             }
         },
@@ -328,6 +353,22 @@ private fun FloatingTabBar(content: @Composable RowScope.() -> Unit) {
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 content = content,
             )
+        }
+    }
+}
+
+/** 导航条最右边的「问问 AI」：陶土色圆钮，点开全局对话 */
+@Composable
+private fun AskAiTab(onClick: () -> Unit) {
+    Surface(
+        onClick = onClick,
+        modifier = Modifier.size(52.dp).semantics { contentDescription = "问问 AI" },
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.primary,
+        contentColor = MaterialTheme.colorScheme.onPrimary,
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Text("✦", fontSize = 22.sp, fontWeight = FontWeight.Bold)
         }
     }
 }

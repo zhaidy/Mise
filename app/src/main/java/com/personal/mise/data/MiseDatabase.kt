@@ -18,6 +18,7 @@ import java.util.UUID
         SauceBowlItem::class,
         CookLog::class,
         MealPlan::class,
+        ChatMessageEntity::class,
     ],
     version = MiseDatabase.VERSION,
     exportSchema = false,
@@ -26,14 +27,15 @@ abstract class MiseDatabase : RoomDatabase() {
     abstract fun recipeDao(): RecipeDao
     abstract fun cookLogDao(): CookLogDao
     abstract fun mealPlanDao(): MealPlanDao
+    abstract fun chatDao(): ChatDao
 
     companion object {
-        const val VERSION = 12
+        const val VERSION = 13
         const val NAME = "mise.db"
 
         fun create(context: Context): MiseDatabase =
             Room.databaseBuilder(context, MiseDatabase::class.java, NAME)
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13)
                 .build()
     }
 }
@@ -168,5 +170,16 @@ val MIGRATION_10_11 = object : Migration(10, 11) {
 val MIGRATION_11_12 = object : Migration(11, 12) {
     override fun migrate(db: SupportSQLiteDatabase) {
         db.execSQL("ALTER TABLE recipe ADD COLUMN review TEXT")
+    }
+}
+
+/** v13：「问问 AI」的对话 */
+val MIGRATION_12_13 = object : Migration(12, 13) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS ai_chat_message (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, thread TEXT NOT NULL, " +
+                "fromUser INTEGER NOT NULL, text TEXT NOT NULL, card TEXT, model TEXT, createdAt INTEGER NOT NULL)"
+        )
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_ai_chat_message_thread ON ai_chat_message (thread)")
     }
 }

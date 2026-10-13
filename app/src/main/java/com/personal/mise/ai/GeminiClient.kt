@@ -17,7 +17,7 @@ import java.util.Base64
  * 免费额度用完（429）、模型下线（404）或太忙（500、503）时抛 [AiUnavailableException]，
  * 由 [SwitchableAiClient] 换下一个模型。当天额度用完的模型记下来，额度重置前不再去试。
  */
-class GeminiClient(private val settings: AiSettings, private val usage: AiUsage, private val http: AiHttp) : AiProviderClient {
+class GeminiClient(private val settings: AiSettings, private val usage: AiUsage, private val http: AiHttp) : AiProviderClient, AiChatProvider {
 
     override suspend fun generate(model: String, prompt: String, schema: JSONObject, images: List<ByteArray>): AiReply = withContext(Dispatchers.IO) {
         val key = settings.key(AiProvider.GEMINI)
@@ -36,6 +36,33 @@ class GeminiClient(private val settings: AiSettings, private val usage: AiUsage,
             usage.recordSuccess(model)
             return@withContext AiReply(replyJson(reply.body), displayName(model))
         }
+        fail(model, now, reply)
+    }
+
+    override suspend fun chat(model: String, system: String, turns: List<ChatTurn>, onText: (String) -> Unit): String {
+        val key = settings.key(AiProvider.GEMINI)
+        if (key.isBlank()) throw ImportException(NO_KEY)
+        val now = System.currentTimeMillis()
+        if (usage.exhaustedUntil(model, now) != null) throw AiUnavailableException(DAILY_QUOTA_USED)
+        val request = Request.Builder()
+            .url("$ENDPOINT/$model:streamGenerateContent?alt=sse")
+            .header("x-goog-api-key", key)
+            .post(chatBody(model, system, turns).toString().toRequestBody("application/json".toMediaType()))
+            .build()
+        var blocked = false
+        val reply = http.stream(request, "Gemini") { line ->
+            val event = ChatTurns.sseData(line)?.let { runCatching { JSONObject(it) }.getOrNull() } ?: return@stream
+            streamText(event)?.let(onText)
+            if (streamBlocked(event)) blocked = true
+        }
+        if (!reply.isSuccessful) fail(model, now, reply)
+        if (blocked) throw ImportException("Gemini 拒绝回答这次请求")
+        usage.recordSuccess(model)
+        return displayName(model)
+    }
+
+    /** 服务器回了错误码：额度、下线、太忙换下一个模型，其他直接报错 */
+    private fun fail(model: String, now: Long, reply: HttpReply): Nothing {
         when (reply.code) {
             429 -> if (isDailyQuota(reply.body)) {
                 usage.markExhausted(model, now)
@@ -101,6 +128,37 @@ class GeminiClient(private val settings: AiSettings, private val usage: AiUsage,
             model.startsWith("gemini-2.5-flash") -> JSONObject().put("thinkingBudget", 0)
             else -> null
         }
+
+        /** 聊天用的流式请求：带上系统提示和一来一回的对话 */
+        fun chatBody(model: String, system: String, turns: List<ChatTurn>): JSONObject = JSONObject()
+            .put("systemInstruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", system))))
+            .put(
+                "contents",
+                JSONArray(
+                    turns.map {
+                        JSONObject().put("role", if (it.fromUser) "user" else "model")
+                            .put("parts", JSONArray().put(JSONObject().put("text", it.text)))
+                    },
+                ),
+            )
+            .put(
+                "generationConfig",
+                JSONObject().put("temperature", 0.7).apply { thinkingConfig(model)?.let { put("thinkingConfig", it) } },
+            )
+
+        /** 流里一段回复的文字；思考的部分（thought = true）不要 */
+        fun streamText(event: JSONObject): String? {
+            val parts = event.optJSONArray("candidates")?.optJSONObject(0)?.optJSONObject("content")?.optJSONArray("parts") ?: return null
+            val text = (0 until parts.length()).mapNotNull { parts.optJSONObject(it) }
+                .filter { !it.optBoolean("thought") }
+                .joinToString("") { it.optString("text") }
+            return text.ifEmpty { null }
+        }
+
+        /** 被安全设置拦下了 */
+        fun streamBlocked(event: JSONObject): Boolean =
+            event.optJSONObject("promptFeedback")?.has("blockReason") == true ||
+                event.optJSONArray("candidates")?.optJSONObject(0)?.optString("finishReason") in setOf("SAFETY", "PROHIBITED_CONTENT", "BLOCKLIST")
 
         /** 图片在前、文字在后 */
         private fun parts(prompt: String, images: List<ByteArray>): JSONArray {

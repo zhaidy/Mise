@@ -8,6 +8,9 @@ import android.net.NetworkRequest
 import com.personal.mise.importer.ImportException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.Dns
@@ -67,8 +70,58 @@ class AiHttp(
         }
     }
 
+    /**
+     * 发流式请求（SSE），成功时一行一行交给 [onLine]，返回的正文为空；服务器回了错误码时不读行，返回完整的错误正文。
+     * 连不上时和 [execute] 一样可以改用移动数据；已经开始收到内容后断了就直接报错，不重发。
+     */
+    suspend fun stream(request: Request, name: String, onLine: (String) -> Unit): HttpReply = withContext(Dispatchers.IO) {
+        try {
+            streamCall(client, request, onLine)
+        } catch (e: IOException) {
+            if (!isConnectFailure(e) || !settings.cellularFallback || cellular.isDefaultCellular) {
+                throw AiNetworkException("连接 $name 失败：${networkErrorDetail(e)}")
+            }
+            val reply = try {
+                cellular.use { network ->
+                    val viaCellular = client.newBuilder()
+                        .socketFactory(network.socketFactory)
+                        .dns(object : Dns {
+                            override fun lookup(hostname: String) = network.getAllByName(hostname).toList()
+                        })
+                        .build()
+                    streamCall(viaCellular, request, onLine)
+                }
+            } catch (e2: IOException) {
+                throw AiNetworkException("连接 $name 失败，改用移动数据也没连上：${networkErrorDetail(e2)}")
+            } ?: throw AiNetworkException("连接 $name 失败，也没有可用的移动数据：${networkErrorDetail(e)}")
+            onCellularUsed()
+            reply
+        }
+    }
+
     private fun call(client: OkHttpClient, request: Request): HttpReply =
         client.newCall(request).execute().use { HttpReply(it.code, it.body.string()) }
+
+    /** 协程取消（比如关掉聊天框）时顺手断开连接，不再收后面的内容 */
+    private suspend fun streamCall(client: OkHttpClient, request: Request, onLine: (String) -> Unit): HttpReply {
+        val call = client.newCall(request)
+        val job = currentCoroutineContext()[Job]
+        val handle = job?.invokeOnCompletion { call.cancel() }
+        try {
+            return call.execute().use { response ->
+                if (!response.isSuccessful) return@use HttpReply(response.code, response.body.string())
+                val source = response.body.source()
+                while (true) {
+                    job?.ensureActive()
+                    val line = source.readUtf8Line() ?: break
+                    onLine(line)
+                }
+                HttpReply(response.code, "")
+            }
+        } finally {
+            handle?.dispose()
+        }
+    }
 
     companion object {
         private const val CONNECT_TIMEOUT_SECONDS = 8L

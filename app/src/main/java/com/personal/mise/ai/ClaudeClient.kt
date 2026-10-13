@@ -14,7 +14,7 @@ import java.util.Base64
  * 调用 Claude 的 Messages API，用 output_config.format 按 JSON Schema 返回 JSON。
  * effort 用 medium，分调料碗、估热量这种要琢磨的活也想得够；Haiku 和 Sonnet 都不接受改 temperature，不设。
  */
-class ClaudeClient(private val settings: AiSettings, private val http: AiHttp, private val usage: AiUsage) : AiProviderClient {
+class ClaudeClient(private val settings: AiSettings, private val http: AiHttp, private val usage: AiUsage) : AiProviderClient, AiChatProvider {
 
     override suspend fun generate(model: String, prompt: String, schema: JSONObject, images: List<ByteArray>): AiReply = withContext(Dispatchers.IO) {
         val key = settings.key(AiProvider.ANTHROPIC)
@@ -36,6 +36,35 @@ class ClaudeClient(private val settings: AiSettings, private val http: AiHttp, p
         usage.recordSuccess(model)
         usage.clearNoBalance(AiProvider.ANTHROPIC)
         AiReply(json, displayName(model))
+    }
+
+    override suspend fun chat(model: String, system: String, turns: List<ChatTurn>, onText: (String) -> Unit): String {
+        val key = settings.key(AiProvider.ANTHROPIC)
+        if (key.isBlank()) throw ImportException("还没有填写 Claude API Key")
+        val request = Request.Builder()
+            .url(ENDPOINT)
+            .header("x-api-key", key)
+            .header("anthropic-version", API_VERSION)
+            .post(chatBody(model, system, turns).toString().toRequestBody("application/json".toMediaType()))
+            .build()
+        var stop: String? = null
+        val reply = http.stream(request, "Claude") { line ->
+            val event = ChatTurns.sseData(line)?.let { runCatching { JSONObject(it) }.getOrNull() } ?: return@stream
+            streamError(event)?.let { throw it }
+            streamText(event)?.let(onText)
+            event.optJSONObject("delta")?.optString("stop_reason")?.takeIf { it.isNotEmpty() && it != "null" }?.let { stop = it }
+        }
+        if (!reply.isSuccessful) {
+            if (reply.code == 402) usage.markNoBalance(AiProvider.ANTHROPIC, key)
+            throw error(reply.code, errorDetail(reply.body))
+        }
+        when (stop) {
+            "max_tokens" -> throw ImportException("Claude 的回复太长被截断了")
+            "refusal" -> throw ImportException("Claude 拒绝回答这次请求")
+        }
+        usage.recordSuccess(model)
+        usage.clearNoBalance(AiProvider.ANTHROPIC)
+        return displayName(model)
     }
 
     companion object {
@@ -61,6 +90,36 @@ class ClaudeClient(private val settings: AiSettings, private val http: AiHttp, p
                     .put("format", JSONObject().put("type", "json_schema").put("schema", schema)),
             )
             .put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", content(prompt, images))))
+
+        /** 聊天用的流式请求；聊天要回得快，effort 用 low */
+        fun chatBody(model: String, system: String, turns: List<ChatTurn>): JSONObject = JSONObject()
+            .put("model", model)
+            .put("max_tokens", 8000)
+            .put("stream", true)
+            .put("output_config", JSONObject().put("effort", "low"))
+            .put("system", system)
+            .put(
+                "messages",
+                JSONArray(turns.map { JSONObject().put("role", if (it.fromUser) "user" else "assistant").put("content", it.text) }),
+            )
+
+        /** 流里一个事件带的文字，只认 text_delta；思考块之类的不要 */
+        fun streamText(event: JSONObject): String? {
+            if (event.optString("type") != "content_block_delta") return null
+            val delta = event.optJSONObject("delta") ?: return null
+            return if (delta.optString("type") == "text_delta") delta.optString("text") else null
+        }
+
+        /** 流到一半服务器发来的错误事件，比如 overloaded_error */
+        fun streamError(event: JSONObject): ImportException? {
+            if (event.optString("type") != "error") return null
+            val error = event.optJSONObject("error")
+            return when (error?.optString("type")) {
+                "overloaded_error" -> AiUnavailableException("服务器繁忙")
+                "rate_limit_error" -> AiUnavailableException("请求太频繁或额度用完了")
+                else -> ImportException("Claude 出错了：${error?.optString("message").orEmpty()}")
+            }
+        }
 
         /** 图片在前、文字在后 */
         private fun content(prompt: String, images: List<ByteArray>): JSONArray {

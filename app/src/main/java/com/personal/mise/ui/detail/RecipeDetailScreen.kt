@@ -80,6 +80,9 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.personal.mise.data.tagList
 import com.personal.mise.ui.common.ClassifyDialog
+import com.personal.mise.chat.RecipeTools
+import com.personal.mise.ui.chat.AiChatSheet
+import com.personal.mise.ui.chat.AskAiButton
 import androidx.compose.foundation.clickable
 import com.personal.mise.data.BowlFull
 import com.personal.mise.data.Ingredient
@@ -148,11 +151,7 @@ fun RecipeDetailScreen(
     /** AI 想怎么改，等用户确定 */
     var proposal by remember { mutableStateOf<AiEditProposal?>(null) }
     var askingKey by remember { mutableStateOf(false) }
-    var aiEditOpen by remember { mutableStateOf(false) }
-    var aiEditing by remember { mutableStateOf(false) }
-    var aiEditError by remember { mutableStateOf<String?>(null) }
-    /** 没填 Key 时先记下要求，填完 Key 接着改 */
-    var aiEditPending by remember { mutableStateOf<String?>(null) }
+    var chatOpen by remember { mutableStateOf(false) }
     var logOpen by remember { mutableStateOf(false) }
     var planOpen by remember { mutableStateOf(false) }
     var classifyOpen by remember { mutableStateOf(false) }
@@ -223,32 +222,6 @@ fun RecipeDetailScreen(
         }
     }
 
-    /** 按一句话让 AI 改菜谱，先列出改了什么，确定了才保存 */
-    fun aiEdit(instruction: String) {
-        if (aiEditing) return
-        aiEditing = true
-        aiEditError = null
-        scope.launch {
-            try {
-                val before = app.repository.snapshot(recipeId)?.draft ?: throw ImportException("菜谱不存在")
-                val edit = app.recipeEditor.edit(AiRecipeEditor.editable(before), instruction)
-                val next = AiRecipeEditor.propose(before, edit)
-                if (next == null) {
-                    aiEditError = edit.summary.ifBlank { "AI 没有改动，换个说法试试" }
-                } else {
-                    aiEditOpen = false
-                    proposal = next
-                }
-            } catch (e: ImportException) {
-                aiEditError = e.message ?: "AI 修改失败"
-            } catch (e: Exception) {
-                aiEditError = "AI 修改失败：${e.message ?: e.javaClass.simpleName}"
-            } finally {
-                aiEditing = false
-            }
-        }
-    }
-
     /** 用户确定了 AI 的修改：菜谱这期间没被改过才保存，照评价改的再重新评价 */
     fun confirmEdit(change: AiEditProposal) {
         proposal = null
@@ -272,6 +245,7 @@ fun RecipeDetailScreen(
         // 封面延伸到状态栏下面，按钮自己避开状态栏
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         snackbarHost = { SnackbarHost(snackbar) },
+        floatingActionButton = { AskAiButton(onClick = { chatOpen = true }) },
         bottomBar = {
             BottomActionBar {
                 OutlinePillButton(
@@ -368,14 +342,6 @@ fun RecipeDetailScreen(
                                     content = MaterialTheme.colorScheme.primary,
                                 )
                             }
-                            InfoPill(
-                                "✨ 让 AI 改",
-                                Modifier.clip(CircleShape).clickable {
-                                    aiEditError = null
-                                    aiEditOpen = true
-                                },
-                                content = MaterialTheme.colorScheme.primary,
-                            )
                             data.recipe.servings?.takeIf { it.isNotBlank() }?.let { InfoPill(it) }
                             if (data.steps.isNotEmpty()) InfoPill("${data.steps.size} 步")
                             Surface(
@@ -565,24 +531,20 @@ fun RecipeDetailScreen(
         }
     }
 
-    if (aiEditOpen) {
-        AiEditDialog(
-            busy = aiEditing,
-            error = aiEditError,
-            onDismiss = { aiEditOpen = false },
-            onSubmit = { if (app.aiSettings.hasKey) aiEdit(it) else aiEditPending = it },
-        )
-    }
-
-    aiEditPending?.let { instruction ->
-        AiKeyDialog(
-            confirmLabel = "保存并修改",
-            onDismiss = { aiEditPending = null },
-            onConfirm = {
-                aiEditPending = null
-                aiEdit(instruction)
-            },
-        )
+    if (chatOpen) {
+        full?.let { current ->
+            AiChatSheet(
+                session = remember(current.recipe.uid) { app.chats.recipe(recipeId, current.recipe.uid) },
+                title = "问问 AI",
+                subtitle = listOfNotNull(
+                    "在看：${current.recipe.title}",
+                    current.recipe.servings?.takeIf { it.isNotBlank() },
+                    "${current.steps.size} 步".takeIf { current.steps.isNotEmpty() },
+                ).joinToString(" · "),
+                tools = remember(current) { RecipeTools.of(current) },
+                onDismiss = { chatOpen = false },
+            )
+        }
     }
 
     if (askingKey) {

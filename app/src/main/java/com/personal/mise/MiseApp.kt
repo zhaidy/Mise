@@ -11,6 +11,7 @@ import com.personal.mise.ai.ClaudeClient
 import com.personal.mise.ai.AiAmountEstimator
 import com.personal.mise.ai.AiBowlOrganizer
 import com.personal.mise.ai.AiCalorieEstimator
+import com.personal.mise.ai.AiChatClient
 import com.personal.mise.ai.AiClient
 import com.personal.mise.ai.AiHttp
 import com.personal.mise.ai.AiProvider
@@ -24,7 +25,9 @@ import com.personal.mise.ai.AiUsage
 import com.personal.mise.ai.CellularNetwork
 import com.personal.mise.ai.DeepSeekClient
 import com.personal.mise.ai.GeminiClient
+import com.personal.mise.ai.SwitchableAiChat
 import com.personal.mise.ai.SwitchableAiClient
+import com.personal.mise.chat.ChatSessions
 import com.personal.mise.backup.BackupManager
 import com.personal.mise.data.CalorieBudget
 import com.personal.mise.data.MiseDatabase
@@ -56,7 +59,7 @@ class MiseApp : Application() {
         private set
     /** 跟着进程走的后台任务，比如同步 */
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-    val importer: RecipeImporter by lazy { RecipeImporter(images, noteOrganizer, WebPageLoader(this), AiRecipeTranslator(ai), { aiSettings.hasKey }, WebViewCookieJar()) }
+    val importer: RecipeImporter by lazy { RecipeImporter(images, noteOrganizer, WebPageLoader(this), translator, { aiSettings.hasKey }, WebViewCookieJar()) }
     val aiSettings: AiSettings by lazy { AiSettings(this) }
     val updater: UpdateChecker by lazy { UpdateChecker(this) }
     val backup: BackupManager by lazy { BackupManager(this, database) }
@@ -74,18 +77,35 @@ class MiseApp : Application() {
     val deepSeek: DeepSeekClient by lazy {
         DeepSeekClient(aiSettings, AiHttp(aiSettings, cellular, readTimeoutSeconds = 120, onCellularUsed = onCellularUsed))
     }
+    private val gemini by lazy { GeminiClient(aiSettings, aiUsage, AiHttp(aiSettings, cellular, readTimeoutSeconds = 90, onCellularUsed = onCellularUsed)) }
+    private val agnes by lazy { AgnesClient(aiSettings, AiHttp(aiSettings, cellular, readTimeoutSeconds = 120, onCellularUsed = onCellularUsed), aiUsage) }
+    private val claude by lazy { ClaudeClient(aiSettings, AiHttp(aiSettings, cellular, readTimeoutSeconds = 120, onCellularUsed = onCellularUsed), aiUsage) }
     private val ai: AiClient by lazy {
         SwitchableAiClient(
             aiSettings,
             mapOf(
-                AiProvider.GEMINI to GeminiClient(aiSettings, aiUsage, AiHttp(aiSettings, cellular, readTimeoutSeconds = 90, onCellularUsed = onCellularUsed)),
-                AiProvider.AGNES to AgnesClient(aiSettings, AiHttp(aiSettings, cellular, readTimeoutSeconds = 120, onCellularUsed = onCellularUsed), aiUsage),
+                AiProvider.GEMINI to gemini,
+                AiProvider.AGNES to agnes,
                 AiProvider.DEEPSEEK to deepSeek,
-                AiProvider.ANTHROPIC to ClaudeClient(aiSettings, AiHttp(aiSettings, cellular, readTimeoutSeconds = 120, onCellularUsed = onCellularUsed), aiUsage),
+                AiProvider.ANTHROPIC to claude,
             ),
             onModelUsed = ::showModelUsed,
         )
     }
+    /** 「问问 AI」用的流式聊天，模型顺序和其他 AI 功能一样 */
+    val aiChat: AiChatClient by lazy {
+        SwitchableAiChat(
+            aiSettings,
+            mapOf(
+                AiProvider.GEMINI to gemini,
+                AiProvider.AGNES to agnes,
+                AiProvider.DEEPSEEK to deepSeek,
+                AiProvider.ANTHROPIC to claude,
+            ),
+        )
+    }
+    /** 各道菜和首页的「问问 AI」对话；关掉聊天框后 AI 还在回的话接着收 */
+    val chats: ChatSessions by lazy { ChatSessions(this) }
     private var lastModelNotice = ""
     private var lastModelNoticeAt = 0L
 
@@ -106,6 +126,7 @@ class MiseApp : Application() {
     val calorieEstimator: AiCalorieEstimator by lazy { AiCalorieEstimator(ai) }
     val recipeEditor: AiRecipeEditor by lazy { AiRecipeEditor(ai) }
     val recipeReviewer: AiRecipeReviewer by lazy { AiRecipeReviewer(ai) }
+    val translator: AiRecipeTranslator by lazy { AiRecipeTranslator(ai) }
 
     /** 每道菜当前的用量倍率，只在本次运行里有效；详情、备料、做菜页共用 */
     val scales = mutableStateMapOf<Long, Double>()

@@ -244,3 +244,24 @@ data class RecipeFull(
 ) {
     fun bowlsForStep(stepId: Long): List<BowlFull> = bowls.filter { it.bowl.stepId == stepId }
 }
+
+/**
+ * 「问问 AI」里的一句话，只存在这台手机上，不同步。
+ * [thread] 是对话：某道菜的 uid，或 [GLOBAL] 表示不针对某道菜的那段对话。
+ * AI 给出的修改方案、评价这些放在 [card]（ChatCard 的 JSON）里，[text] 是说的话。
+ */
+@Entity(tableName = "ai_chat_message", indices = [Index("thread")])
+data class ChatMessageEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val thread: String,
+    val fromUser: Boolean,
+    val text: String,
+    val card: String? = null,
+    /** 这句话是哪个模型说的，给人看的说明 */
+    val model: String? = null,
+    val createdAt: Long = System.currentTimeMillis(),
+) {
+    companion object {
+        const val GLOBAL = "global"
+    }
+}
