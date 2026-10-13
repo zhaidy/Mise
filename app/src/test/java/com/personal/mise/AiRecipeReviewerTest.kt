@@ -53,4 +53,15 @@ class AiRecipeReviewerTest {
         assertTrue(ask.contains("- 糖色容易炒糊\n- 没写炖多久\n"))
         assertFalse(ask.contains("步骤清楚"))
     }
+
+    @Test
+    fun `改完能到几分：比现在高、有要注意的地方才算`() {
+        fun parse(json: String) = RecipeReview.parse(JSONObject(json))?.improvedScore
+        assertEquals(9, parse("""{"score":7,"summary":"好吃","concerns":["少放糖"],"improvedScore":9}"""))
+        assertNull(parse("""{"score":7,"summary":"好吃","concerns":["少放糖"],"improvedScore":7}"""))
+        assertNull(parse("""{"score":7,"summary":"好吃","concerns":[],"improvedScore":9}"""))
+        assertNull(parse("""{"score":7,"summary":"好吃","concerns":["少放糖"]}"""))
+        val review = RecipeReview(7, "好吃", emptyList(), listOf("少放糖"), 9)
+        assertEquals(review, RecipeReview.fromJson(review.toJson().toString()))
+    }
 }

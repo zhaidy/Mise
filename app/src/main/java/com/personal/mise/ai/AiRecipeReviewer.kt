@@ -12,12 +12,15 @@ data class RecipeReview(
     val summary: String,
     val highlights: List<String>,
     val concerns: List<String>,
+    /** 照 [concerns] 改完大约能到几分；比现在高才有，老评价没有 */
+    val improvedScore: Int? = null,
 ) {
     fun toJson(): JSONObject = JSONObject()
         .put("score", score)
         .put("summary", summary)
         .put("highlights", JSONArray(highlights))
         .put("concerns", JSONArray(concerns))
+        .put("improvedScore", improvedScore ?: JSONObject.NULL)
 
     companion object {
         /** 存在数据库和云端的评价；格式不对时返回 null，不影响菜谱本身 */
@@ -30,7 +33,10 @@ data class RecipeReview(
             val score = obj.optDouble("score", Double.NaN).takeIf { !it.isNaN() && !it.isInfinite() }?.roundToInt() ?: return null
             if (score !in 1..10) return null
             val summary = obj.optString("summary").trim().takeIf { it.isNotEmpty() && it != "null" } ?: return null
-            return RecipeReview(score, summary, lines(obj.optJSONArray("highlights")), lines(obj.optJSONArray("concerns")))
+            val concerns = lines(obj.optJSONArray("concerns"))
+            val improved = obj.optDouble("improvedScore", Double.NaN).takeIf { !it.isNaN() && !it.isInfinite() }?.roundToInt()
+                ?.takeIf { it in (score + 1)..10 && concerns.isNotEmpty() }
+            return RecipeReview(score, summary, lines(obj.optJSONArray("highlights")), concerns, improved)
         }
 
         private fun lines(arr: JSONArray?): List<String> {
@@ -83,7 +89,8 @@ class AiRecipeReviewer(private val ai: AiClient) {
             "4. highlights 列 1–3 条口味上的亮点，比如某样用料提鲜、某步让肉更嫩，每条一句短话。\n" +
             "5. concerns 列 0–3 条可能让味道打折的地方和怎么改得更好吃，比如糖太多会腻、少了去腥的料酒姜片、" +
             "火太大肉会柴；没有就给空数组。\n" +
-            "6. 用简体中文，不要客套话。\n\n"
+            "6. improvedScore 填照 concerns 里的建议改完以后，大约能到几分（1 到 10 的整数，不低于 score）；concerns 为空就填和 score 一样。\n" +
+            "7. 用简体中文，不要客套话。\n\n"
 
         fun prompt(
             title: String,
@@ -116,7 +123,8 @@ class AiRecipeReviewer(private val ai: AiClient) {
                 "summary" to AiSchema.string(),
                 "highlights" to AiSchema.array(AiSchema.string()),
                 "concerns" to AiSchema.array(AiSchema.string()),
-                required = listOf("score", "summary", "highlights", "concerns"),
+                "improvedScore" to AiSchema.integer(),
+                required = listOf("score", "summary", "highlights", "concerns", "improvedScore"),
             )
     }
 }
