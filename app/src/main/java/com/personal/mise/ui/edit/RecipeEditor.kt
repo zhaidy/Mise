@@ -74,19 +74,24 @@ fun RecipeEditor(
         if (uri != null && key != null) vm.pickStepImage(key, uri)
         pickingStepKey = null
     }
-    // 填完 Key 后要接着做的 AI 操作：split 拆分步骤、estimate 估算用量和克重、calories 估算热量
+    // 填完 Key 后要接着做的 AI 操作：split 拆分步骤、estimate 估算用量和克重、calories 估算热量、edit 按一句话修改菜谱
     var askingKeyFor by rememberSaveable { mutableStateOf<String?>(null) }
     val imageOnly = PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
 
     askingKeyFor?.let { action ->
         AiKeyDialog(
-            confirmLabel = if (action == "split") "保存并拆分" else "保存并估算",
+            confirmLabel = when (action) {
+                "split" -> "保存并拆分"
+                "edit" -> "保存并修改"
+                else -> "保存并估算"
+            },
             onDismiss = { askingKeyFor = null },
             onConfirm = {
                 askingKeyFor = null
                 when (action) {
                     "estimate" -> vm.aiEstimateAmounts()
                     "calories" -> vm.aiEstimateCalories()
+                    "edit" -> vm.aiEditRecipe()
                     else -> vm.aiSplitSteps()
                 }
             },
@@ -171,6 +176,10 @@ fun RecipeEditor(
                     )
                 }
             }
+        }
+
+        item {
+            AiEditCard(vm, onNeedKey = { askingKeyFor = "edit" })
         }
 
         item { EditorSection("用料", "点「主料／调料」可以切换分类") }
@@ -329,6 +338,50 @@ fun RecipeEditor(
             }
         }
         item { footer() }
+    }
+}
+
+/** 一句话让 AI 改菜谱：改完填回表单，可以撤销 */
+@Composable
+private fun AiEditCard(vm: EditorViewModel, onNeedKey: () -> Unit) {
+    SoftCard(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp)) {
+        Column(Modifier.padding(14.dp)) {
+            Text("✨ 让 AI 改菜谱", style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.height(8.dp))
+            OutlinedTextField(
+                shape = FieldShape,
+                colors = miseFieldColors(),
+                value = vm.aiEditInstruction,
+                onValueChange = { vm.aiEditInstruction = it },
+                placeholder = { Text("比如：改成4人份、不要辣、换成空气炸锅做法") },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !vm.aiEditing,
+                maxLines = 4,
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (vm.aiEditing) {
+                    CircularProgressIndicator(Modifier.padding(horizontal = 12.dp).size(20.dp), strokeWidth = 2.dp)
+                    Text("AI 正在修改…", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                } else {
+                    TextButton(
+                        enabled = vm.aiEditInstruction.isNotBlank(),
+                        onClick = { if (vm.hasAiKey) vm.aiEditRecipe() else onNeedKey() },
+                    ) { Text("让 AI 改") }
+                }
+                Spacer(Modifier.weight(1f))
+                if (vm.canUndoAiEdit && !vm.aiEditing) {
+                    TextButton(onClick = vm::undoAiEdit) { Text("撤销这次修改") }
+                }
+            }
+            vm.aiEditMessage?.let {
+                Text(
+                    it,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (vm.canUndoAiEdit) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 8.dp),
+                )
+            }
+        }
     }
 }
 
