@@ -1,5 +1,6 @@
 package com.personal.mise.util
 
+import java.util.Locale
 import kotlin.math.roundToInt
 
 /** 热量的显示：整道菜存一个千卡数，换算倍率和每人份都在显示时算 */
@@ -37,4 +38,15 @@ object CalorieText {
     /** 超过「人数 × 每人上限」多少千卡，没超返回 null */
     fun overBy(total: Int, diners: Int, perPersonLimit: Int): Int? =
         (total - diners.coerceAtLeast(1) * perPersonLimit).takeIf { it > 0 }
+
+    /** 多吃多少千卡大约长 1 斤：1 公斤脂肪约 7700 千卡 */
+    const val KCAL_PER_JIN = 3850
+
+    /** 多吃 [kcal] 千卡大约会胖多少：「约 0.06 斤」，1 斤以上留一位小数 */
+    fun gain(kcal: Int): String {
+        val jin = kcal.coerceAtLeast(0) / KCAL_PER_JIN.toDouble()
+        if (jin < 0.005) return "不到 0.01 斤"
+        val text = String.format(Locale.ROOT, if (jin < 1) "%.2f" else "%.1f", jin).trimEnd('0').trimEnd('.')
+        return "约 $text 斤"
+    }
 }

@@ -385,11 +385,15 @@ private fun CaloriesSummary(
                 }
             }
             if (over != null) {
-                Text(
-                    "超了约 $over 千卡（每人多约 ${CalorieText.perPerson(over, limit.diners)}）",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.error,
-                )
+                val overEach = CalorieText.perPerson(over, limit.diners)
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        "超了约 $over 千卡（每人多约 $overEach）",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                    Text("照这样吃，每人会胖${CalorieText.gain(overEach)}", style = MaterialTheme.typography.bodySmall)
+                }
             }
             Row(
                 Modifier.fillMaxWidth().padding(end = 10.dp).clip(RoundedCornerShape(12.dp)).clickable(onClick = onEditLimit),
@@ -418,7 +422,10 @@ private fun CalorieLimitDialog(current: CalorieLimit, onDismiss: () -> Unit, onS
         title = { Text("热量提醒") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("今日菜单的热量超过「人数 × 每人上限」时会提醒超了多少。")
+                Text(
+                    "今日菜单的热量超过「人数 × 每人上限」时会提醒超了多少，" +
+                        "并按 1 斤脂肪约 ${CalorieText.KCAL_PER_JIN} 千卡估算每人会胖多少。上限填一天大约消耗的热量，估得最准。",
+                )
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("今天几个人吃", Modifier.weight(1f))
                     IconButton(onClick = { diners-- }, enabled = diners > 1) {
