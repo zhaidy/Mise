@@ -37,4 +37,17 @@ class CalorieTextTest {
         assertEquals(250, CalorieText.perPerson(500, 2))
         assertEquals(500, CalorieText.perPerson(500, 0))
     }
+
+    @Test
+    fun gain() {
+        assertEquals("约 0.06 斤", CalorieText.gain(250))
+        assertEquals("约 0.26 斤", CalorieText.gain(1000))
+        assertEquals("约 0.1 斤", CalorieText.gain(385))
+        assertEquals("约 1 斤", CalorieText.gain(3850))
+        assertEquals("约 1 斤", CalorieText.gain(3840))
+        assertEquals("约 1.3 斤", CalorieText.gain(5000))
+        assertEquals("约 2 斤", CalorieText.gain(7700))
+        assertEquals("不到 0.01 斤", CalorieText.gain(10))
+        assertEquals("不到 0.01 斤", CalorieText.gain(0))
+    }
 }
