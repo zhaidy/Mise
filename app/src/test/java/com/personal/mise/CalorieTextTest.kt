@@ -29,21 +29,9 @@ class CalorieTextTest {
     }
 
     @Test
-    fun overBy() {
-        assertEquals(500, CalorieText.overBy(4500, 2, 2000))
-        assertNull(CalorieText.overBy(4000, 2, 2000))
-        assertNull(CalorieText.overBy(3000, 2, 2000))
-        assertEquals(100, CalorieText.overBy(900, 1, 800))
+    fun perPerson() {
         assertEquals(250, CalorieText.perPerson(500, 2))
         assertEquals(500, CalorieText.perPerson(500, 0))
-    }
-
-    @Test
-    fun underBy() {
-        assertEquals(600, CalorieText.underBy(3400, 2, 2000))
-        assertNull(CalorieText.underBy(4000, 2, 2000))
-        assertNull(CalorieText.underBy(4500, 2, 2000))
-        assertEquals(800, CalorieText.underBy(0, 0, 800))
     }
 
     @Test
