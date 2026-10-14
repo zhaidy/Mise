@@ -598,7 +598,7 @@ private fun DailyBurnDialog(initial: BodyProfile?, onDismiss: () -> Unit, onUse:
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(
-                    "按 Mifflin-St Jeor 公式估基础代谢，再乘平时的活动量；只存在这台手机上。",
+                    "按 Mifflin-St Jeor 公式估基础代谢，再乘平时的活动量；加入了共享厨房的话，厨房里的人都能看到。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
