@@ -4,7 +4,9 @@ import android.content.Context
 import com.personal.mise.util.CalorieText
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
 import org.json.JSONArray
 import org.json.JSONObject
 import kotlin.math.roundToInt
@@ -65,13 +67,33 @@ class CalorieBudget(context: Context) {
     private val prefs = context.getSharedPreferences("calorie_budget", Context.MODE_PRIVATE)
     private val _diners = MutableStateFlow(load())
 
-    /** 一起吃饭的人；只存在本机，换菜单也留着 */
+    /** 一起吃饭的人；换菜单也留着，加入了共享厨房的话厨房里的人共用 */
     val diners: StateFlow<List<Diner>> = _diners.asStateFlow()
+
+    private val _updatedAt = MutableStateFlow(prefs.getLong(DINERS_UPDATED_AT, 0))
+
+    /** 上次改的时间；还没改过（默认或从旧设置换过来的）是 0 */
+    val updatedAt: Long get() = _updatedAt.value
 
     fun save(next: List<Diner>) {
         val clean = clean(next)
-        _diners.value = clean
-        prefs.edit().putString(DINERS_JSON, toJson(clean)).apply()
+        // 没改就不动，免得每次点保存都当成新改的同步出去
+        if (clean == _diners.value && updatedAt > 0) return
+        write(clean, System.currentTimeMillis())
+    }
+
+    /** 共享厨房里别人改了谁来吃，同步到本机 */
+    fun applyRemote(diners: List<Diner>, updatedAt: Long) = write(clean(diners), updatedAt)
+
+    private fun write(diners: List<Diner>, updatedAt: Long) {
+        prefs.edit().putString(DINERS_JSON, toJson(diners)).putLong(DINERS_UPDATED_AT, updatedAt).apply()
+        _diners.value = diners
+        _updatedAt.value = updatedAt
+    }
+
+    /** 改过时给出修改时间，uid 是 [SYNC_ID]；给共享厨房同步用 */
+    fun observeStamps(): Flow<List<RecipeStamp>> = _updatedAt.map { t ->
+        listOfNotNull(RecipeStamp(SYNC_ID, t).takeIf { t > 0 })
     }
 
     private fun load(): List<Diner> {
@@ -102,7 +124,10 @@ class CalorieBudget(context: Context) {
         const val DEFAULT_PER_DAY = 2000
         const val MAX_DINERS = 20
         const val MAX_PER_DAY = 10000
+        /** 云端 kitchens/{邀请码}/settings/ 下的文档 id */
+        const val SYNC_ID = "diners"
         private const val DINERS_JSON = "diners_json"
+        private const val DINERS_UPDATED_AT = "diners_updated_at"
         private const val OLD_DINERS = "diners"
         private const val OLD_PER_PERSON = "per_person"
         private const val OLD_BODY_MALE = "body_male"

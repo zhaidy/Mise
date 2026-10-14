@@ -14,6 +14,7 @@ import com.google.firebase.firestore.FirebaseFirestoreException
 import com.google.firebase.firestore.MetadataChanges
 import com.google.firebase.firestore.QuerySnapshot
 import com.personal.mise.ai.AiSettings
+import com.personal.mise.data.CalorieBudget
 import com.personal.mise.data.CookLog
 import com.personal.mise.data.RecipeRepository
 import com.personal.mise.data.RecipeStamp
@@ -44,7 +45,8 @@ import java.security.SecureRandom
  *
  * 云端是 kitchens/{邀请码}/recipes/{uid}（每道菜一个文档）、
  * kitchens/{邀请码}/history/{菜谱 uid_日期}（做菜记录）、kitchens/{邀请码}/plan/{菜谱 uid_日期}（做菜计划，今日菜单就是今天的计划）、kitchens/{邀请码}/images/{文件名}（图片）
- * kitchens/{邀请码}/aiKeys/{服务商}（AI 的 API Key）和 kitchens/{邀请码}/aiSettings/models（用哪些 AI 模型、什么顺序）。本地和云端任何一边变了，
+ * kitchens/{邀请码}/aiKeys/{服务商}（AI 的 API Key）、kitchens/{邀请码}/aiSettings/models（用哪些 AI 模型、什么顺序）
+ * 和 kitchens/{邀请码}/settings/diners（今日热量里谁来吃、各自的上限）。本地和云端任何一边变了，
  * 就逐条比较 updatedAt，新的覆盖旧的。Firestore 自带离线缓存，没网时的改动联网后补传。
  */
 class KitchenSync(
@@ -52,6 +54,7 @@ class KitchenSync(
     private val repository: RecipeRepository,
     private val images: ImageStore,
     private val aiSettings: AiSettings,
+    private val calorieBudget: CalorieBudget,
     private val scope: CoroutineScope,
 ) {
     private val prefs = context.getSharedPreferences("kitchen", Context.MODE_PRIVATE)
@@ -148,7 +151,7 @@ class KitchenSync(
         }
     }
 
-    /** 成员人数、菜谱、做菜记录、做菜计划、图片、AI Key、AI 模型列表各自同步，任何一个出错就整体重来 */
+    /** 成员人数、菜谱、做菜记录、做菜计划、图片、AI Key、AI 模型列表、谁来吃各自同步，任何一个出错就整体重来 */
     private suspend fun sync(code: String, kitchen: DocumentReference) {
         coroutineScope {
             launch {
@@ -205,6 +208,16 @@ class KitchenSync(
                     updatedAt = { it.updatedAt },
                     apply = { aiSettings.applyRemoteModels(it.models, it.updatedAt) },
                     load = { id -> SyncedAiModels.local(aiSettings, id)?.toMap() },
+                )
+            }
+            launch {
+                syncCollection<SyncedDiners>(
+                    collection = kitchen.collection(SETTINGS),
+                    localStamps = calorieBudget.observeStamps(),
+                    parse = { id, data -> SyncedDiners.fromMap(id, data) },
+                    updatedAt = { it.updatedAt },
+                    apply = { calorieBudget.applyRemote(it.diners, it.updatedAt) },
+                    load = { id -> SyncedDiners.local(calorieBudget, id)?.toMap() },
                 )
             }
         }
@@ -334,6 +347,7 @@ class KitchenSync(
         const val PLAN = "plan"
         const val AI_KEYS = "aiKeys"
         const val AI_SETTINGS = "aiSettings"
+        const val SETTINGS = "settings"
         const val KEY_UPLOADED_PREFIX = "images_done_"
         const val IMAGE_TIMEOUT_MS = 60_000L
         const val IMAGE_RETRY_FIRST_MS = 5_000L
