@@ -39,15 +39,23 @@ class CalorieTextTest {
     }
 
     @Test
-    fun gain() {
-        assertEquals("约 0.06 斤", CalorieText.gain(250))
-        assertEquals("约 0.26 斤", CalorieText.gain(1000))
-        assertEquals("约 0.1 斤", CalorieText.gain(385))
-        assertEquals("约 1 斤", CalorieText.gain(3850))
-        assertEquals("约 1 斤", CalorieText.gain(3840))
-        assertEquals("约 1.3 斤", CalorieText.gain(5000))
-        assertEquals("约 2 斤", CalorieText.gain(7700))
-        assertEquals("不到 0.01 斤", CalorieText.gain(10))
-        assertEquals("不到 0.01 斤", CalorieText.gain(0))
+    fun underBy() {
+        assertEquals(600, CalorieText.underBy(3400, 2, 2000))
+        assertNull(CalorieText.underBy(4000, 2, 2000))
+        assertNull(CalorieText.underBy(4500, 2, 2000))
+        assertEquals(800, CalorieText.underBy(0, 0, 800))
+    }
+
+    @Test
+    fun jin() {
+        assertEquals("约 0.06 斤", CalorieText.jin(250))
+        assertEquals("约 0.26 斤", CalorieText.jin(1000))
+        assertEquals("约 0.1 斤", CalorieText.jin(385))
+        assertEquals("约 1 斤", CalorieText.jin(3850))
+        assertEquals("约 1 斤", CalorieText.jin(3840))
+        assertEquals("约 1.3 斤", CalorieText.jin(5000))
+        assertEquals("约 2 斤", CalorieText.jin(7700))
+        assertEquals("不到 0.01 斤", CalorieText.jin(10))
+        assertEquals("不到 0.01 斤", CalorieText.jin(0))
     }
 }

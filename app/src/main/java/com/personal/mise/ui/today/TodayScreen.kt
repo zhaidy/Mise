@@ -341,7 +341,7 @@ private fun LeftoverBanner(titles: List<String>, onMove: () -> Unit, onDismiss: 
     }
 }
 
-/** 今日菜单一共多少千卡；按每道菜现在的换算倍率算，超过「人数 × 每人上限」时提醒超了多少 */
+/** 今日菜单一共多少千卡；按每道菜现在的换算倍率算，和「人数 × 每人上限」比，估算每人会胖或瘦多少 */
 @Composable
 private fun CaloriesSummary(
     rows: List<TodayRow>,
@@ -356,6 +356,8 @@ private fun CaloriesSummary(
     val missing = rows.size - known.size
     val total = known.sumOf { CalorieText.scaled(it.calories!!, factorOf(it.recipeId)) }
     val over = if (known.isEmpty()) null else CalorieText.overBy(total, limit.diners, limit.perPerson)
+    // 有菜没算热量时总数偏少，算出来会瘦的偏多，先不说
+    val under = if (known.isEmpty() || missing > 0) null else CalorieText.underBy(total, limit.diners, limit.perPerson)
     Surface(
         Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(24.dp),
@@ -392,7 +394,14 @@ private fun CaloriesSummary(
                         style = MaterialTheme.typography.titleSmall,
                         color = MaterialTheme.colorScheme.error,
                     )
-                    Text("照这样吃，每人会胖${CalorieText.gain(overEach)}", style = MaterialTheme.typography.bodySmall)
+                    Text("照这样吃，每人会胖${CalorieText.jin(overEach)}", style = MaterialTheme.typography.bodySmall)
+                }
+            }
+            if (under != null) {
+                val underEach = CalorieText.perPerson(under, limit.diners)
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text("比上限少约 $under 千卡（每人少约 $underEach）", style = MaterialTheme.typography.titleSmall)
+                    Text("今天只吃这些的话，每人会瘦${CalorieText.jin(underEach)}", style = MaterialTheme.typography.bodySmall)
                 }
             }
             Row(
@@ -423,8 +432,9 @@ private fun CalorieLimitDialog(current: CalorieLimit, onDismiss: () -> Unit, onS
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(
-                    "今日菜单的热量超过「人数 × 每人上限」时会提醒超了多少，" +
-                        "并按 1 斤脂肪约 ${CalorieText.KCAL_PER_JIN} 千卡估算每人会胖多少。上限填一天大约消耗的热量，估得最准。",
+                    "今日菜单的热量超过「人数 × 每人上限」时会提醒超了多少。" +
+                        "按 1 斤脂肪约 ${CalorieText.KCAL_PER_JIN} 千卡，估算多吃的每人会胖多少、少吃的会瘦多少；" +
+                        "上限填一天大约消耗的热量，估得最准。",
                 )
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("今天几个人吃", Modifier.weight(1f))
