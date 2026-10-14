@@ -39,6 +39,13 @@ import com.personal.mise.util.CalorieText
 import com.personal.mise.util.DayText
 import com.personal.mise.data.CalorieBudget
 import com.personal.mise.data.CalorieLimit
+import com.personal.mise.data.ActivityLevel
+import com.personal.mise.data.BodyProfile
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.FilterChip
 import com.personal.mise.ui.common.FieldShape
 import com.personal.mise.ui.common.miseFieldColors
 import androidx.compose.foundation.clickable
@@ -295,6 +302,8 @@ fun TodayScreen(
     if (editingLimit) {
         CalorieLimitDialog(
             current = limit,
+            body = app.calorieBudget.body,
+            onSaveBody = app.calorieBudget::saveBody,
             onDismiss = { editingLimit = false },
             onSave = {
                 app.calorieBudget.save(it)
@@ -422,9 +431,16 @@ private fun CaloriesSummary(
 
 /** 设今天几个人吃、每人热量上限 */
 @Composable
-private fun CalorieLimitDialog(current: CalorieLimit, onDismiss: () -> Unit, onSave: (CalorieLimit) -> Unit) {
+private fun CalorieLimitDialog(
+    current: CalorieLimit,
+    body: BodyProfile?,
+    onSaveBody: (BodyProfile) -> Unit,
+    onDismiss: () -> Unit,
+    onSave: (CalorieLimit) -> Unit,
+) {
     var diners by remember { mutableStateOf(current.diners) }
     var perPerson by remember { mutableStateOf(current.perPerson.toString()) }
+    var calculating by remember { mutableStateOf(false) }
     val perPersonValue = perPerson.toIntOrNull()?.takeIf { it in 1..CalorieBudget.MAX_PER_PERSON }
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -456,6 +472,7 @@ private fun CalorieLimitDialog(current: CalorieLimit, onDismiss: () -> Unit, onS
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     isError = perPersonValue == null,
                 )
+                TextButton(onClick = { calculating = true }) { Text("按身高体重帮我算") }
             }
         },
         confirmButton = {
@@ -465,6 +482,83 @@ private fun CalorieLimitDialog(current: CalorieLimit, onDismiss: () -> Unit, onS
             ) { Text("保存") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
+    )
+    if (calculating) {
+        DailyBurnDialog(
+            initial = body,
+            onDismiss = { calculating = false },
+            onUse = {
+                onSaveBody(it)
+                perPerson = it.dailyBurn().toString()
+                calculating = false
+            },
+        )
+    }
+}
+
+/** 填性别、年龄、身高、体重、活动量，估一天大约消耗多少千卡，拿去当每人上限 */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun DailyBurnDialog(initial: BodyProfile?, onDismiss: () -> Unit, onUse: (BodyProfile) -> Unit) {
+    var male by remember { mutableStateOf(initial?.male) }
+    var age by remember { mutableStateOf(initial?.age?.toString().orEmpty()) }
+    var height by remember { mutableStateOf(initial?.heightCm?.toString().orEmpty()) }
+    var weight by remember { mutableStateOf(initial?.weightJin?.toString().orEmpty()) }
+    var activity by remember { mutableStateOf(initial?.activity ?: ActivityLevel.SEDENTARY) }
+    val profile = BodyProfile.parse(male, age, height, weight, activity)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("算一天消耗多少") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    "按 Mifflin-St Jeor 公式估基础代谢，再乘平时的活动量；只存在这台手机上。" +
+                        "几个人一起吃、需要的差得多的话，可以各算一次填平均数。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(selected = male == true, onClick = { male = true }, label = { Text("男") })
+                    FilterChip(selected = male == false, onClick = { male = false }, label = { Text("女") })
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    BodyNumberField(age, { age = it }, "年龄", BodyProfile.AGES, Modifier.weight(1f))
+                    BodyNumberField(height, { height = it }, "身高 cm", BodyProfile.HEIGHTS, Modifier.weight(1f))
+                    BodyNumberField(weight, { weight = it }, "体重 斤", BodyProfile.WEIGHTS, Modifier.weight(1f))
+                }
+                Text("平时活动量", style = MaterialTheme.typography.labelLarge)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ActivityLevel.entries.forEach {
+                        FilterChip(selected = it == activity, onClick = { activity = it }, label = { Text(it.label) })
+                    }
+                }
+                Text(
+                    profile?.let { "一天大约消耗 ${it.dailyBurn()} 千卡" } ?: "填好上面几项就能算",
+                    style = if (profile != null) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyMedium,
+                    color = if (profile != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { profile?.let(onUse) }, enabled = profile != null) { Text("用这个数") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
+    )
+}
+
+/** 只能填整数；填了但不在 [range] 里标红 */
+@Composable
+private fun BodyNumberField(value: String, onValueChange: (String) -> Unit, label: String, range: IntRange, modifier: Modifier) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = { onValueChange(it.filter { c -> c.isDigit() }.take(3)) },
+        modifier = modifier,
+        label = { Text(label, maxLines = 1) },
+        singleLine = true,
+        shape = FieldShape,
+        colors = miseFieldColors(),
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+        isError = value.isNotEmpty() && value.toIntOrNull()?.let { it in range } != true,
     )
 }
 
