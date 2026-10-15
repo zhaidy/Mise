@@ -13,17 +13,13 @@ object AutoNext {
         val step = steps.getOrNull(index) ?: return null
         return NextStep(index, step.timerSeconds ?: TimeText.guessSeconds(step.text))
     }
-
-    /** 计时结束时弹窗和通知里的那句话 */
-    fun message(timer: CookingTimer, next: NextStep?): String {
-        val done = "第 ${timer.stepIndex + 1} 步的时间到了"
-        if (next == null) return done
-        val jumped = "$done，已跳到第 ${next.index + 1} 步"
-        return next.seconds?.let { "$jumped，接着计时 ${TimeText.describe(it)}" } ?: jumped
-    }
 }
 
 /** 计时结束事件；[next] 不为空说明已经自动跳到下一步 */
 data class TimerFinished(val timer: CookingTimer, val next: NextStep?) {
-    val message: String get() = AutoNext.message(timer, next)
+    /** 已经自动翻到下一步就不响铃也不弹窗：人在炒菜腾不出手点，看一眼屏幕就知道到哪步了 */
+    val silent: Boolean get() = next != null
+
+    /** 响铃时弹窗和通知里的那句话 */
+    val message: String get() = "第 ${timer.stepIndex + 1} 步的时间到了"
 }

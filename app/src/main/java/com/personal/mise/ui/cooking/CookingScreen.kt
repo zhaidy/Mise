@@ -305,7 +305,7 @@ private fun RecipePager(
             onSaved = { scope.launch { snackbar.showSnackbar(it) } },
         )
     }
-    // 计时到点是只响铃，还是自动翻到下一步接着计时；记在本机，下次还是这个
+    // 计时到点是只响铃，还是不响铃、自动翻到下一步接着计时；记在本机，下次还是这个
     var autoNext by rememberSavedView("timer_auto_next")
 
     Column(modifier.fillMaxSize()) {
@@ -739,7 +739,7 @@ private fun StepPage(
                     modifier = Modifier,
                 )
                 Text(
-                    if (autoNext) "到点响铃并翻到下一步，下一步有时间就接着计时" else "到点只响铃，停在这一步",
+                    if (autoNext) "到点不响铃，直接翻到下一步，下一步有时间就接着计时" else "到点只响铃，停在这一步",
                     fontSize = 14.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(horizontal = 8.dp),

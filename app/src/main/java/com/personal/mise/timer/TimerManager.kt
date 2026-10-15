@@ -29,7 +29,7 @@ data class CookingTimer(
     val totalSeconds: Int,
     /** SystemClock.elapsedRealtime() 时间点 */
     val endAtElapsed: Long,
-    /** 到点后自动跳到下一步，下一步有时间就接着计时；否则只响铃 */
+    /** 到点后不响铃，自动跳到下一步，下一步有时间就接着计时；否则只响铃 */
     val autoNext: Boolean = false,
 ) {
     fun remainingSeconds(nowElapsed: Long = SystemClock.elapsedRealtime()): Long =
@@ -46,7 +46,7 @@ class TimerManager(private val context: Context, private val repository: RecipeR
     val timers: StateFlow<List<CookingTimer>> = _timers.asStateFlow()
 
     private val _finished = MutableSharedFlow<TimerFinished>(extraBufferCapacity = 16)
-    /** 计时结束事件，App 在前台时用来弹窗 */
+    /** 要响铃的计时结束事件，App 在前台时用来弹窗；自动翻到下一步的不发 */
     val finished: SharedFlow<TimerFinished> = _finished.asSharedFlow()
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -104,6 +104,8 @@ class TimerManager(private val context: Context, private val repository: RecipeR
     private fun finish(timer: CookingTimer, next: NextStep?) {
         _timers.update { list -> list.filterNot { it.id == timer.id } }
         val event = TimerFinished(timer, next)
+        // 翻成了就悄悄翻过去；没翻成（最后一步、人已经翻到别处）照常响铃，免得错过时间
+        if (event.silent) return
         Notifications.showFinished(context, event)
         _finished.tryEmit(event)
     }

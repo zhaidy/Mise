@@ -4,8 +4,11 @@ import com.personal.mise.data.Step
 import com.personal.mise.timer.AutoNext
 import com.personal.mise.timer.CookingTimer
 import com.personal.mise.timer.NextStep
+import com.personal.mise.timer.TimerFinished
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AutoNextTest {
@@ -40,13 +43,18 @@ class AutoNextTest {
     }
 
     @Test
-    fun `提示说清楚跳到哪步、接着计多久`() {
+    fun `翻到下一步了就不响铃不弹窗`() {
         val timer = CookingTimer(1, 1, "红烧肉", 1, 900, 0, autoNext = true)
-        assertEquals("第 2 步的时间到了", AutoNext.message(timer, null))
-        assertEquals("第 2 步的时间到了，已跳到第 4 步", AutoNext.message(timer, NextStep(3, null)))
-        assertEquals(
-            "第 2 步的时间到了，已跳到第 3 步，接着计时 2 分钟",
-            AutoNext.message(timer, NextStep(2, 120)),
-        )
+        assertTrue(TimerFinished(timer, NextStep(2, 120)).silent)
+        assertTrue(TimerFinished(timer, NextStep(3, null)).silent)
+    }
+
+    @Test
+    fun `没翻成或者只是闹钟就照常响铃`() {
+        val auto = CookingTimer(1, 1, "红烧肉", 1, 900, 0, autoNext = true)
+        val alarm = CookingTimer(2, 1, "红烧肉", 1, 900, 0)
+        assertFalse(TimerFinished(auto, null).silent)
+        assertFalse(TimerFinished(alarm, null).silent)
+        assertEquals("第 2 步的时间到了", TimerFinished(alarm, null).message)
     }
 }
