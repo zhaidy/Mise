@@ -33,16 +33,21 @@ class ExtraShopping(context: Context) {
     /** 还在清单上的：没买的在前，各自先加的在前 */
     val items: StateFlow<List<ExtraItem>> = _items.asStateFlow()
 
-    /** 加一样；清单上已经有同名的就不再加，买过的重新算没买 */
-    fun add(name: String) {
-        val clean = name.trim()
-        if (clean.isEmpty()) return
+    /** 加几样；清单上已经有同名的就不再加，买过的重新算没买 */
+    fun add(names: List<String>) {
         val now = System.currentTimeMillis()
-        val same = _items.value.firstOrNull { ShoppingList.keyOf(it.name) == ShoppingList.keyOf(clean) }
-        when {
-            same == null -> write(listOf(ExtraItem(UUID.randomUUID().toString(), clean, false, now, now)))
-            same.bought -> write(listOf(same.copy(bought = false, updatedAt = now)))
-        }
+        val current = _items.value.associateBy { ShoppingList.keyOf(it.name) }
+        val changed = names.map { it.trim() }.filter { it.isNotEmpty() }.distinctBy { ShoppingList.keyOf(it) }
+            .mapIndexedNotNull { i, name ->
+                val same = current[ShoppingList.keyOf(name)]
+                when {
+                    // 一次加好几样时 addedAt 错开一点，别的手机上也按贴进来的顺序排
+                    same == null -> ExtraItem(UUID.randomUUID().toString(), name, false, now + i, now)
+                    same.bought -> same.copy(bought = false, updatedAt = now)
+                    else -> null
+                }
+            }
+        if (changed.isNotEmpty()) write(changed)
     }
 
     fun toggle(id: String) {
