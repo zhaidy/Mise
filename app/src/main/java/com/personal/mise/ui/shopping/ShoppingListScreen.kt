@@ -30,6 +30,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.personal.mise.data.RecipeFull
@@ -170,12 +171,13 @@ fun ShoppingListScreen(planFrom: String?, planDays: Int, onBack: (() -> Unit)?) 
             }
         },
     ) { padding ->
+        // 顶上留出标题的位置再放列表，往上滚时不会从标题底下透出来
         LazyColumn(
-            Modifier.fillMaxSize(),
+            Modifier.fillMaxSize().padding(top = padding.calculateTopPadding()),
             contentPadding = PaddingValues(
                 start = 20.dp,
                 end = 20.dp,
-                top = padding.calculateTopPadding() + 4.dp,
+                top = 4.dp,
                 bottom = padding.calculateBottomPadding() + 24.dp,
             ),
             verticalArrangement = Arrangement.spacedBy(14.dp),
@@ -302,7 +304,8 @@ private fun ExtraGroup(
                 text,
                 { text = it },
                 Modifier.weight(1f),
-                placeholder = { Text("纸巾、牛奶…一次贴一串也行") },
+                // 提示只占一行，字大时也不把输入框撑高
+                placeholder = { Text("纸巾、牛奶…", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 maxLines = 5,
                 shape = FieldShape,
                 colors = miseFieldColors(),
@@ -339,14 +342,16 @@ private fun ExtraGroup(
                 )
             }
         }
-        if (items.isNotEmpty()) {
-            Text(
-                "勾上是买到了，长按删掉",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(bottom = 4.dp),
-            )
-        }
+        Text(
+            when {
+                items.isNotEmpty() -> "勾上是买到了，长按删掉"
+                readPhoto != null -> "可以一次贴一串，也可以拍照认手写的清单"
+                else -> "可以一次贴一串，按换行或顿号分开"
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(bottom = 4.dp),
+        )
     }
 }
 
