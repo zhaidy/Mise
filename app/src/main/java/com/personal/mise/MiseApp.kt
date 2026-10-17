@@ -22,6 +22,7 @@ import com.personal.mise.ai.AiRecipeEditor
 import com.personal.mise.ai.AiRecipeReviewer
 import com.personal.mise.ai.AiRecipeTranslator
 import com.personal.mise.ai.AiShoppingOrganizer
+import com.personal.mise.ai.AiShoppingReader
 import com.personal.mise.ai.AiSettings
 import com.personal.mise.ai.AiStepSplitter
 import com.personal.mise.ai.AiStepTimer
@@ -133,6 +134,7 @@ class MiseApp : Application() {
     val substituter: AiSubstituter by lazy { AiSubstituter(ai) }
     val cookFeedback: AiCookFeedback by lazy { AiCookFeedback(ai) }
     val shoppingOrganizer: AiShoppingOrganizer by lazy { AiShoppingOrganizer(ai) }
+    val shoppingReader: AiShoppingReader by lazy { AiShoppingReader(ai) }
     /** AI 整理过的购物清单，按清单内容记着，这次运行里回来看不用再等 AI */
     val shoppingGroups = mutableMapOf<List<String>, List<ShoppingList.AiGroup>>()
     val noteOrganizer: AiRecipeOrganizer by lazy { AiRecipeOrganizer(ai) }
