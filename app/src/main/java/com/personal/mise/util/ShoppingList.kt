@@ -27,6 +27,12 @@ object ShoppingList {
         /** 家里有：这一项勾过，或者合进来的每一样都勾过 */
         fun ownedIn(have: Set<String>): Boolean = key in have || memberKeys.all { it in have }
 
+        /**
+         * 勾或取消时记的名字：合成后的名字加原来那几样的名字。只记合成后的名字的话，
+         * 共享厨房里没整理过的手机、或者重开 app 没了 AI 分组，都认不出来。
+         */
+        val keys: Set<String> get() = memberKeys + key
+
         /** 几道菜加起来的量，如「共 5个」「共 350克 + 适量」；加不起来（只有一道菜、都是「适量」）时为空 */
         val total: String
             get() = if (uses.size < 2) "" else ShoppingList.total(uses.map { it.amount })

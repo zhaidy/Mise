@@ -62,6 +62,14 @@ class AiShoppingOrganizerTest {
     }
 
     @Test
+    fun tickingMergedItemAlsoTicksOriginals() {
+        // 另一台手机没整理过，看到的还是原来的「葱」「葱花」，也得算家里有
+        val onion = ShoppingList.regroup(items, listOf(AiGroup("小葱", "蔬菜水果", listOf(1, 2)))).first().items.single()
+        assertEquals(setOf("小葱", "葱", "葱花"), onion.keys)
+        assertTrue(items.filter { it.name in setOf("葱", "葱花") }.all { it.ownedIn(onion.keys) })
+    }
+
+    @Test
     fun sameNameFromTwoGroupsBecomesOneItem() {
         val groups = ShoppingList.regroup(items, listOf(AiGroup("葱", "蔬菜水果", listOf(1)), AiGroup("葱", "蔬菜水果", listOf(2))))
         assertEquals(1, groups.first { it.section == "蔬菜水果" }.items.size)
