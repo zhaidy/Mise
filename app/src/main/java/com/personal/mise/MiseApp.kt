@@ -35,6 +35,7 @@ import com.personal.mise.ai.SwitchableAiClient
 import com.personal.mise.chat.ChatSessions
 import com.personal.mise.backup.BackupManager
 import com.personal.mise.data.CalorieBudget
+import com.personal.mise.data.ExtraShopping
 import com.personal.mise.data.MiseDatabase
 import com.personal.mise.data.Pantry
 import com.personal.mise.data.RecipeRepository
@@ -70,6 +71,7 @@ class MiseApp : Application() {
     val updater: UpdateChecker by lazy { UpdateChecker(this) }
     val backup: BackupManager by lazy { BackupManager(this, database) }
     val pantry: Pantry by lazy { Pantry(this) }
+    val extraShopping: ExtraShopping by lazy { ExtraShopping(this) }
     val calorieBudget: CalorieBudget by lazy { CalorieBudget(this) }
     val aiUsage: AiUsage by lazy { AiUsage(this) }
     private val cellular: CellularNetwork by lazy { CellularNetwork(this) }
@@ -151,7 +153,7 @@ class MiseApp : Application() {
         database = MiseDatabase.create(this)
         repository = RecipeRepository(database, images)
         timers = TimerManager(this, repository)
-        kitchen = KitchenSync(this, repository, images, aiSettings, calorieBudget, pantry, appScope).also { it.start() }
+        kitchen = KitchenSync(this, repository, images, aiSettings, calorieBudget, pantry, extraShopping, appScope).also { it.start() }
         Notifications.createChannels(this)
         appScope.launch { updater.cleanup() }
     }

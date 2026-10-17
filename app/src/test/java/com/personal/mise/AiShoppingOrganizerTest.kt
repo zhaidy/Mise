@@ -84,6 +84,14 @@ class AiShoppingOrganizerTest {
     }
 
     @Test
+    fun shareTextAddsExtrasLast() {
+        val groups = ShoppingList.regroup(items, listOf(AiGroup("小葱", "蔬菜水果", listOf(1, 2))))
+        val text = ShoppingList.shareText(groups.flatMap { it.items }, groups, listOf("纸巾", "牛奶"))
+        assertTrue(text.endsWith("【另外要买】\n□ 纸巾\n□ 牛奶"))
+        assertEquals("购物清单\n□ 纸巾", ShoppingList.shareText(emptyList(), extras = listOf("纸巾")))
+    }
+
+    @Test
     fun parseResponse() {
         val reply = JSONObject("""{"groups":[{"name":"小葱","section":"蔬菜水果","items":[2,3]}]}""")
         assertEquals(listOf(AiGroup("小葱", "蔬菜水果", listOf(1, 2))), AiShoppingOrganizer.parseResponse(reply, items))

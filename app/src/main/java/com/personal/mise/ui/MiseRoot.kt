@@ -72,6 +72,7 @@ import com.personal.mise.ui.list.RecipeListScreen
 import com.personal.mise.ui.plan.PlanScreen
 import com.personal.mise.ui.prep.PrepListScreen
 import com.personal.mise.ui.shopping.ShoppingListScreen
+import com.personal.mise.util.DayText
 import com.personal.mise.ui.theme.LocalMiseColors
 import com.personal.mise.ui.today.TodayScreen
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -90,6 +91,8 @@ object Routes {
     const val PREP = "prep"
     const val SHOPPING = "shopping"
     const val PLAN = "plan"
+    /** 底部「购物清单」那一格：今天起要做的菜要买的，加上自己加的 */
+    const val CART = "cart"
     /** 某天计划的菜的备料清单 */
     fun prep(date: String) = "prep?date=$date"
     /** 从 from 起几天计划的菜要买什么 */
@@ -197,7 +200,7 @@ fun MiseRoot(navRequests: MutableStateFlow<NavRequest?>) {
         )
     }
 
-    val tabRoute = route == Routes.RECIPES || route == Routes.TODAY || route == Routes.PLAN
+    val tabRoute = route == Routes.RECIPES || route == Routes.TODAY || route == Routes.PLAN || route == Routes.CART
 
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
@@ -225,6 +228,14 @@ fun MiseRoot(navRequests: MutableStateFlow<NavRequest?>) {
                         icon = MiseIcons.Calendar,
                         label = "日历",
                         onClick = { nav.switchTab(Routes.PLAN) },
+                    )
+                    val extras by app.extraShopping.items.collectAsStateWithLifecycle()
+                    TabPill(
+                        selected = route == Routes.CART,
+                        icon = MiseIcons.Cart,
+                        label = "购物清单",
+                        badge = extras.count { !it.bought }.takeIf { it > 0 },
+                        onClick = { nav.switchTab(Routes.CART) },
                     )
                 }
             }
@@ -258,6 +269,9 @@ fun MiseRoot(navRequests: MutableStateFlow<NavRequest?>) {
                     onShopping = { from, days -> nav.navigate(Routes.shopping(from, days)) },
                     onToday = { nav.switchTab(Routes.TODAY) },
                 )
+            }
+            composable(Routes.CART) {
+                ShoppingListScreen(planFrom = remember { DayText.today() }, planDays = 1, onBack = null)
             }
             composable(
                 "detail/{id}",
