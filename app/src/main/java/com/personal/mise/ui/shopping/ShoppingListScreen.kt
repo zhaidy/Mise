@@ -41,7 +41,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import com.personal.mise.ui.common.CheckRow
 import com.personal.mise.ui.common.CircleIconButton
-import com.personal.mise.ui.common.EmptyState
 import com.personal.mise.ui.common.MiseHeader
 import com.personal.mise.ui.common.MiseIcons
 import com.personal.mise.ui.common.SoftCard
@@ -63,10 +62,20 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.flowOf
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.ui.text.input.ImeAction
+import com.personal.mise.data.ExtraItem
+import com.personal.mise.ui.common.FieldShape
+import com.personal.mise.ui.common.miseFieldColors
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ShoppingListScreen(planFrom: String?, planDays: Int, onBack: () -> Unit) {
+/** [onBack] 为 null 时是底部「购物清单」那一格，没有返回键 */
+fun ShoppingListScreen(planFrom: String?, planDays: Int, onBack: (() -> Unit)?) {
     val app = rememberApp()
     val context = LocalContext.current
     val todayRows by app.repository.observeToday().collectAsStateWithLifecycle(emptyList())
@@ -86,6 +95,8 @@ fun ShoppingListScreen(planFrom: String?, planDays: Int, onBack: () -> Unit) {
         else combine(ids.map { app.repository.observeFull(it) }) { it.toList() }
     }.collectAsStateWithLifecycle(emptyList())
     val have by app.pantry.have.collectAsStateWithLifecycle()
+    val extras by app.extraShopping.items.collectAsStateWithLifecycle()
+    val extrasToBuy = extras.filter { !it.bought }
 
     val sources = rows.flatMap { row ->
         val full = fulls.firstOrNull { it?.recipe?.id == row.recipeId } ?: return@flatMap emptyList()
@@ -135,14 +146,14 @@ fun ShoppingListScreen(planFrom: String?, planDays: Int, onBack: () -> Unit) {
     Scaffold(
         topBar = {
             MiseHeader("购物清单", eyebrow = planFrom?.let { planLabel(it, days) }, onBack = onBack) {
-                if (toBuy.isNotEmpty()) {
+                if (toBuy.isNotEmpty() || extrasToBuy.isNotEmpty()) {
                     CircleIconButton(
                         MiseIcons.Share,
                         "发送要买的",
                         onClick = {
                             val send = Intent(Intent.ACTION_SEND)
                                 .setType("text/plain")
-                                .putExtra(Intent.EXTRA_TEXT, ShoppingList.shareText(toBuy, sections))
+                                .putExtra(Intent.EXTRA_TEXT, ShoppingList.shareText(toBuy, sections, extrasToBuy.map { it.name }))
                             context.startActivity(Intent.createChooser(send, "发送购物清单"))
                         },
                     )
@@ -150,25 +161,6 @@ fun ShoppingListScreen(planFrom: String?, planDays: Int, onBack: () -> Unit) {
             }
         },
     ) { padding ->
-        if (items.isEmpty()) {
-            Column(Modifier.padding(padding)) {
-                if (planFrom != null) DaysSwitch(days, { days = it }, Modifier.padding(horizontal = 20.dp))
-                EmptyState(
-                    "购",
-                    when {
-                        rows.isNotEmpty() -> "还没有用料"
-                        planFrom != null -> "这几天还没排菜"
-                        else -> "今日菜单是空的"
-                    },
-                    when {
-                        rows.isNotEmpty() -> "这些菜还没有填用料。"
-                        planFrom != null -> "在「日历」里给这几天加几道菜。"
-                        else -> "先在菜谱里挑几道菜加入今日菜单。"
-                    },
-                )
-            }
-            return@Scaffold
-        }
         LazyColumn(
             Modifier.fillMaxSize(),
             contentPadding = PaddingValues(
@@ -185,11 +177,17 @@ fun ShoppingListScreen(planFrom: String?, planDays: Int, onBack: () -> Unit) {
             item(key = "hint") {
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text(
-                        if (toBuy.isEmpty()) "都有了，不用买" else "要买 ${toBuy.size} 样。家里有的勾上，会挪到下面，下次也记得。",
+                        when {
+                            rows.isNotEmpty() && items.isEmpty() -> "这些菜还没有填用料。别的要买的在下面自己加。"
+                            items.isEmpty() && planFrom != null -> "这几天还没排菜。别的要买的在下面自己加。"
+                            items.isEmpty() -> "今日菜单是空的。别的要买的在下面自己加。"
+                            toBuy.isEmpty() -> "菜里要用的都有了，不用买"
+                            else -> "菜里要买 ${toBuy.size} 样。家里有的勾上，会挪到下面，下次也记得。"
+                        },
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (items.isNotEmpty()) Row(verticalAlignment = Alignment.CenterVertically) {
                         when {
                             sections != null -> TextButton(onClick = { aiView = false; aiMessage = null }) { Text("看原来的清单") }
                             app.shoppingGroups[cacheKey] != null -> TextButton(onClick = { aiView = true }) { Text("看 AI 整理的") }
@@ -203,6 +201,14 @@ fun ShoppingListScreen(planFrom: String?, planDays: Int, onBack: () -> Unit) {
                         Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
+            }
+            item(key = "extras") {
+                ExtraGroup(
+                    extras,
+                    onAdd = { app.extraShopping.add(it) },
+                    onToggle = { app.extraShopping.toggle(it.id) },
+                    onRemove = { list -> app.extraShopping.remove(list.map { it.id }) },
+                )
             }
             if (toBuy.isNotEmpty()) {
                 // AI 整理过就按超市区域一组一组列，没整理过就是一张「要买」
@@ -231,6 +237,65 @@ fun ShoppingListScreen(planFrom: String?, planDays: Int, onBack: () -> Unit) {
                     }
                 }
             }
+        }
+    }
+}
+
+/** 自己加的要买的东西：顶上一个输入框，勾上是买到了，长按删掉 */
+@Composable
+private fun ExtraGroup(
+    items: List<ExtraItem>,
+    onAdd: (String) -> Unit,
+    onToggle: (ExtraItem) -> Unit,
+    onRemove: (List<ExtraItem>) -> Unit,
+) {
+    var text by rememberSaveable { mutableStateOf("") }
+    fun submit() {
+        if (text.isBlank()) return
+        onAdd(text)
+        text = ""
+    }
+    val bought = items.filter { it.bought }
+    ShoppingGroup(
+        "另外要买",
+        MaterialTheme.colorScheme.primary,
+        action = { if (bought.isNotEmpty()) TextButton(onClick = { onRemove(bought) }) { Text("清掉买好的") } },
+    ) {
+        Row(Modifier.padding(end = 8.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            OutlinedTextField(
+                text,
+                { text = it },
+                Modifier.weight(1f),
+                placeholder = { Text("纸巾、牛奶…") },
+                singleLine = true,
+                shape = FieldShape,
+                colors = miseFieldColors(),
+                // 回车直接加上、键盘不收起，好接着加下一样
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = { submit() }),
+            )
+            Spacer(Modifier.width(4.dp))
+            TextButton(onClick = { submit() }, enabled = text.isNotBlank()) { Text("加上") }
+        }
+        items.forEach { item ->
+            key(item.id) {
+                CheckRow(
+                    title = item.name,
+                    detail = "",
+                    checked = item.bought,
+                    onToggle = { onToggle(item) },
+                    accent = MaterialTheme.colorScheme.primary,
+                    onLongClick = { onRemove(listOf(item)) },
+                )
+            }
+        }
+        if (items.isNotEmpty()) {
+            Text(
+                "勾上是买到了，长按删掉",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(bottom = 4.dp),
+            )
         }
     }
 }

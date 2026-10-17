@@ -100,14 +100,16 @@ object ShoppingList {
             }
             .sortedBy { it.seasoning }
 
-    /** 发给别人或贴到备忘录的文字；按区域分好时带上区域名 */
-    fun shareText(items: List<Item>, sections: List<Group>? = null): String {
+    /** 发给别人或贴到备忘录的文字；按区域分好时带上区域名。[extras] 是自己加的，放在最后 */
+    fun shareText(items: List<Item>, sections: List<Group>? = null, extras: List<String> = emptyList()): String {
         fun line(item: Item) = "□ ${item.name}" + item.detail.let { if (it.isBlank()) "" else " $it" }
-        if (sections == null) return "购物清单\n" + items.joinToString("\n") { line(it) }
+        val extraLines = extras.map { "□ $it" }
+        if (sections == null) return (listOf("购物清单") + items.map { line(it) } + extraLines).joinToString("\n")
         val keys = items.map { it.key }.toSet()
-        return "购物清单\n" + sections.mapNotNull { group ->
+        val groups = sections.mapNotNull { group ->
             group.items.filter { it.key in keys }.takeIf { it.isNotEmpty() }?.let { "【${group.section}】\n" + it.joinToString("\n") { item -> line(item) } }
-        }.joinToString("\n")
+        } + listOfNotNull(extraLines.takeIf { it.isNotEmpty() }?.let { "【另外要买】\n" + it.joinToString("\n") })
+        return "购物清单\n" + groups.joinToString("\n")
     }
 
     // AI 整理

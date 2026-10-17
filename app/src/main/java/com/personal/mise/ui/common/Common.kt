@@ -462,6 +462,16 @@ object MiseIcons {
         stroke("Timer", "M12 21a8 8 0 1 0 0-16 8 8 0 0 0 0 16z", "M12 9v4l2.5 2", "M10 2h4")
     }
 
+    /** 购物车：购物清单 */
+    val Cart: ImageVector by lazy {
+        stroke(
+            "Cart",
+            "M3 4h2.5l2.2 10.5h10.6L20.5 7H6.4",
+            "M9.5 20a1 1 0 1 0 0-2 1 1 0 0 0 0 2z",
+            "M17.5 20a1 1 0 1 0 0-2 1 1 0 0 0 0 2z",
+        )
+    }
+
     /** 日历：计划和做菜记录 */
     val Calendar: ImageVector by lazy {
         stroke("Calendar", "M5 5h14a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z", "M4 10h16", "M8 3v4", "M16 3v4")
