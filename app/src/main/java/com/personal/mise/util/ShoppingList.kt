@@ -83,6 +83,21 @@ object ShoppingList {
         return "共 " + (sums.map { (u, q) -> AmountScaler.format(q) + u } + others).joinToString(" + ")
     }
 
+    /**
+     * 自己加的要买的东西，一次贴一串也行：按换行、顿号、逗号、分号拆开，去掉「□」「-」「1.」这类列表符号，
+     * 跳过「购物清单」标题和【分区】行（发出去的清单贴回来也认得）。
+     */
+    fun parseExtras(text: String): List<String> =
+        text.lines()
+            .map { it.trim().replaceFirst(LIST_MARK, "").trim() }
+            .filter { it != "购物清单" && !(it.startsWith("【") && it.endsWith("】")) }
+            .flatMap { it.split('、', '，', ',', '；', ';') }
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .distinctBy { keyOf(it) }
+
+    private val LIST_MARK = Regex("""^(?:[□☐☑✓✔•·*\-]|\[[ xX]?]|\d+[.、)）](?!\d))\s*""")
+
     /** 合并时认作同一样东西：忽略空格和大小写 */
     fun keyOf(name: String): String = name.filterNot { it.isWhitespace() }.lowercase()
 

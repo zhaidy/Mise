@@ -241,18 +241,19 @@ fun ShoppingListScreen(planFrom: String?, planDays: Int, onBack: (() -> Unit)?) 
     }
 }
 
-/** 自己加的要买的东西：顶上一个输入框，勾上是买到了，长按删掉 */
+/** 自己加的要买的东西：顶上一个输入框（可以一次贴一串），勾上是买到了，长按删掉 */
 @Composable
 private fun ExtraGroup(
     items: List<ExtraItem>,
-    onAdd: (String) -> Unit,
+    onAdd: (List<String>) -> Unit,
     onToggle: (ExtraItem) -> Unit,
     onRemove: (List<ExtraItem>) -> Unit,
 ) {
     var text by rememberSaveable { mutableStateOf("") }
     fun submit() {
-        if (text.isBlank()) return
-        onAdd(text)
+        val names = ShoppingList.parseExtras(text)
+        if (names.isEmpty()) return
+        onAdd(names)
         text = ""
     }
     val bought = items.filter { it.bought }
@@ -266,11 +267,11 @@ private fun ExtraGroup(
                 text,
                 { text = it },
                 Modifier.weight(1f),
-                placeholder = { Text("纸巾、牛奶…") },
-                singleLine = true,
+                placeholder = { Text("纸巾、牛奶…一次贴一串也行") },
+                maxLines = 5,
                 shape = FieldShape,
                 colors = miseFieldColors(),
-                // 回车直接加上、键盘不收起，好接着加下一样
+                // 软键盘上的完成键直接加上、键盘不收起，好接着加下一样；贴进来的换行照样拆成几样
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                 keyboardActions = KeyboardActions(onDone = { submit() }),
             )
