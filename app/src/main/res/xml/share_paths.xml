@@ -2,4 +2,6 @@
 <!-- 导出的菜谱、菜单图片先写到 cache/shared/，再通过 FileProvider 分享出去 -->
 <paths>
     <cache-path name="shared" path="shared/" />
+    <!-- 拍购物清单时相机把照片写到 cache/camera/ -->
+    <cache-path name="camera" path="camera/" />
 </paths>

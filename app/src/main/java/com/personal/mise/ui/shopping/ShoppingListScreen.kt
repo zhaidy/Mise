@@ -68,7 +68,16 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.ui.text.input.ImeAction
+import com.personal.mise.MiseApp
 import com.personal.mise.data.ExtraItem
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.core.content.FileProvider
+import java.io.File
 import com.personal.mise.ui.common.FieldShape
 import com.personal.mise.ui.common.miseFieldColors
 
@@ -206,6 +215,7 @@ fun ShoppingListScreen(planFrom: String?, planDays: Int, onBack: (() -> Unit)?) 
                 ExtraGroup(
                     extras,
                     onAdd = { app.extraShopping.add(it) },
+                    readPhoto = if (app.aiSettings.hasKey) { uri -> readShoppingPhoto(app, uri) } else null,
                     onToggle = { app.extraShopping.toggle(it.id) },
                     onRemove = { list -> app.extraShopping.remove(list.map { it.id }) },
                 )
@@ -248,13 +258,38 @@ private fun ExtraGroup(
     onAdd: (List<String>) -> Unit,
     onToggle: (ExtraItem) -> Unit,
     onRemove: (List<ExtraItem>) -> Unit,
+    /** 让 AI 认照片上的清单；没填 AI Key 时为 null，不显示拍照按钮 */
+    readPhoto: (suspend (Uri) -> List<String>)?,
 ) {
     var text by rememberSaveable { mutableStateOf("") }
+    var reading by remember { mutableStateOf(false) }
+    var photoMessage by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
     fun submit() {
         val names = ShoppingList.parseExtras(text)
         if (names.isEmpty()) return
         onAdd(names)
         text = ""
+        photoMessage = null
+    }
+    // 认出来的先填进输入框，看过、改过再点「加上」
+    fun read(uri: Uri) {
+        val reader = readPhoto ?: return
+        reading = true
+        photoMessage = null
+        scope.launch {
+            try {
+                val names = reader(uri)
+                text = (text.lines().filter { it.isNotBlank() } + names).joinToString("\n")
+                photoMessage = "认出 ${names.size} 样，看看对不对，再点「加上」"
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                photoMessage = (e as? ImportException)?.message ?: "AI 识别失败：${e.message ?: e.javaClass.simpleName}"
+            } finally {
+                reading = false
+            }
+        }
     }
     val bought = items.filter { it.bought }
     ShoppingGroup(
@@ -275,8 +310,22 @@ private fun ExtraGroup(
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                 keyboardActions = KeyboardActions(onDone = { submit() }),
             )
+            if (readPhoto != null) PhotoButton(enabled = !reading, onPicked = ::read)
             Spacer(Modifier.width(4.dp))
             TextButton(onClick = { submit() }, enabled = text.isNotBlank()) { Text("加上") }
+        }
+        if (reading || photoMessage != null) {
+            Row(Modifier.padding(bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (reading) {
+                    CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                    Spacer(Modifier.width(8.dp))
+                }
+                Text(
+                    if (reading) "AI 正在看照片上的清单…" else photoMessage.orEmpty(),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
         items.forEach { item ->
             key(item.id) {
@@ -298,6 +347,43 @@ private fun ExtraGroup(
                 modifier = Modifier.padding(bottom = 4.dp),
             )
         }
+    }
+}
+
+/** 拍一张或从相册选一张购物清单的照片 */
+@Composable
+private fun PhotoButton(enabled: Boolean, onPicked: (Uri) -> Unit) {
+    val context = LocalContext.current
+    var menu by remember { mutableStateOf(false) }
+    // 相机拍的照片先存在 cache/camera/，通过 FileProvider 交给相机 App
+    val photoUri = remember {
+        val file = File(context.cacheDir, "camera/shopping.jpg").apply { parentFile?.mkdirs() }
+        FileProvider.getUriForFile(context, "${context.packageName}.share", file)
+    }
+    val camera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok -> if (ok) onPicked(photoUri) }
+    val gallery = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri -> uri?.let(onPicked) }
+    Box {
+        IconButton(onClick = { menu = true }, enabled = enabled) { Icon(MiseIcons.Camera, "拍照识别购物清单") }
+        DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+            DropdownMenuItem(text = { Text("拍一张清单") }, onClick = { menu = false; camera.launch(photoUri) })
+            DropdownMenuItem(
+                text = { Text("从相册选") },
+                onClick = {
+                    menu = false
+                    gallery.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                },
+            )
+        }
+    }
+}
+
+/** 照片缩小后交给 AI 认，认完就删掉，不留在图片目录里 */
+private suspend fun readShoppingPhoto(app: MiseApp, uri: Uri): List<String> {
+    val path = app.images.importUri(uri) ?: throw ImportException("照片打不开，换一张再试")
+    return try {
+        app.shoppingReader.read(app.images.file(path).readBytes())
+    } finally {
+        app.images.delete(path)
     }
 }
 
