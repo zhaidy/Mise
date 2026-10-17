@@ -25,7 +25,7 @@ class Pantry(context: Context) {
 
     fun toggle(key: String) = mark(listOf(key), key !in _have.value)
 
-    fun add(key: String) = mark(listOf(key), true)
+    fun add(keys: Collection<String>) = mark(keys, true)
 
     /** 只把这些项重新标成没有，别的菜里勾过的不动 */
     fun clear(keys: Collection<String>) = mark(keys, false)

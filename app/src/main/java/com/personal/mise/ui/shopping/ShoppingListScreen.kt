@@ -109,7 +109,7 @@ fun ShoppingListScreen(planFrom: String?, planDays: Int, onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
 
     fun toggle(item: ShoppingList.Item) {
-        if (item.ownedIn(have)) app.pantry.clear(item.memberKeys + item.key) else app.pantry.add(item.key)
+        if (item.ownedIn(have)) app.pantry.clear(item.keys) else app.pantry.add(item.keys)
     }
 
     fun organize() {
@@ -223,7 +223,7 @@ fun ShoppingListScreen(planFrom: String?, planDays: Int, onBack: () -> Unit) {
                     ShoppingGroup(
                         "家里有",
                         MaterialTheme.colorScheme.secondary,
-                        action = { TextButton(onClick = { app.pantry.clear(owned.flatMap { it.memberKeys + it.key }) }) { Text("全部取消") } },
+                        action = { TextButton(onClick = { app.pantry.clear(owned.flatMap { it.keys }) }) { Text("全部取消") } },
                     ) {
                         owned.forEach { item ->
                             key(item.key) { ShoppingRow(item, owned = true, accent = MaterialTheme.colorScheme.secondary) { toggle(item) } }
