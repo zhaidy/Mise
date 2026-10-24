@@ -47,7 +47,7 @@ data class StepRow(
     val key: Long,
     val id: Long = 0,
     val text: String = "",
-    val image: String? = null,
+    val images: List<String> = emptyList(),
     /** 计时分钟数，空表示不计时 */
     val timerMinutes: String = "",
 )
@@ -171,7 +171,7 @@ class EditorViewModel(
                 }
                 warnings = result.warnings
                 aiOrganized = aiNote || generate || result.aiOrganized
-                addedImages += listOfNotNull(result.draft.coverImage) + result.draft.steps.mapNotNull { it.image }
+                addedImages += listOfNotNull(result.draft.coverImage) + result.draft.steps.flatMap { it.images }
                 result.draft
             }
             recipeId != 0L -> app.repository.loadDraft(recipeId) ?: throw ImportException("菜谱不存在")
@@ -187,7 +187,7 @@ class EditorViewModel(
         val result = app.importer.importPage(importText.orEmpty(), pageUrl, html)
         warnings = result.warnings
         aiOrganized = false
-        addedImages += listOfNotNull(result.draft.coverImage) + result.draft.steps.mapNotNull { it.image }
+        addedImages += listOfNotNull(result.draft.coverImage) + result.draft.steps.flatMap { it.images }
         result.draft
     }
 
@@ -259,7 +259,7 @@ class EditorViewModel(
         }
         steps.clear()
         steps += draft.steps.map {
-            StepRow(nextKey(), it.id, it.text, it.image, it.timerSeconds?.let { s -> formatMinutes(s) }.orEmpty())
+            StepRow(nextKey(), it.id, it.text, it.images, it.timerSeconds?.let { s -> formatMinutes(s) }.orEmpty())
         }
         calories = draft.calories?.toString().orEmpty()
         caloriesBasis = ingredientBasis()
@@ -319,6 +319,31 @@ class EditorViewModel(
 
     fun removeStep(index: Int) {
         steps.removeAt(index)
+    }
+
+    /** 并过的步骤：原来的编号 → 并进去的那步的编号，保存时手动调过的调料碗跟着挪过去 */
+    private val mergedSteps = mutableMapOf<Long, Long>()
+
+    /** 把这一步并到上一步：文字接在后面，图片排在后面，计时有一边空就用另一边，都有就加起来 */
+    fun mergeIntoPrevious(index: Int) {
+        if (index !in 1..steps.lastIndex) return
+        val prev = steps[index - 1]
+        val row = steps[index]
+        val text = listOf(prev.text.trim(), row.text.trim()).filter { it.isNotEmpty() }.joinToString("\n")
+        val a = prev.timerMinutes.toDoubleOrNull()?.takeIf { it > 0 }
+        val b = row.timerMinutes.toDoubleOrNull()?.takeIf { it > 0 }
+        val minutes = when {
+            a != null && b != null -> formatMinutes(((a + b) * 60).toInt())
+            a != null -> prev.timerMinutes
+            b != null -> row.timerMinutes
+            else -> ""
+        }
+        steps[index - 1] = prev.copy(text = text, images = prev.images + row.images, timerMinutes = minutes)
+        steps.removeAt(index)
+        if (row.id != 0L && prev.id != 0L) {
+            mergedSteps.replaceAll { _, into -> if (into == row.id) prev.id else into }
+            mergedSteps[row.id] = prev.id
+        }
     }
 
     val hasAiKey: Boolean get() = app.aiSettings.hasKey
@@ -523,8 +548,8 @@ class EditorViewModel(
     }
 
     /**
-     * 把现有步骤文字交给 AI 重新拆分。原来每步的图片和计时跟到拆出来的第一步；
-     * 带图的步骤对应不上时不改动，免得把图弄丢。auto = 导入时自动拆分。
+     * 把现有步骤文字交给 AI 重新拆分。原来每步的图片和计时跟到拆出来的第一步，被 AI 并掉的步骤的图跟到前一步；
+     * 带图的步骤还是找不到地方放时不改动，免得把图弄丢。auto = 导入时自动拆分。
      */
     fun aiSplitSteps() {
         viewModelScope.launch { splitSteps(auto = false) }
@@ -538,7 +563,7 @@ class EditorViewModel(
             try {
                 val old = steps.toList()
                 val result = app.stepSplitter.split(old.map { it.text })
-                val carry = AiStepSplitter.carryOver(old.map { it.image != null }, result)
+                val carry = AiStepSplitter.carryOver(old.map { it.images.isNotEmpty() }, result)
                 if (carry == null) {
                     aiMessage = "AI 拆分后对不上原来的步骤图，${if (auto) "保留了下厨房原来的步骤" else "步骤没有改动"}"
                     return@run
@@ -548,15 +573,15 @@ class EditorViewModel(
                     if (auto) aiMessage = "步骤已经改过，没有自动拆分，需要的话可以点「AI 拆分步骤」"
                     return@run
                 }
-                val fromOld = carry.entries.associate { (i, j) -> j to old[i] }
+                val fromOld = AiStepSplitter.sourcesOf(old, carry)
                 steps.clear()
                 steps += result.mapIndexed { j, s ->
                     StepRow(
                         key = nextKey(),
                         text = s.text,
-                        image = fromOld[j]?.image,
+                        images = fromOld[j].orEmpty().flatMap { it.images },
                         timerMinutes = s.timerMinutes?.let { formatMinutes((it * 60).toInt()) }
-                            ?: fromOld[j]?.timerMinutes.orEmpty(),
+                            ?: fromOld[j]?.first()?.timerMinutes.orEmpty(),
                     )
                 }
                 stepsAiSplit = true
@@ -574,8 +599,8 @@ class EditorViewModel(
         }
     }
 
-    fun removeStepImage(index: Int) {
-        steps[index] = steps[index].copy(image = null)
+    fun removeStepImage(index: Int, path: String) {
+        steps[index] = steps[index].copy(images = steps[index].images - path)
     }
 
     fun removeCover() {
@@ -593,12 +618,13 @@ class EditorViewModel(
         }
     }
 
-    fun pickStepImage(stepKey: Long, uri: Uri) {
+    /** 一次可以选好几张，排在这一步原来的图后面 */
+    fun pickStepImages(stepKey: Long, uris: List<Uri>) {
         viewModelScope.launch {
-            val path = app.images.importUri(uri) ?: return@launch
-            addedImages += path
+            val paths = uris.mapNotNull { app.images.importUri(it) }
+            addedImages += paths
             val index = steps.indexOfFirst { it.key == stepKey }
-            if (index >= 0) steps[index] = steps[index].copy(image = path)
+            if (index >= 0) steps[index] = steps[index].copy(images = steps[index].images + paths)
         }
     }
 
@@ -619,10 +645,10 @@ class EditorViewModel(
         viewModelScope.launch {
             try {
                 val draft = toDraft()
-                val id = app.repository.save(draft)
+                val id = app.repository.save(draft, mergedSteps = mergedSteps.toMap())
                 if (isImport) review?.let { app.repository.setReview(id, it) }
                 if (isImport) stepTimes?.let { app.repository.setStepTimes(id, it) }
-                val kept = listOfNotNull(draft.coverImage) + draft.steps.mapNotNull { it.image }
+                val kept = listOfNotNull(draft.coverImage) + draft.steps.flatMap { it.images }
                 (addedImages - kept.toSet()).forEach { app.images.delete(it) }
                 addedImages.clear()
                 onSaved(id)
@@ -654,7 +680,7 @@ class EditorViewModel(
         ingredients = ingredients.map { IngredientDraft(it.id, it.name, it.amount, it.kind) },
         steps = steps.map { row ->
             val seconds = row.timerMinutes.toDoubleOrNull()?.let { (it * 60).toInt() }?.takeIf { it > 0 }
-            StepDraft(row.id, row.text, row.image, seconds)
+            StepDraft(row.id, row.text, row.images, seconds)
         },
     )
 

@@ -28,7 +28,7 @@ class SyncedRecipeTest {
         ),
         steps = listOf(
             Step(id = 51, recipeId = 7, order = 0, text = "焯水", timerSeconds = 180),
-            Step(id = 52, recipeId = 7, order = 1, text = "加生抽炖", image = "images/a.jpg"),
+            Step(id = 52, recipeId = 7, order = 1, text = "加生抽炖", images = listOf("images/a.jpg", "images/b.jpg")),
         ),
         bowls = listOf(
             BowlFull(
@@ -50,6 +50,16 @@ class SyncedRecipeTest {
     fun `转成文档再读回来不变`() {
         val synced = SyncedRecipe.from(full)
         assertEquals(synced, SyncedRecipe.fromMap("u-1", firestoreLike(synced.toMap())))
+    }
+
+    @Test
+    fun `一步好几张图跟着同步，旧文档只有一张 image`() {
+        val map = SyncedRecipe.from(full).toMap()
+        assertEquals(listOf("images/a.jpg", "images/b.jpg"), SyncedRecipe.fromMap("u-1", firestoreLike(map))?.steps?.get(1)?.images)
+        @Suppress("UNCHECKED_CAST")
+        val old = map + ("steps" to (map["steps"] as List<Map<String, Any?>>).map { it - "images" })
+        val steps = SyncedRecipe.fromMap("u-1", firestoreLike(old))?.steps
+        assertEquals(listOf(emptyList(), listOf("images/a.jpg")), steps?.map { it.images })
     }
 
     @Test

@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.TypeConverters
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.personal.mise.util.DayText
@@ -23,6 +24,7 @@ import java.util.UUID
     version = MiseDatabase.VERSION,
     exportSchema = false,
 )
+@TypeConverters(StepImages::class)
 abstract class MiseDatabase : RoomDatabase() {
     abstract fun recipeDao(): RecipeDao
     abstract fun cookLogDao(): CookLogDao
@@ -30,12 +32,12 @@ abstract class MiseDatabase : RoomDatabase() {
     abstract fun chatDao(): ChatDao
 
     companion object {
-        const val VERSION = 14
+        const val VERSION = 15
         const val NAME = "mise.db"
 
         fun create(context: Context): MiseDatabase =
             Room.databaseBuilder(context, MiseDatabase::class.java, NAME)
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15)
                 .build()
     }
 }
@@ -188,5 +190,26 @@ val MIGRATION_12_13 = object : Migration(12, 13) {
 val MIGRATION_13_14 = object : Migration(13, 14) {
     override fun migrate(db: SupportSQLiteDatabase) {
         db.execSQL("ALTER TABLE recipe ADD COLUMN stepTimes TEXT")
+    }
+}
+
+/**
+ * v15：一步可以放好几张图，步骤的 image 换成 images（换行隔开）。
+ * 老版本的 SQLite 删不了列，整张表重建，编号不变，调料碗还对得上
+ */
+val MIGRATION_14_15 = object : Migration(14, 15) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS step_new (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, recipeId INTEGER NOT NULL, " +
+                "sortOrder INTEGER NOT NULL, text TEXT NOT NULL, images TEXT NOT NULL, timerSeconds INTEGER, " +
+                "FOREIGN KEY(recipeId) REFERENCES recipe(id) ON UPDATE NO ACTION ON DELETE CASCADE)"
+        )
+        db.execSQL(
+            "INSERT INTO step_new (id, recipeId, sortOrder, text, images, timerSeconds) " +
+                "SELECT id, recipeId, sortOrder, text, COALESCE(image, ''), timerSeconds FROM step"
+        )
+        db.execSQL("DROP TABLE step")
+        db.execSQL("ALTER TABLE step_new RENAME TO step")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_step_recipeId ON step (recipeId)")
     }
 }

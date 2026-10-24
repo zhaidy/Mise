@@ -6,6 +6,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -71,9 +73,9 @@ fun RecipeEditor(
     val pickCover = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         uri?.let { vm.pickCover(it) }
     }
-    val pickStep = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+    val pickStep = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(MAX_STEP_IMAGES)) { uris ->
         val key = pickingStepKey
-        if (uri != null && key != null) vm.pickStepImage(key, uri)
+        if (uris.isNotEmpty() && key != null) vm.pickStepImages(key, uris)
         pickingStepKey = null
     }
     // 填完 Key 后要接着做的 AI 操作：split 拆分步骤、estimate 估算用量和克重、calories 估算热量、review 评价菜谱、fix 照评价修改
@@ -355,18 +357,37 @@ fun RecipeEditor(
                         TextButton(onClick = {
                             pickingStepKey = row.key
                             pickStep.launch(imageOnly)
-                        }) { Text(if (row.image == null) "加图片" else "换图片") }
+                        }) { Text(if (row.images.isEmpty()) "加图片" else "再加图片") }
                     }
-                    if (row.image != null) {
+                    if (row.images.size == 1) {
+                        val path = row.images.single()
                         Box {
                             LocalImage(
-                                row.image,
+                                path,
                                 Modifier.fillMaxWidth().padding(top = 8.dp, end = 8.dp).aspectRatio(4f / 3f).clip(RoundedCornerShape(16.dp)),
                             )
-                            IconButton(onClick = { vm.removeStepImage(index) }, modifier = Modifier.align(Alignment.TopEnd)) {
+                            IconButton(onClick = { vm.removeStepImage(index, path) }, modifier = Modifier.align(Alignment.TopEnd)) {
                                 Icon(Icons.Filled.Close, contentDescription = "去掉图片")
                             }
                         }
+                    } else if (row.images.size > 1) {
+                        // 好几张图时排成一行，左右划着看
+                        Row(
+                            Modifier.fillMaxWidth().padding(top = 8.dp).horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            row.images.forEach { path ->
+                                Box {
+                                    LocalImage(path, Modifier.width(160.dp).aspectRatio(4f / 3f).clip(RoundedCornerShape(12.dp)))
+                                    IconButton(onClick = { vm.removeStepImage(index, path) }, modifier = Modifier.align(Alignment.TopEnd)) {
+                                        Icon(Icons.Filled.Close, contentDescription = "去掉图片")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if (index > 0) {
+                        TextButton(onClick = { vm.mergeIntoPrevious(index) }) { Text("并到上一步") }
                     }
                 }
             }
@@ -387,3 +408,5 @@ private fun EditorSection(title: String, hint: String) {
     SectionHeader(title, Modifier.padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 4.dp), hint = hint)
 }
 
+/** 给一步加图片时一次最多选几张 */
+private const val MAX_STEP_IMAGES = 9

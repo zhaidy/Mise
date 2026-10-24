@@ -165,7 +165,7 @@ object ShareImage {
                     body = step.text,
                     bowls = full.bowlsForStep(step.id).map { b -> b.bowl.label to b.items.map { it.name to amount(it.amountText, factor) } },
                     timer = step.timerSeconds?.let { "计时 ${TimeText.describe(it)}" },
-                    image = imageFile(images, step.image)?.let { decode(it, CONTENT.toInt()) },
+                    images = step.images.mapNotNull { path -> imageFile(images, path)?.let { decode(it, CONTENT.toInt()) } },
                 )
             }
         }
@@ -502,7 +502,7 @@ object ShareImage {
         }
 
         /** 一步：左边黑底圆圈编号，右边文字、这一步倒的调料碗、计时、步骤图 */
-        fun step(number: Int, body: String, bowls: List<Pair<String, List<Pair<String, String>>>>, timer: String?, image: Bitmap?) {
+        fun step(number: Int, body: String, bowls: List<Pair<String, List<Pair<String, String>>>>, timer: String?, images: List<Bitmap>) {
             val r = 30f
             val textX = PAD + 2 * r + 28f
             val textW = WIDTH - PAD - textX
@@ -529,7 +529,7 @@ object ShareImage {
                 canvas.drawText(it, textX + 26f, save + 30f - (f.ascent + f.descent) / 2, p)
                 y = save + 60f
             }
-            image?.let {
+            images.forEach {
                 y += 18f
                 val h = textW * 3f / 4f
                 drawCropped(canvas, it, RectF(textX, y, textX + textW, y + h), 28f)

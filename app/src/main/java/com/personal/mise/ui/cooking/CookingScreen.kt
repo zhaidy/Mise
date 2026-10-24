@@ -551,8 +551,8 @@ internal fun LazyListScope.recipeOverviewItems(
                                     content = MaterialTheme.colorScheme.onTertiaryContainer,
                                 )
                             }
-                            if (app.hasImage(step.image)) {
-                                LocalImage(step.image, Modifier.fillMaxWidth().aspectRatio(4f / 3f).clip(RoundedCornerShape(16.dp)))
+                            step.images.filter { app.hasImage(it) }.forEach {
+                                LocalImage(it, Modifier.fillMaxWidth().aspectRatio(4f / 3f).clip(RoundedCornerShape(16.dp)))
                             }
                         }
                     }
@@ -687,8 +687,8 @@ private fun StepPage(
 
         Text(step.text, fontSize = BodySize, lineHeight = 38.sp, fontWeight = FontWeight.Medium)
 
-        if (app.hasImage(step.image)) {
-            LocalImage(step.image, Modifier.fillMaxWidth().aspectRatio(4f / 3f).clip(RoundedCornerShape(20.dp)))
+        step.images.filter { app.hasImage(it) }.forEach {
+            LocalImage(it, Modifier.fillMaxWidth().aspectRatio(4f / 3f).clip(RoundedCornerShape(20.dp)))
         }
 
         timers.forEach { timer ->

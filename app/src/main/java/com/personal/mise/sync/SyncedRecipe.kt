@@ -52,7 +52,10 @@ data class SyncedRecipe(
         "review" to review,
         "stepTimes" to stepTimes,
         "ingredients" to ingredients.map { mapOf("name" to it.name, "amountText" to it.amountText, "kind" to it.kind) },
-        "steps" to steps.map { mapOf("text" to it.text, "image" to it.image, "timerSeconds" to it.timerSeconds) },
+        // image 只放第一张，给还不认 images 的旧版本看
+        "steps" to steps.map {
+            mapOf("text" to it.text, "images" to it.images, "image" to it.images.firstOrNull(), "timerSeconds" to it.timerSeconds)
+        },
         "bowls" to bowls.map { bowl ->
             mapOf(
                 "label" to bowl.label,
@@ -88,7 +91,7 @@ data class SyncedRecipe(
                 review = r.review,
                 stepTimes = r.stepTimes,
                 ingredients = full.ingredients.map { SyncedIngredient(it.name, it.amountText, it.kind) },
-                steps = full.steps.map { SyncedStep(it.text, it.image, it.timerSeconds) },
+                steps = full.steps.map { SyncedStep(it.text, it.images, it.timerSeconds) },
                 bowls = full.bowls.map { b ->
                     SyncedBowl(
                         label = b.bowl.label,
@@ -108,7 +111,9 @@ data class SyncedRecipe(
                 SyncedIngredient(it["name"] as String, it["amountText"] as String, it["kind"] as String)
             }
             val steps = list(data["steps"]).map {
-                SyncedStep(it["text"] as String, it["image"] as String?, (it["timerSeconds"] as Number?)?.toInt())
+                // 旧版本写的文档只有一张 image
+                val images = (it["images"] as List<*>?)?.map { path -> path as String } ?: listOfNotNull(it["image"] as String?)
+                SyncedStep(it["text"] as String, images, (it["timerSeconds"] as Number?)?.toInt())
             }
             val bowls = list(data["bowls"]).map { bowl ->
                 SyncedBowl(
@@ -152,7 +157,7 @@ data class SyncedRecipe(
 
 data class SyncedIngredient(val name: String, val amountText: String, val kind: String)
 
-data class SyncedStep(val text: String, val image: String?, val timerSeconds: Int?)
+data class SyncedStep(val text: String, val images: List<String>, val timerSeconds: Int?)
 
 data class SyncedBowl(val label: String, val stepIndex: Int?, val items: List<SyncedBowlItem>)
 

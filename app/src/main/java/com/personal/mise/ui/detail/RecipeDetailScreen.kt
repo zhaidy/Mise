@@ -538,8 +538,8 @@ fun RecipeDetailScreen(
                                         content = MaterialTheme.colorScheme.onTertiaryContainer,
                                     )
                                 }
-                                if (app.hasImage(step.image)) {
-                                    LocalImage(step.image, Modifier.fillMaxWidth().aspectRatio(4f / 3f).clip(RoundedCornerShape(16.dp)))
+                                step.images.filter { app.hasImage(it) }.forEach {
+                                    LocalImage(it, Modifier.fillMaxWidth().aspectRatio(4f / 3f).clip(RoundedCornerShape(16.dp)))
                                 }
                             }
                         }
