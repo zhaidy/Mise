@@ -47,16 +47,27 @@ class AiStepSplitter(private val ai: AiClient) {
 
         /**
          * 原来第 i 步的图片、计时该放到拆分后的哪一步：来自这一步的第一个新步骤。
-         * 原来只有一步时直接放到第一步。返回 null 表示有带图的原步骤找不到对应的新步骤（图会丢）。
+         * 带图的原步骤没有新步骤来自它时，多半是并进了前一步，图跟着放过去，排在那一步原来的图后面。
+         * 原来只有一步时直接放到第一步。返回 null 表示有带图的原步骤找不到地方放（图会丢）。
          */
         fun carryOver(oldHasImage: List<Boolean>, steps: List<AiStep>): Map<Int, Int>? {
             if (oldHasImage.size <= 1) return if (steps.isEmpty()) emptyMap() else mapOf(0 to 0)
             val map = mutableMapOf<Int, Int>()
+            var previous: Int? = null
             oldHasImage.indices.forEach { i ->
                 val j = steps.indexOfFirst { it.source == i + 1 }
-                if (j >= 0) map[i] = j else if (oldHasImage[i]) return null
+                if (j >= 0) {
+                    map[i] = j
+                    previous = j
+                } else if (oldHasImage[i]) {
+                    map[i] = previous ?: return null
+                }
             }
             return map
         }
+
+        /** 拆分后每一步对应的原步骤，按原来的顺序；第一个是它真正来自的那步（编号、计时跟它走），后面的是并进来的 */
+        fun <T> sourcesOf(old: List<T>, carry: Map<Int, Int>): Map<Int, List<T>> =
+            carry.entries.sortedBy { it.key }.groupBy({ it.value }, { old[it.key] })
     }
 }

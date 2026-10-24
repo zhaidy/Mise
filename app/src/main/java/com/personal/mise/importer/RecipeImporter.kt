@@ -201,7 +201,7 @@ class RecipeImporter(
                     kind = if (SeasoningDictionary.isSeasoning(name)) IngredientKind.SEASONING else IngredientKind.MAIN,
                 )
             },
-            steps = text.steps.mapIndexed { i, step -> StepDraft(text = step, image = stepImages[i]) },
+            steps = text.steps.mapIndexed { i, step -> StepDraft(text = step, images = listOfNotNull(stepImages[i])) },
         )
         return ImportResult(draft, warnings)
     }

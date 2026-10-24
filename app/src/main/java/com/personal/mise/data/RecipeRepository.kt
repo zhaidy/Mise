@@ -29,7 +29,7 @@ data class IngredientDraft(
 data class StepDraft(
     val id: Long = 0,
     val text: String = "",
-    val image: String? = null,
+    val images: List<String> = emptyList(),
     val timerSeconds: Int? = null,
 )
 
@@ -123,15 +123,16 @@ class RecipeRepository(
             tags = full.recipe.tagList,
             original = RecipeText.fromJson(full.recipe.original),
             ingredients = full.ingredients.map { IngredientDraft(it.id, it.name, it.amountText, it.kind) },
-            steps = full.steps.map { StepDraft(it.id, it.text, it.image, it.timerSeconds) },
+            steps = full.steps.map { StepDraft(it.id, it.text, it.images, it.timerSeconds) },
         )
     }
 
     /**
      * 保存菜谱，返回 id。没手动调整过调料碗的菜谱会重新自动生成调料碗。
      * 不再用到的图片会删掉，[keepImages] 里的除外（撤销时还要用）。
+     * [mergedSteps] 是编辑时并掉的步骤（原来的编号 → 并进去的那步），手动调过的调料碗跟着挪过去。
      */
-    suspend fun save(draft: RecipeDraft, keepImages: Set<String> = emptySet()): Long {
+    suspend fun save(draft: RecipeDraft, keepImages: Set<String> = emptySet(), mergedSteps: Map<Long, Long> = emptyMap()): Long {
         val oldImages = if (draft.id != 0L) imagesOf(draft.id) else emptySet()
         val id = db.withTransaction {
             val recipeId = if (draft.id == 0L) {
@@ -177,11 +178,12 @@ class RecipeRepository(
             dao.deleteIngredientsExcept(recipeId, keepIngredients)
 
             val keepSteps = draft.steps
-                .filter { it.text.isNotBlank() || it.image != null }
+                .filter { it.text.isNotBlank() || it.images.isNotEmpty() }
                 .mapIndexed { index, d ->
-                    val row = Step(d.id, recipeId, index, d.text.trim(), d.image, d.timerSeconds)
+                    val row = Step(d.id, recipeId, index, d.text.trim(), d.images, d.timerSeconds)
                     if (d.id == 0L) dao.insertStep(row) else { dao.upsertStep(row); d.id }
                 }
+            mergedSteps.forEach { (from, into) -> if (into in keepSteps) dao.moveBowlsToStep(recipeId, from, into) }
             dao.deleteStepsExcept(recipeId, keepSteps)
 
             if (dao.get(recipeId)?.bowlsManual != true) {
@@ -212,7 +214,7 @@ class RecipeRepository(
 
     /** 恢复到 [snapshot] 时的样子；中间删掉的用料、步骤按原来的编号加回去，调料碗才对得上 */
     suspend fun restore(snapshot: RecipeSnapshot) {
-        save(snapshot.draft, keepImages = snapshot.draft.steps.mapNotNull { it.image }.toSet())
+        save(snapshot.draft, keepImages = snapshot.draft.steps.flatMap { it.images }.toSet())
         snapshot.manualBowls?.let { saveBowls(snapshot.draft.id, it) }
     }
 
@@ -282,7 +284,7 @@ class RecipeRepository(
 
     private suspend fun imagesOf(id: Long): Set<String> {
         val recipe = dao.get(id) ?: return emptySet()
-        return (listOf(recipe.coverImage) + dao.getSteps(id).map { it.image }).filterNotNull().toSet()
+        return (listOfNotNull(recipe.coverImage) + dao.getSteps(id).flatMap { it.images }).toSet()
     }
 
     // 问问 AI
@@ -352,7 +354,8 @@ class RecipeRepository(
 
     fun observeStamps(): Flow<List<RecipeStamp>> = dao.observeStamps()
 
-    fun observeImagePaths(): Flow<List<String>> = dao.observeImagePaths()
+    fun observeImagePaths(): Flow<List<String>> =
+        dao.observeImageFields().map { fields -> fields.flatMap(StepImages::split).distinct() }
 
     /** 要上传的样子；已删除的菜谱只有标记，没有内容 */
     suspend fun loadForSync(uid: String): SyncedRecipe? {
@@ -402,7 +405,7 @@ class RecipeRepository(
                 dao.insertIngredient(Ingredient(recipeId = recipeId, name = g.name, amountText = g.amountText, kind = g.kind, order = index))
             }
             val stepIds = remote.steps.mapIndexed { index, s ->
-                dao.insertStep(Step(recipeId = recipeId, order = index, text = s.text, image = s.image, timerSeconds = s.timerSeconds))
+                dao.insertStep(Step(recipeId = recipeId, order = index, text = s.text, images = s.images, timerSeconds = s.timerSeconds))
             }
             remote.bowls.forEachIndexed { index, bowl ->
                 val bowlId = dao.insertBowl(

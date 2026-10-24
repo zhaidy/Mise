@@ -364,17 +364,17 @@ class ChatSession internal constructor(
     private suspend fun split(id: Long) {
         val before = snapshotOf(id)
         val draft = before.draft
-        val old = draft.steps.filter { it.text.isNotBlank() || it.image != null }
+        val old = draft.steps.filter { it.text.isNotBlank() || it.images.isNotEmpty() }
         val result = app.stepSplitter.split(old.map { it.text })
-        val carry = AiStepSplitter.carryOver(old.map { it.image != null }, result)
+        val carry = AiStepSplitter.carryOver(old.map { it.images.isNotEmpty() }, result)
             ?: throw ImportException("AI 拆分后对不上原来的步骤图，步骤没有改")
-        val fromOld = carry.entries.associate { (i, j) -> j to old[i] }
+        val fromOld = AiStepSplitter.sourcesOf(old, carry)
         val steps = result.mapIndexed { j, s ->
-            val from = fromOld[j]
+            val from = fromOld[j]?.first()
             StepDraft(
                 id = from?.id ?: 0,
                 text = s.text,
-                image = from?.image,
+                images = fromOld[j].orEmpty().flatMap { it.images },
                 timerSeconds = s.timerMinutes?.let { (it * 60).toInt() }?.takeIf { it > 0 } ?: from?.timerSeconds,
             )
         }

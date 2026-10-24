@@ -5,6 +5,7 @@ import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import androidx.room.TypeConverter
 import java.util.UUID
 
 @Entity(tableName = "recipe", indices = [Index(value = ["uid"], unique = true)])
@@ -79,9 +80,19 @@ data class Step(
     val recipeId: Long,
     @ColumnInfo(name = "sortOrder") val order: Int,
     val text: String,
-    val image: String? = null,
+    /** 这一步的图片，按显示顺序；相对 filesDir 的路径，如 images/xxx.jpg */
+    val images: List<String> = emptyList(),
     val timerSeconds: Int? = null,
 )
+
+/** 步骤图存成一个字段：路径之间用换行隔开，没有图是空字符串 */
+object StepImages {
+    @TypeConverter
+    fun join(images: List<String>): String = images.joinToString("\n")
+
+    @TypeConverter
+    fun split(text: String): List<String> = text.split('\n').filter { it.isNotEmpty() }
+}
 
 @Entity(
     tableName = "sauce_bowl",

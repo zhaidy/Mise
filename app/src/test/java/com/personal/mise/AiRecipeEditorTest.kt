@@ -91,9 +91,9 @@ class AiRecipeEditorTest {
             IngredientDraft(3, "", "", IngredientKind.MAIN),
         ),
         steps = listOf(
-            StepDraft(10, "豆腐切块", "a.jpg", null),
-            StepDraft(11, "炒香花椒", "b.jpg", 120),
-            StepDraft(12, "小火煮", null, 300),
+            StepDraft(10, "豆腐切块", listOf("a.jpg"), null),
+            StepDraft(11, "炒香花椒", listOf("b.jpg"), 120),
+            StepDraft(12, "小火煮", emptyList(), 300),
         ),
     )
 
@@ -126,7 +126,7 @@ class AiRecipeEditorTest {
         assertEquals(IngredientKind.SEASONING, after.ingredients[1].kind)
         assertEquals(IngredientKind.SEASONING, after.ingredients[2].kind)
         assertEquals(IngredientKind.MAIN, after.ingredients[3].kind)
-        assertEquals(listOf(StepDraft(10, "豆腐切块", "a.jpg", null), StepDraft(12, "小火煮", null, 360)), after.steps)
+        assertEquals(listOf(StepDraft(10, "豆腐切块", listOf("a.jpg"), null), StepDraft(12, "小火煮", emptyList(), 360)), after.steps)
         assertEquals(setOf("b.jpg"), AiRecipeEditor.droppedImages(draft, after))
     }
 

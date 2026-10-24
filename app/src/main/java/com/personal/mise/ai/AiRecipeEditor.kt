@@ -159,7 +159,7 @@ class AiRecipeEditor(private val ai: AiClient) {
                 },
                 steps = recipe.steps.mapIndexed { j, step ->
                     val old = stepFrom[j]?.let { oldSteps[it] }
-                    StepDraft(old?.id ?: 0, step.text, old?.image, step.timerMinutes?.let { (it * 60).toInt() }?.takeIf { it > 0 })
+                    StepDraft(old?.id ?: 0, step.text, old?.images.orEmpty(), step.timerMinutes?.let { (it * 60).toInt() }?.takeIf { it > 0 })
                 },
             )
         }
@@ -180,7 +180,7 @@ class AiRecipeEditor(private val ai: AiClient) {
 
         /** 改完后没有步骤用到的步骤图 */
         fun droppedImages(old: RecipeDraft, new: RecipeDraft): Set<String> =
-            old.steps.mapNotNull { it.image }.toSet() - new.steps.mapNotNull { it.image }.toSet()
+            old.steps.flatMap { it.images }.toSet() - new.steps.flatMap { it.images }.toSet()
 
         /**
          * 改好的每一项对应原来的第几项（都从 0 开始）：先按 source，对不上再按名字找；

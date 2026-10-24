@@ -49,11 +49,18 @@ class AiStepSplitterTest {
     }
 
     @Test
-    fun `带图的步骤对不上时返回 null`() {
+    fun `带图的步骤对不上时并到前一步，前面没有才返回 null`() {
         val steps = listOf(AiStep("a", null, 1), AiStep("b", null, null))
-        assertNull(AiStepSplitter.carryOver(listOf(false, true), steps))
+        assertEquals(mapOf(0 to 0, 1 to 0), AiStepSplitter.carryOver(listOf(false, true), steps))
         assertEquals(mapOf(0 to 0), AiStepSplitter.carryOver(listOf(true, false), steps))
+        assertNull(AiStepSplitter.carryOver(listOf(true, false), listOf(AiStep("a", null, 2))))
         // 原来只有一步时不看 source
         assertEquals(mapOf(0 to 0), AiStepSplitter.carryOver(listOf(true), steps))
+    }
+
+    @Test
+    fun `并进来的原步骤排在后面`() {
+        val carry = mapOf(2 to 1, 0 to 0, 1 to 0)
+        assertEquals(mapOf(0 to listOf("a", "b"), 1 to listOf("c")), AiStepSplitter.sourcesOf(listOf("a", "b", "c"), carry))
     }
 }

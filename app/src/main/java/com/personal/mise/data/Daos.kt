@@ -42,15 +42,15 @@ interface RecipeDao {
     @Query("SELECT uid, updatedAt FROM recipe")
     fun observeStamps(): Flow<List<RecipeStamp>>
 
-    /** 没删除的菜谱用到的所有图片，同步图片用 */
+    /** 没删除的菜谱用到的所有图片，同步图片用；步骤那几行是好几张图连在一起的，见 StepImages */
     @Query(
         """
         SELECT coverImage FROM recipe WHERE deleted = 0 AND coverImage IS NOT NULL
         UNION
-        SELECT s.image FROM step s JOIN recipe r ON r.id = s.recipeId WHERE r.deleted = 0 AND s.image IS NOT NULL
+        SELECT s.images FROM step s JOIN recipe r ON r.id = s.recipeId WHERE r.deleted = 0 AND s.images != ''
         """
     )
-    fun observeImagePaths(): Flow<List<String>>
+    fun observeImageFields(): Flow<List<String>>
 
     @Insert
     suspend fun insert(recipe: Recipe): Long
@@ -148,6 +148,9 @@ interface RecipeDao {
     suspend fun deleteStepsExcept(recipeId: Long, keep: List<Long>)
 
     // 调料碗
+
+    @Query("UPDATE sauce_bowl SET stepId = :into WHERE recipeId = :recipeId AND stepId = :from")
+    suspend fun moveBowlsToStep(recipeId: Long, from: Long, into: Long)
 
     @Query("SELECT * FROM sauce_bowl WHERE recipeId = :recipeId ORDER BY sortOrder")
     fun observeBowls(recipeId: Long): Flow<List<SauceBowl>>
