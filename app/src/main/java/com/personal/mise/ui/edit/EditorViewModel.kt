@@ -324,12 +324,12 @@ class EditorViewModel(
     /** 并过的步骤：原来的编号 → 并进去的那步的编号，保存时手动调过的调料碗跟着挪过去 */
     private val mergedSteps = mutableMapOf<Long, Long>()
 
-    /** 把这一步并到上一步：文字接在后面，图片排在后面，计时有一边空就用另一边，都有就加起来 */
+    /** 把这一步并到上一步：文字接在后面（中间空一行），图片排在后面，计时有一边空就用另一边，都有就加起来 */
     fun mergeIntoPrevious(index: Int) {
         if (index !in 1..steps.lastIndex) return
         val prev = steps[index - 1]
         val row = steps[index]
-        val text = listOf(prev.text.trim(), row.text.trim()).filter { it.isNotEmpty() }.joinToString("\n")
+        val text = listOf(prev.text.trim(), row.text.trim()).filter { it.isNotEmpty() }.joinToString("\n\n")
         val a = prev.timerMinutes.toDoubleOrNull()?.takeIf { it > 0 }
         val b = row.timerMinutes.toDoubleOrNull()?.takeIf { it > 0 }
         val minutes = when {
